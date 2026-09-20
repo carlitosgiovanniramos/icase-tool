@@ -11,7 +11,7 @@ export default function RootLayout({ children }) {
     <html lang="es">
       <body className="antialiased">
         <div className="flex min-h-screen">
-          <aside className="w-64 bg-gray-950 text-white p-6 flex flex-col">
+          <aside className="w-64 shrink-0 bg-gray-950 text-white p-6 flex flex-col">
             <h2 className="text-lg font-bold mb-8">I-CASE Tool</h2>
 
             <nav className="flex flex-col gap-2">
@@ -30,7 +30,7 @@ export default function RootLayout({ children }) {
             </nav>
           </aside>
 
-          <main className="flex-1 bg-white text-gray-900 p-8">
+          <main className="flex-1 min-w-0 bg-white text-gray-900 p-8">
             {children}
           </main>
         </div>

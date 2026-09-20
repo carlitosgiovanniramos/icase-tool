@@ -24,6 +24,11 @@ export default function WorkspaceProyecto() {
   const [cargandoDiagrama, setCargandoDiagrama] = useState(false);
   const [diagramaArqSvg, setDiagramaArqSvg] = useState(null);
   const [cargandoArquitectura, setCargandoArquitectura] = useState(false);
+  const [diagramaErSvg, setDiagramaErSvg] = useState(null);
+  const [cargandoEr, setCargandoEr] = useState(false);
+  const [arbolSvg, setArbolSvg] = useState(null);
+  const [cargandoArbol, setCargandoArbol] = useState(false);
+  const [mockupsListos, setMockupsListos] = useState(false);
 
   useEffect(() => {
     async function cargarProyecto() {
@@ -34,12 +39,21 @@ export default function WorkspaceProyecto() {
         .single();
       setProyecto(data);
       if (data?.analisis) setResultado(data.analisis);
+      if (data?.mockups) setMockupsListos(true);
       if (data?.diagrama_casos_uso) {
         renderizarDiagrama(data.diagrama_casos_uso);
       }
       if (data?.diagrama_arquitectura) {
         const svgArq = await renderizarComoImagen(data.diagrama_arquitectura);
         setDiagramaArqSvg(svgArq);
+      }
+      if (data?.diagrama_er) {
+        const svgEr = await renderizarComoImagen(data.diagrama_er);
+        setDiagramaErSvg(svgEr);
+      }
+      if (data?.arbol_navegacion) {
+        const svgArbol = await renderizarComoImagen(data.arbol_navegacion);
+        setArbolSvg(svgArbol);
       }
     }
     cargarProyecto();
@@ -147,6 +161,64 @@ export default function WorkspaceProyecto() {
     }
   }
 
+  async function generarDiagramaEr() {
+    setCargandoEr(true);
+    try {
+      const resp = await fetch("/api/generar-diagrama-er", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analisis: resultado }),
+      });
+      const data = await resp.json();
+
+      if (data.error) {
+        alert("Error al generar el diagrama entidad-relación: " + data.error);
+        return;
+      }
+
+      const svg = await renderizarComoImagen(data.diagrama_mermaid);
+      setDiagramaErSvg(svg);
+
+      await supabase
+        .from("proyectos")
+        .update({ diagrama_er: data.diagrama_mermaid })
+        .eq("id", id);
+    } catch (err) {
+      alert("Error de conexión: " + err.message);
+    } finally {
+      setCargandoEr(false);
+    }
+  }
+
+  async function generarArbol() {
+    setCargandoArbol(true);
+    try {
+      const resp = await fetch("/api/generar-arbol-navegacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analisis: resultado }),
+      });
+      const data = await resp.json();
+
+      if (data.error) {
+        alert("Error al generar el árbol de navegación: " + data.error);
+        return;
+      }
+
+      const svg = await renderizarComoImagen(data.diagrama_mermaid);
+      setArbolSvg(svg);
+
+      await supabase
+        .from("proyectos")
+        .update({ arbol_navegacion: data.diagrama_mermaid })
+        .eq("id", id);
+    } catch (err) {
+      alert("Error de conexión: " + err.message);
+    } finally {
+      setCargandoArbol(false);
+    }
+  }
+
   async function eliminarAnalisis() {
     if (!confirm("¿Eliminar los actores y requerimientos generados? También se eliminará el diagrama de casos de uso.")) return;
 
@@ -175,6 +247,26 @@ export default function WorkspaceProyecto() {
     await supabase
       .from("proyectos")
       .update({ diagrama_arquitectura: null })
+      .eq("id", id);
+  }
+
+  async function eliminarDiagramaEr() {
+    if (!confirm("¿Eliminar el diagrama entidad-relación?")) return;
+
+    setDiagramaErSvg(null);
+    await supabase
+      .from("proyectos")
+      .update({ diagrama_er: null })
+      .eq("id", id);
+  }
+
+  async function eliminarArbol() {
+    if (!confirm("¿Eliminar el árbol de navegación?")) return;
+
+    setArbolSvg(null);
+    await supabase
+      .from("proyectos")
+      .update({ arbol_navegacion: null })
       .eq("id", id);
   }
 
@@ -295,63 +387,152 @@ export default function WorkspaceProyecto() {
           </div>
 
           <div className="p-6">
-          <div className="flex items-center gap-2 mb-3">
-            <span
-              className="w-2 h-2 shrink-0"
-              style={{ backgroundColor: PALETA.naranjaOscuro }}
-            />
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Diagrama de arquitectura
-            </h3>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={generarArquitectura}
-              disabled={cargandoArquitectura}
-              style={{ backgroundColor: PALETA.naranjaOscuro }}
-              className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
-            >
-              {cargandoArquitectura ? "Generando..." : "Generar diagrama de arquitectura"}
-            </button>
-
-            {diagramaArqSvg && (
-              <button
-                onClick={eliminarArquitectura}
-                title="Eliminar diagrama de arquitectura"
-                style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
-                className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
-              >
-                Eliminar
-              </button>
-            )}
-          </div>
-
-          <DiagramaBox
-            svg={diagramaArqSvg}
-            titulo="Diagrama de arquitectura"
-            nombreArchivo="diagrama-arquitectura"
-          />
-
-          {diagramaArqSvg && (
-            <>
-              <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2">
-                <span
-                  className="w-2 h-2 shrink-0"
-                  style={{ backgroundColor: PALETA.naranjaOscuro }}
-                />
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Boceto de pantallas
-                </h3>
-              </div>
-
-              <MockupsGenerator
-                proyectoId={id}
-                analisis={resultado}
-                mockupsIniciales={proyecto?.mockups}
+            {/* --- Diagrama entidad-relación --- */}
+            <div className="flex items-center gap-2 mb-3">
+              <span
+                className="w-2 h-2 shrink-0"
+                style={{ backgroundColor: PALETA.naranjaOscuro }}
               />
-            </>
-          )}
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Diagrama entidad-relación
+              </h3>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={generarDiagramaEr}
+                disabled={cargandoEr}
+                style={{ backgroundColor: PALETA.naranjaOscuro }}
+                className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
+              >
+                {cargandoEr ? "Generando..." : "Generar diagrama entidad-relación"}
+              </button>
+
+              {diagramaErSvg && (
+                <button
+                  onClick={eliminarDiagramaEr}
+                  title="Eliminar diagrama entidad-relación"
+                  style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
+                  className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
+                >
+                  Eliminar
+                </button>
+              )}
+            </div>
+
+            <DiagramaBox
+              svg={diagramaErSvg}
+              titulo="Diagrama entidad-relación"
+              nombreArchivo="diagrama-entidad-relacion"
+            />
+
+            {/* --- Prototipo de pantallas --- */}
+            {diagramaErSvg && (
+              <>
+                <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2 mb-3">
+                  <span
+                    className="w-2 h-2 shrink-0"
+                    style={{ backgroundColor: PALETA.naranjaOscuro }}
+                  />
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Prototipo de pantallas
+                  </h3>
+                </div>
+
+                <MockupsGenerator
+                  proyectoId={id}
+                  analisis={resultado}
+                  mockupsIniciales={proyecto?.mockups}
+                  onMockupsChange={(m) => setMockupsListos(!!m)}
+                />
+              </>
+            )}
+
+            {/* --- Árbol de navegación --- */}
+            {mockupsListos && (
+              <>
+                <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2 mb-3">
+                  <span
+                    className="w-2 h-2 shrink-0"
+                    style={{ backgroundColor: PALETA.naranjaOscuro }}
+                  />
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Árbol de navegación
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={generarArbol}
+                    disabled={cargandoArbol}
+                    style={{ backgroundColor: PALETA.naranjaOscuro }}
+                    className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
+                  >
+                    {cargandoArbol ? "Generando..." : "Generar árbol de navegación"}
+                  </button>
+
+                  {arbolSvg && (
+                    <button
+                      onClick={eliminarArbol}
+                      title="Eliminar árbol de navegación"
+                      style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
+                      className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+
+                <DiagramaBox
+                  svg={arbolSvg}
+                  titulo="Árbol de navegación"
+                  nombreArchivo="arbol-de-navegacion"
+                />
+              </>
+            )}
+
+            {/* --- Diagrama de arquitectura --- */}
+            {arbolSvg && (
+              <>
+                <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2 mb-3">
+                  <span
+                    className="w-2 h-2 shrink-0"
+                    style={{ backgroundColor: PALETA.naranjaOscuro }}
+                  />
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Diagrama de arquitectura
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={generarArquitectura}
+                    disabled={cargandoArquitectura}
+                    style={{ backgroundColor: PALETA.naranjaOscuro }}
+                    className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
+                  >
+                    {cargandoArquitectura ? "Generando..." : "Generar diagrama de arquitectura"}
+                  </button>
+
+                  {diagramaArqSvg && (
+                    <button
+                      onClick={eliminarArquitectura}
+                      title="Eliminar diagrama de arquitectura"
+                      style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
+                      className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+
+                <DiagramaBox
+                  svg={diagramaArqSvg}
+                  titulo="Diagrama de arquitectura"
+                  nombreArchivo="diagrama-arquitectura"
+                />
+              </>
+            )}
           </div>
         </section>
       )}

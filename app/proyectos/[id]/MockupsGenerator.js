@@ -43,7 +43,12 @@ function pantallaQueCoincide(mockups, textoLink) {
   });
 }
 
-export default function MockupsGenerator({ proyectoId, analisis, mockupsIniciales }) {
+export default function MockupsGenerator({
+  proyectoId,
+  analisis,
+  mockupsIniciales,
+  onMockupsChange,
+}) {
   const [cantidad, setCantidad] = useState(4);
   const [mockups, setMockups] = useState(null);
   const [pestañaActiva, setPestañaActiva] = useState(0);
@@ -52,6 +57,10 @@ export default function MockupsGenerator({ proyectoId, analisis, mockupsIniciale
   useEffect(() => {
     if (mockupsIniciales) setMockups(mockupsIniciales);
   }, [mockupsIniciales]);
+
+  useEffect(() => {
+    onMockupsChange?.(mockups);
+  }, [mockups]);
 
   useEffect(() => {
     if (!mockups) return;

@@ -39,11 +39,21 @@ export default function DiagramaBox({ svg, titulo, nombreArchivo }) {
 
   useEffect(() => {
     if (!expandido) return;
+
     function alTecla(e) {
       if (e.key === "Escape") setExpandido(false);
     }
     window.addEventListener("keydown", alTecla);
-    return () => window.removeEventListener("keydown", alTecla);
+
+    // Bloquea el scroll del fondo mientras el modal está abierto, para que
+    // la página no se mueva del sitio donde estábamos al cerrarlo.
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", alTecla);
+      document.body.style.overflow = overflowPrevio;
+    };
   }, [expandido]);
 
   if (!svg) return null;
@@ -85,7 +95,7 @@ export default function DiagramaBox({ svg, titulo, nombreArchivo }) {
             </div>
           </div>
           <div
-            className="flex-1 overflow-auto flex items-center justify-center p-6 [&_svg]:max-w-none"
+            className="flex-1 overflow-hidden flex items-center justify-center p-6 [&_svg]:w-full [&_svg]:h-full [&_svg]:max-w-full [&_svg]:max-h-full"
             onClick={(e) => e.stopPropagation()}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
