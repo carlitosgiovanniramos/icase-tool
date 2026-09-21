@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PALETA } from "./estilos";
+import { PALETA } from "../../estilos";
 
 // Los diagramas usan <foreignObject> (HTML dentro del SVG) para que el texto
 // no se corte. Eso hace que cualquier <canvas> dibujado a partir de la imagen

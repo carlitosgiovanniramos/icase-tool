@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { PALETA } from "./estilos";
+import { pedirJson } from "@/lib/pedirJson";
+import { useAlert } from "../../AlertProvider";
+import { PALETA } from "../../estilos";
 
 const SCRIPT_INTERCEPTAR_NAVEGACION = `
 <script>
@@ -53,6 +55,7 @@ export default function MockupsGenerator({
   const [mockups, setMockups] = useState(null);
   const [pestañaActiva, setPestañaActiva] = useState(0);
   const [cargando, setCargando] = useState(null); // "wireframe" | "mockup" | null
+  const { mostrarError } = useAlert();
 
   useEffect(() => {
     if (mockupsIniciales) setMockups(mockupsIniciales);
@@ -78,7 +81,7 @@ export default function MockupsGenerator({
   async function generar(modo) {
     setCargando(modo);
     try {
-      const resp = await fetch("/api/generar-mockups", {
+      const data = await pedirJson("/api/generar-mockups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -87,10 +90,9 @@ export default function MockupsGenerator({
           modo,
         }),
       });
-      const data = await resp.json();
 
       if (data.error) {
-        alert("Error al generar: " + data.error);
+        mostrarError(data.error, "Error al generar el prototipo");
         return;
       }
 
@@ -101,7 +103,7 @@ export default function MockupsGenerator({
         .update({ mockups: data.pantallas })
         .eq("id", proyectoId);
     } catch (err) {
-      alert("Error de conexión: " + err.message);
+      mostrarError(err.message, "Error de conexión");
     } finally {
       setCargando(null);
     }

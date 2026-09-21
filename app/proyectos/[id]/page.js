@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { pedirJson } from "@/lib/pedirJson";
 import mermaid from "mermaid";
 import MockupsGenerator from "./MockupsGenerator";
 import AnalisisResultado from "./AnalisisResultado";
 import DiagramaBox from "./DiagramaBox";
-import { PALETA } from "./estilos";
+import { useAlert } from "../../AlertProvider";
+import { PALETA } from "../../estilos";
 
 mermaid.initialize({
   startOnLoad: false,
@@ -17,6 +19,7 @@ mermaid.initialize({
 
 export default function WorkspaceProyecto() {
   const { id } = useParams();
+  const { mostrarError } = useAlert();
   const [proyecto, setProyecto] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [diagramaSvg, setDiagramaSvg] = useState(null);
@@ -81,25 +84,25 @@ export default function WorkspaceProyecto() {
   async function generarAnalisis() {
     setCargando(true);
     try {
-      const resp = await fetch("/api/generar-analisis", {
+      const data = await pedirJson("/api/generar-analisis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: proyecto.prompt,
           documentoTexto: proyecto.documento_texto,
+          imagenUrl: proyecto.imagen_url,
         }),
       });
-      const data = await resp.json();
 
       if (data.error) {
-        alert("Error al generar: " + data.error);
+        mostrarError(data.error, "Error al generar el análisis");
         return;
       }
 
       setResultado(data);
       await supabase.from("proyectos").update({ analisis: data }).eq("id", id);
     } catch (err) {
-      alert("Error de conexión: " + err.message);
+      mostrarError(err.message, "Error de conexión");
     } finally {
       setCargando(false);
     }
@@ -108,15 +111,14 @@ export default function WorkspaceProyecto() {
   async function generarCasosUso() {
     setCargandoDiagrama(true);
     try {
-      const resp = await fetch("/api/generar-casos-uso", {
+      const data = await pedirJson("/api/generar-casos-uso", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ analisis: resultado }),
       });
-      const data = await resp.json();
 
       if (data.error) {
-        alert("Error al generar diagrama: " + data.error);
+        mostrarError(data.error, "Error al generar el diagrama de casos de uso");
         return;
       }
 
@@ -126,7 +128,7 @@ export default function WorkspaceProyecto() {
         .update({ diagrama_casos_uso: data.diagrama_mermaid })
         .eq("id", id);
     } catch (err) {
-      alert("Error de conexión: " + err.message);
+      mostrarError(err.message, "Error de conexión");
     } finally {
       setCargandoDiagrama(false);
     }
@@ -135,15 +137,14 @@ export default function WorkspaceProyecto() {
   async function generarArquitectura() {
     setCargandoArquitectura(true);
     try {
-      const resp = await fetch("/api/generar-arquitectura", {
+      const data = await pedirJson("/api/generar-arquitectura", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ analisis: resultado }),
       });
-      const data = await resp.json();
 
       if (data.error) {
-        alert("Error al generar arquitectura: " + data.error);
+        mostrarError(data.error, "Error al generar el diagrama de arquitectura");
         return;
       }
 
@@ -155,7 +156,7 @@ export default function WorkspaceProyecto() {
         .update({ diagrama_arquitectura: data.diagrama_mermaid })
         .eq("id", id);
     } catch (err) {
-      alert("Error de conexión: " + err.message);
+      mostrarError(err.message, "Error de conexión");
     } finally {
       setCargandoArquitectura(false);
     }
@@ -164,15 +165,14 @@ export default function WorkspaceProyecto() {
   async function generarDiagramaEr() {
     setCargandoEr(true);
     try {
-      const resp = await fetch("/api/generar-diagrama-er", {
+      const data = await pedirJson("/api/generar-diagrama-er", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ analisis: resultado }),
       });
-      const data = await resp.json();
 
       if (data.error) {
-        alert("Error al generar el diagrama entidad-relación: " + data.error);
+        mostrarError(data.error, "Error al generar el diagrama entidad-relación");
         return;
       }
 
@@ -184,7 +184,7 @@ export default function WorkspaceProyecto() {
         .update({ diagrama_er: data.diagrama_mermaid })
         .eq("id", id);
     } catch (err) {
-      alert("Error de conexión: " + err.message);
+      mostrarError(err.message, "Error de conexión");
     } finally {
       setCargandoEr(false);
     }
@@ -193,15 +193,14 @@ export default function WorkspaceProyecto() {
   async function generarArbol() {
     setCargandoArbol(true);
     try {
-      const resp = await fetch("/api/generar-arbol-navegacion", {
+      const data = await pedirJson("/api/generar-arbol-navegacion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ analisis: resultado }),
       });
-      const data = await resp.json();
 
       if (data.error) {
-        alert("Error al generar el árbol de navegación: " + data.error);
+        mostrarError(data.error, "Error al generar el árbol de navegación");
         return;
       }
 
@@ -213,7 +212,7 @@ export default function WorkspaceProyecto() {
         .update({ arbol_navegacion: data.diagrama_mermaid })
         .eq("id", id);
     } catch (err) {
-      alert("Error de conexión: " + err.message);
+      mostrarError(err.message, "Error de conexión");
     } finally {
       setCargandoArbol(false);
     }

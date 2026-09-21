@@ -5,7 +5,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(request) {
   try {
-    const { prompt, documentoTexto } = await request.json();
+    const { prompt, documentoTexto, imagenUrl } = await request.json();
 
     let contexto = `Idea del usuario: ${prompt}`;
 
@@ -14,7 +14,7 @@ export async function POST(request) {
     }
 
     const instrucciones = `
-Eres un analista de sistemas experto. Con base en el siguiente contexto, identifica los actores principales del sistema y plantea requerimientos funcionales y no funcionales siguiendo el formato de especificación de requerimientos usado en ingeniería de software (ficha completa por requerimiento: id, nombre, descripción, dependencias, prioridad, actores involucrados, precondiciones y postcondiciones).
+Eres un analista de sistemas experto. Con base en el siguiente contexto (y la imagen adjunta, si existe), identifica los actores principales del sistema y plantea requerimientos funcionales y no funcionales siguiendo el formato de especificación de requerimientos usado en ingeniería de software (ficha completa por requerimiento: id, nombre, descripción, dependencias, prioridad, actores involucrados, precondiciones y postcondiciones).
 
 ${contexto}
 
@@ -57,9 +57,20 @@ Reglas:
 - Genera al menos 3 actores, al menos 8 requerimientos funcionales y al menos 5 requerimientos no funcionales.
 `;
 
+    const parts = [{ text: instrucciones }];
+
+    if (imagenUrl) {
+      const respImg = await fetch(imagenUrl);
+      const bufferImg = await respImg.arrayBuffer();
+      const base64Img = Buffer.from(bufferImg).toString("base64");
+      const mimeType = respImg.headers.get("content-type") || "image/png";
+
+      parts.push({ inlineData: { mimeType, data: base64Img } });
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-3.6-flash",
-      contents: instrucciones,
+      contents: parts,
       config: { responseMimeType: "application/json" },
     });
 
