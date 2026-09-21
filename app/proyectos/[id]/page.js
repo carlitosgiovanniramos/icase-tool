@@ -8,8 +8,32 @@ import mermaid from "mermaid";
 import MockupsGenerator from "./MockupsGenerator";
 import AnalisisResultado from "./AnalisisResultado";
 import DiagramaBox from "./DiagramaBox";
+import FaseStepper from "./FaseStepper";
+import FaseIndice from "./FaseIndice";
 import { useAlert } from "../../AlertProvider";
 import { PALETA } from "../../estilos";
+
+function BotonAprobar({ aprobado, onClick, etiqueta }) {
+  if (aprobado) {
+    return (
+      <span
+        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold"
+        style={{ color: PALETA.oliva }}
+      >
+        ✓ {etiqueta} aprobado
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={onClick}
+      style={{ backgroundColor: PALETA.oliva }}
+      className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+    >
+      Aprobar {etiqueta}
+    </button>
+  );
+}
 
 mermaid.initialize({
   startOnLoad: false,
@@ -32,8 +56,8 @@ export default function WorkspaceProyecto() {
   const [arbolSvg, setArbolSvg] = useState(null);
   const [cargandoArbol, setCargandoArbol] = useState(false);
   const [mockupsListos, setMockupsListos] = useState(false);
-  const [cantidadRF, setCantidadRF] = useState(8);
-  const [cantidadRNF, setCantidadRNF] = useState(5);
+  const [fasesAprobadas, setFasesAprobadas] = useState({});
+  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno"
 
   useEffect(() => {
     async function cargarProyecto() {
@@ -45,6 +69,7 @@ export default function WorkspaceProyecto() {
       setProyecto(data);
       if (data?.analisis) setResultado(data.analisis);
       if (data?.mockups) setMockupsListos(true);
+      if (data?.fases_aprobadas) setFasesAprobadas(data.fases_aprobadas);
       if (data?.diagrama_casos_uso) {
         renderizarDiagrama(data.diagrama_casos_uso);
       }
@@ -83,6 +108,27 @@ export default function WorkspaceProyecto() {
     return svg;
   }
 
+  async function aprobarFase(clave) {
+    const actualizado = { ...fasesAprobadas, [clave]: true };
+    setFasesAprobadas(actualizado);
+    await supabase
+      .from("proyectos")
+      .update({ fases_aprobadas: actualizado })
+      .eq("id", id);
+  }
+
+  async function resetearAprobaciones(...claves) {
+    const actualizado = { ...fasesAprobadas };
+    claves.forEach((c) => {
+      actualizado[c] = false;
+    });
+    setFasesAprobadas(actualizado);
+    await supabase
+      .from("proyectos")
+      .update({ fases_aprobadas: actualizado })
+      .eq("id", id);
+  }
+
   async function generarAnalisis() {
     setCargando(true);
     try {
@@ -93,8 +139,6 @@ export default function WorkspaceProyecto() {
           prompt: proyecto.prompt,
           documentoTexto: proyecto.documento_texto,
           imagenUrl: proyecto.imagen_url,
-          cantidadRF,
-          cantidadRNF,
         }),
       });
 
@@ -231,6 +275,13 @@ export default function WorkspaceProyecto() {
       .from("proyectos")
       .update({ analisis: null, diagrama_casos_uso: null })
       .eq("id", id);
+    await resetearAprobaciones(
+      "analisis",
+      "diseno_er",
+      "diseno_prototipo",
+      "diseno_arbol",
+      "diseno_arquitectura"
+    );
   }
 
   async function eliminarDiagrama() {
@@ -241,6 +292,7 @@ export default function WorkspaceProyecto() {
       .from("proyectos")
       .update({ diagrama_casos_uso: null })
       .eq("id", id);
+    await resetearAprobaciones("analisis");
   }
 
   async function eliminarArquitectura() {
@@ -251,6 +303,7 @@ export default function WorkspaceProyecto() {
       .from("proyectos")
       .update({ diagrama_arquitectura: null })
       .eq("id", id);
+    await resetearAprobaciones("diseno_arquitectura");
   }
 
   async function eliminarDiagramaEr() {
@@ -261,6 +314,12 @@ export default function WorkspaceProyecto() {
       .from("proyectos")
       .update({ diagrama_er: null })
       .eq("id", id);
+    await resetearAprobaciones(
+      "diseno_er",
+      "diseno_prototipo",
+      "diseno_arbol",
+      "diseno_arquitectura"
+    );
   }
 
   async function eliminarArbol() {
@@ -271,73 +330,94 @@ export default function WorkspaceProyecto() {
       .from("proyectos")
       .update({ arbol_navegacion: null })
       .eq("id", id);
+    await resetearAprobaciones("diseno_arbol", "diseno_arquitectura");
   }
 
   if (!proyecto) return <p>Cargando...</p>;
 
+  const faseActual = !fasesAprobadas.analisis
+    ? "analisis"
+    : !fasesAprobadas.diseno_arquitectura
+    ? "diseno"
+    : null;
+
   return (
     <div>
-      <header
-        className="mb-8 bg-white border border-gray-300 p-6"
-        style={{ borderLeft: `4px solid ${PALETA.negro}` }}
-      >
-        <span
-          className="inline-block text-xs font-bold tracking-widest uppercase px-2 py-1 mb-3 text-white"
-          style={{ backgroundColor: PALETA.negro }}
+      {vista === "resumen" && (
+        <header
+          className="mb-8 bg-white border border-gray-300 p-6"
+          style={{ borderLeft: `4px solid ${PALETA.negro}` }}
         >
-          Proyecto
-        </span>
-        <h1 className="text-3xl font-bold text-gray-900 mb-3">
-          {proyecto.nombre}
-        </h1>
-        <p className="text-gray-600 leading-relaxed">
-          {proyecto.prompt}
-        </p>
-      </header>
+          <span
+            className="inline-block text-xs font-bold tracking-widest uppercase px-2 py-1 mb-3 text-white"
+            style={{ backgroundColor: PALETA.negro }}
+          >
+            Proyecto
+          </span>
+          <h1 className="text-3xl font-bold text-gray-900 mb-3">
+            {proyecto.nombre}
+          </h1>
+          <p className="text-gray-600 leading-relaxed">
+            {proyecto.prompt}
+          </p>
+        </header>
+      )}
+
+      {vista !== "resumen" && (
+        <FaseStepper
+          fasesAprobadas={fasesAprobadas}
+          vista={vista}
+          onNavegar={setVista}
+        />
+      )}
+
+      {vista === "resumen" && (
+        <div>
+          {!faseActual && (
+            <p
+              className="mb-4 text-sm font-semibold"
+              style={{ color: PALETA.oliva }}
+            >
+              ✓ Todas las fases completadas
+            </p>
+          )}
+
+          <FaseIndice fasesAprobadas={fasesAprobadas} onNavegar={setVista} />
+        </div>
+      )}
 
       {/* ===================== ANÁLISIS ===================== */}
+      {vista === "analisis" && (
       <section className="bg-white border border-gray-300">
         <div
-          className="flex items-baseline gap-3 px-6 py-4"
+          className="flex items-center justify-between gap-3 px-6 py-4"
           style={{ backgroundColor: PALETA.navy }}
         >
-          <span className="text-xs font-bold tracking-widest uppercase text-white/60">
-            Fase 01
-          </span>
-          <h2 className="text-2xl font-bold text-white">Análisis</h2>
+          <div className="flex items-baseline gap-3">
+            <span className="text-xs font-bold tracking-widest uppercase text-white/60">
+              Fase 01
+            </span>
+            <h2 className="text-2xl font-bold text-white">Análisis</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            {fasesAprobadas.analisis && (
+              <button
+                onClick={() => setVista("diseno")}
+                className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
+              >
+                Continuar a Diseño →
+              </button>
+            )}
+            <button
+              onClick={() => setVista("resumen")}
+              className="text-white/70 hover:text-white text-sm font-semibold"
+            >
+              ← Volver
+            </button>
+          </div>
         </div>
 
         <div className="p-6">
-        <div className="flex items-center gap-4 flex-wrap mb-3">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-500">
-              Requerimientos funcionales
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={25}
-              value={cantidadRF}
-              onChange={(e) => setCantidadRF(e.target.value)}
-              className="w-20 border border-gray-300 px-2 py-1 text-sm"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-500">
-              Requerimientos no funcionales
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={25}
-              value={cantidadRNF}
-              onChange={(e) => setCantidadRNF(e.target.value)}
-              className="w-20 border border-gray-300 px-2 py-1 text-sm"
-            />
-          </div>
-        </div>
-
         <div className="flex items-center gap-2">
           <button
             onClick={generarAnalisis}
@@ -403,20 +483,49 @@ export default function WorkspaceProyecto() {
           titulo="Diagrama de casos de uso"
           nombreArchivo="diagrama-casos-de-uso"
         />
+
+        {diagramaSvg && (
+          <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3">
+            <BotonAprobar
+              aprobado={!!fasesAprobadas.analisis}
+              onClick={() => aprobarFase("analisis")}
+              etiqueta="Análisis"
+            />
+
+            {fasesAprobadas.analisis && (
+              <button
+                onClick={() => setVista("diseno")}
+                style={{ backgroundColor: PALETA.navy }}
+                className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+              >
+                Continuar a Diseño →
+              </button>
+            )}
+          </div>
+        )}
         </div>
       </section>
+      )}
 
       {/* ===================== DISEÑO ===================== */}
-      {diagramaSvg && (
-        <section className="mt-8 bg-white border border-gray-300">
+      {vista === "diseno" && fasesAprobadas.analisis && (
+        <section className="bg-white border border-gray-300">
           <div
-            className="flex items-baseline gap-3 px-6 py-4"
+            className="flex items-center justify-between gap-3 px-6 py-4"
             style={{ backgroundColor: PALETA.naranjaOscuro }}
           >
-            <span className="text-xs font-bold tracking-widest uppercase text-white/60">
-              Fase 02
-            </span>
-            <h2 className="text-2xl font-bold text-white">Diseño</h2>
+            <div className="flex items-baseline gap-3">
+              <span className="text-xs font-bold tracking-widest uppercase text-white/60">
+                Fase 02
+              </span>
+              <h2 className="text-2xl font-bold text-white">Diseño</h2>
+            </div>
+            <button
+              onClick={() => setVista("resumen")}
+              className="text-white/70 hover:text-white text-sm font-semibold"
+            >
+              ← Volver
+            </button>
           </div>
 
           <div className="p-6">
@@ -459,8 +568,18 @@ export default function WorkspaceProyecto() {
               nombreArchivo="diagrama-entidad-relacion"
             />
 
-            {/* --- Prototipo de pantallas --- */}
             {diagramaErSvg && (
+              <div className="mt-4">
+                <BotonAprobar
+                  aprobado={!!fasesAprobadas.diseno_er}
+                  onClick={() => aprobarFase("diseno_er")}
+                  etiqueta="Diagrama entidad-relación"
+                />
+              </div>
+            )}
+
+            {/* --- Prototipo de pantallas --- */}
+            {fasesAprobadas.diseno_er && (
               <>
                 <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2 mb-3">
                   <span
@@ -476,13 +595,26 @@ export default function WorkspaceProyecto() {
                   proyectoId={id}
                   analisis={resultado}
                   mockupsIniciales={proyecto?.mockups}
-                  onMockupsChange={(m) => setMockupsListos(!!m)}
+                  onMockupsChange={(m) => {
+                    setMockupsListos(!!m);
+                    if (!m) resetearAprobaciones("diseno_prototipo", "diseno_arbol", "diseno_arquitectura");
+                  }}
                 />
+
+                {mockupsListos && (
+                  <div className="mt-4">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.diseno_prototipo}
+                      onClick={() => aprobarFase("diseno_prototipo")}
+                      etiqueta="Prototipo"
+                    />
+                  </div>
+                )}
               </>
             )}
 
             {/* --- Árbol de navegación --- */}
-            {mockupsListos && (
+            {fasesAprobadas.diseno_prototipo && (
               <>
                 <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2 mb-3">
                   <span
@@ -521,11 +653,21 @@ export default function WorkspaceProyecto() {
                   titulo="Árbol de navegación"
                   nombreArchivo="arbol-de-navegacion"
                 />
+
+                {arbolSvg && (
+                  <div className="mt-4">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.diseno_arbol}
+                      onClick={() => aprobarFase("diseno_arbol")}
+                      etiqueta="Árbol de navegación"
+                    />
+                  </div>
+                )}
               </>
             )}
 
             {/* --- Diagrama de arquitectura --- */}
-            {arbolSvg && (
+            {fasesAprobadas.diseno_arbol && (
               <>
                 <div className="mt-8 pt-6 border-t-2 border-gray-200 flex items-center gap-2 mb-3">
                   <span
@@ -564,6 +706,25 @@ export default function WorkspaceProyecto() {
                   titulo="Diagrama de arquitectura"
                   nombreArchivo="diagrama-arquitectura"
                 />
+
+                {diagramaArqSvg && (
+                  <div className="mt-4 flex items-center gap-3">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.diseno_arquitectura}
+                      onClick={() => aprobarFase("diseno_arquitectura")}
+                      etiqueta="Diagrama de arquitectura"
+                    />
+
+                    {fasesAprobadas.diseno_arquitectura && (
+                      <span
+                        className="text-sm font-semibold"
+                        style={{ color: PALETA.oliva }}
+                      >
+                        ✓ Proyecto completado
+                      </span>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

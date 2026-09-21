@@ -46,7 +46,8 @@ function TarjetaRequisito({ r, colorBadge, etiquetaBadge, badgeSolido }) {
     dependencias.length > 0 ||
     actores.length > 0 ||
     (r.precondiciones && r.precondiciones !== "No aplica") ||
-    (r.postcondiciones && r.postcondiciones !== "No aplica");
+    (r.postcondiciones && r.postcondiciones !== "No aplica") ||
+    !!r.metodo_verificacion;
 
   const prioridad = r.prioridad?.toLowerCase();
   const colorPrioridad = PRIORIDAD_COLORES[prioridad] || PRIORIDAD_COLOR_DEFECTO;
@@ -122,6 +123,12 @@ function TarjetaRequisito({ r, colorBadge, etiquetaBadge, badgeSolido }) {
             <div>
               <span className="font-semibold text-gray-700">Dependencias: </span>
               {dependencias.join(", ")}
+            </div>
+          )}
+          {r.metodo_verificacion && (
+            <div>
+              <span className="font-semibold text-gray-700">Método de verificación: </span>
+              {r.metodo_verificacion}
             </div>
           )}
         </div>
