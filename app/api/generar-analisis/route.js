@@ -5,7 +5,11 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export async function POST(request) {
   try {
-    const { prompt, documentoTexto, imagenUrl } = await request.json();
+    const { prompt, documentoTexto, imagenUrl, cantidadRF, cantidadRNF } =
+      await request.json();
+
+    const numRF = Math.min(Math.max(Number(cantidadRF) || 8, 1), 25);
+    const numRNF = Math.min(Math.max(Number(cantidadRNF) || 5, 1), 25);
 
     let contexto = `Idea del usuario: ${prompt}`;
 
@@ -54,7 +58,7 @@ Reglas:
 - "dependencias" es un arreglo con los códigos (RF/RNF) de otros requerimientos de los que depende; usa [] si no depende de ninguno.
 - "actores" es un arreglo con nombres de actores que ya definiste en la lista "actores"; usa [] si no aplica un actor humano directo.
 - "precondiciones" y "postcondiciones" deben ser concretas y verificables (qué debe cumplirse antes y qué queda garantizado después). Si para un requerimiento no funcional realmente no aplica alguna, usa "No aplica".
-- Genera al menos 3 actores, al menos 8 requerimientos funcionales y al menos 5 requerimientos no funcionales.
+- Genera al menos 3 actores, exactamente ${numRF} requerimientos funcionales y exactamente ${numRNF} requerimientos no funcionales.
 `;
 
     const parts = [{ text: instrucciones }];

@@ -32,6 +32,8 @@ export default function WorkspaceProyecto() {
   const [arbolSvg, setArbolSvg] = useState(null);
   const [cargandoArbol, setCargandoArbol] = useState(false);
   const [mockupsListos, setMockupsListos] = useState(false);
+  const [cantidadRF, setCantidadRF] = useState(8);
+  const [cantidadRNF, setCantidadRNF] = useState(5);
 
   useEffect(() => {
     async function cargarProyecto() {
@@ -91,6 +93,8 @@ export default function WorkspaceProyecto() {
           prompt: proyecto.prompt,
           documentoTexto: proyecto.documento_texto,
           imagenUrl: proyecto.imagen_url,
+          cantidadRF,
+          cantidadRNF,
         }),
       });
 
@@ -304,6 +308,36 @@ export default function WorkspaceProyecto() {
         </div>
 
         <div className="p-6">
+        <div className="flex items-center gap-4 flex-wrap mb-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-500">
+              Requerimientos funcionales
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={25}
+              value={cantidadRF}
+              onChange={(e) => setCantidadRF(e.target.value)}
+              className="w-20 border border-gray-300 px-2 py-1 text-sm"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-500">
+              Requerimientos no funcionales
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={25}
+              value={cantidadRNF}
+              onChange={(e) => setCantidadRNF(e.target.value)}
+              className="w-20 border border-gray-300 px-2 py-1 text-sm"
+            />
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={generarAnalisis}

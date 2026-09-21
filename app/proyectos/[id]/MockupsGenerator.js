@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { pedirJson } from "@/lib/pedirJson";
 import { useAlert } from "../../AlertProvider";
+import { useBloqueoModal } from "../../useBloqueoModal";
 import { PALETA } from "../../estilos";
 
 const SCRIPT_INTERCEPTAR_NAVEGACION = `
@@ -55,7 +56,10 @@ export default function MockupsGenerator({
   const [mockups, setMockups] = useState(null);
   const [pestañaActiva, setPestañaActiva] = useState(0);
   const [cargando, setCargando] = useState(null); // "wireframe" | "mockup" | null
+  const [expandido, setExpandido] = useState(false);
   const { mostrarError } = useAlert();
+
+  useBloqueoModal(expandido, () => setExpandido(false));
 
   useEffect(() => {
     if (mockupsIniciales) setMockups(mockupsIniciales);
@@ -135,33 +139,46 @@ export default function MockupsGenerator({
         />
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap mt-3">
-        <button
-          onClick={() => generar("wireframe")}
-          disabled={!!cargando}
-          style={{ backgroundColor: PALETA.oliva }}
-          className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
-        >
-          {cargando === "wireframe" ? "Generando wireframe..." : "Generar wireframe"}
-        </button>
+      <div className="flex items-center justify-between gap-2 flex-wrap mt-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => generar("wireframe")}
+            disabled={!!cargando}
+            style={{ backgroundColor: PALETA.oliva }}
+            className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
+          >
+            {cargando === "wireframe" ? "Generando wireframe..." : "Generar wireframe"}
+          </button>
 
-        <button
-          onClick={() => generar("mockup")}
-          disabled={!!cargando}
-          style={{ backgroundColor: PALETA.carmesi }}
-          className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
-        >
-          {cargando === "mockup" ? "Generando mockup..." : "Generar mockup completo"}
-        </button>
+          <button
+            onClick={() => generar("mockup")}
+            disabled={!!cargando}
+            style={{ backgroundColor: PALETA.carmesi }}
+            className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
+          >
+            {cargando === "mockup" ? "Generando mockup..." : "Generar mockup completo"}
+          </button>
+
+          {mockups && (
+            <button
+              onClick={eliminarMockups}
+              title="Eliminar mockups"
+              style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
+              className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
+            >
+              Eliminar
+            </button>
+          )}
+        </div>
 
         {mockups && (
           <button
-            onClick={eliminarMockups}
-            title="Eliminar mockups"
-            style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
-            className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
+            onClick={() => setExpandido(true)}
+            title="Expandir"
+            style={{ borderColor: PALETA.navy, color: PALETA.navy }}
+            className="border bg-transparent hover:bg-gray-50 px-3 py-2 text-sm"
           >
-            Eliminar
+            Expandir
           </button>
         )}
       </div>
@@ -195,6 +212,59 @@ export default function MockupsGenerator({
             title="Mockup"
             sandbox="allow-scripts allow-forms allow-modals allow-popups"
           />
+        </div>
+      )}
+
+      {expandido && mockups && (
+        <div
+          className="fixed inset-0 bg-white z-50 flex flex-col"
+          onClick={() => setExpandido(false)}
+        >
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-300">
+            <div
+              className="flex gap-2 overflow-x-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {mockups.map((pantalla, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPestañaActiva(i)}
+                  style={
+                    pestañaActiva === i
+                      ? { borderColor: PALETA.navy, color: PALETA.navy }
+                      : undefined
+                  }
+                  className={`px-3 py-1.5 text-sm whitespace-nowrap border-b-2 ${
+                    pestañaActiva === i
+                      ? "font-semibold"
+                      : "text-gray-500 border-transparent"
+                  }`}
+                >
+                  {pantalla.nombre}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setExpandido(false)}
+              style={{ borderColor: PALETA.navy, color: PALETA.navy }}
+              className="shrink-0 border bg-transparent hover:bg-gray-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
+            >
+              Cerrar ✕
+            </button>
+          </div>
+
+          <div
+            className="flex-1 p-6 bg-gray-50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <iframe
+              srcDoc={conNavegacionInterceptada(mockups[pestañaActiva]?.html)}
+              className="w-full h-full border border-gray-300 bg-white"
+              title="Mockup expandido"
+              sandbox="allow-scripts allow-forms allow-modals allow-popups"
+            />
+          </div>
         </div>
       )}
     </div>
