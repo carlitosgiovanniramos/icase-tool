@@ -1,11 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PALETA, ROTACION_COLORES, DEGRADADO_AUTH } from "../estilos";
+import { useAlert } from "../AlertProvider";
 
 const POR_PAGINA = 6;
+
+function AvisoBienvenida() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { mostrarInfo } = useAlert();
+
+  useEffect(() => {
+    if (searchParams.get("bienvenida") !== "1") return;
+    mostrarInfo("Iniciaste sesión correctamente.", "¡Bienvenido de nuevo!");
+    router.replace("/");
+  }, [searchParams, mostrarInfo, router]);
+
+  return null;
+}
 
 export default function Home() {
   const [supabase] = useState(() => createClient());
@@ -51,6 +67,10 @@ export default function Home() {
 
   return (
     <div>
+      <Suspense fallback={null}>
+        <AvisoBienvenida />
+      </Suspense>
+
       <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mis proyectos</h1>

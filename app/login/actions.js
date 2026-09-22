@@ -15,5 +15,5 @@ export async function login(prevState, formData) {
     return { error: "Email o contraseña incorrectos." };
   }
 
-  redirect("/");
+  redirect("/?bienvenida=1");
 }

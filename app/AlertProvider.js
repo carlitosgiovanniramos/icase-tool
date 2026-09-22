@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { PALETA } from "./estilos";
 
 const AlertContext = createContext(null);
@@ -16,17 +16,17 @@ export function useAlert() {
 export default function AlertProvider({ children }) {
   const [estado, setEstado] = useState(null); // { titulo, mensaje, tipo }
 
-  function mostrarError(mensaje, titulo = "Ocurrió un error") {
+  const mostrarError = useCallback((mensaje, titulo = "Ocurrió un error") => {
     setEstado({ titulo, mensaje, tipo: "error" });
-  }
+  }, []);
 
-  function mostrarInfo(mensaje, titulo = "Aviso") {
+  const mostrarInfo = useCallback((mensaje, titulo = "Aviso") => {
     setEstado({ titulo, mensaje, tipo: "info" });
-  }
+  }, []);
 
-  function cerrar() {
+  const cerrar = useCallback(() => {
     setEstado(null);
-  }
+  }, []);
 
   useEffect(() => {
     if (!estado) return;
@@ -35,7 +35,7 @@ export default function AlertProvider({ children }) {
     }
     window.addEventListener("keydown", alTecla);
     return () => window.removeEventListener("keydown", alTecla);
-  }, [estado]);
+  }, [estado, cerrar]);
 
   const colorAcento = estado?.tipo === "error" ? PALETA.carmesi : PALETA.navy;
 
@@ -45,11 +45,11 @@ export default function AlertProvider({ children }) {
 
       {estado && (
         <div
-          className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 animate-[fade-in_150ms_ease-out]"
           onClick={cerrar}
         >
           <div
-            className="bg-white border border-gray-300 max-w-md w-full"
+            className="bg-white border border-gray-300 max-w-md w-full animate-[scale-in_150ms_ease-out]"
             style={{ borderTop: `4px solid ${colorAcento}` }}
             onClick={(e) => e.stopPropagation()}
           >
