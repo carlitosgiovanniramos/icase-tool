@@ -6,7 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { pedirJson } from "@/lib/pedirJson";
 import { useAlert } from "../../AlertProvider";
-import { PALETA } from "../../estilos";
+import { PALETA, DEGRADADO_AUTH } from "../../estilos";
 
 function Campo({ etiqueta, opcional, children }) {
   return (
@@ -107,11 +107,10 @@ export default function CrearProyecto() {
     <div>
       <header
         className="mb-8 bg-white border border-gray-300 p-6"
-        style={{ borderLeft: `4px solid ${PALETA.negro}` }}
+        style={{ borderLeft: `4px solid ${PALETA.navy}` }}
       >
         <span
-          className="inline-block text-xs font-bold tracking-widest uppercase px-2 py-1 mb-3 text-white"
-          style={{ backgroundColor: PALETA.negro }}
+          className={`inline-block text-xs font-bold tracking-widest uppercase px-2 py-1 mb-3 text-white ${DEGRADADO_AUTH}`}
         >
           Nuevo proyecto
         </span>
@@ -174,8 +173,7 @@ export default function CrearProyecto() {
           <button
             type="submit"
             disabled={cargando}
-            style={{ backgroundColor: PALETA.navy }}
-            className="text-white px-5 py-2.5 text-sm font-semibold disabled:opacity-50 hover:brightness-125"
+            className={`text-white px-5 py-2.5 text-sm font-semibold disabled:opacity-50 hover:brightness-125 transition-all ${DEGRADADO_AUTH}`}
           >
             {cargando ? "Creando..." : "Crear proyecto"}
           </button>

@@ -11,7 +11,7 @@ import DiagramaBox from "./DiagramaBox";
 import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
 import { useAlert } from "../../../AlertProvider";
-import { PALETA } from "../../../estilos";
+import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
 
 function BotonAprobar({ aprobado, onClick, etiqueta }) {
   if (aprobado) {
@@ -347,11 +347,10 @@ export default function WorkspaceProyecto() {
       {vista === "resumen" && (
         <header
           className="mb-8 bg-white border border-gray-300 p-6"
-          style={{ borderLeft: `4px solid ${PALETA.negro}` }}
+          style={{ borderLeft: `4px solid ${PALETA.navy}` }}
         >
           <span
-            className="inline-block text-xs font-bold tracking-widest uppercase px-2 py-1 mb-3 text-white"
-            style={{ backgroundColor: PALETA.negro }}
+            className={`inline-block text-xs font-bold tracking-widest uppercase px-2 py-1 mb-3 text-white ${DEGRADADO_AUTH}`}
           >
             Proyecto
           </span>

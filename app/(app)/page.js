@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { PALETA, ROTACION_COLORES } from "../estilos";
+import { PALETA, ROTACION_COLORES, DEGRADADO_AUTH } from "../estilos";
 
 const POR_PAGINA = 6;
 
@@ -65,8 +65,7 @@ export default function Home() {
 
         <Link
           href="/crear"
-          style={{ backgroundColor: PALETA.navy }}
-          className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+          className={`text-white px-4 py-2 text-sm font-semibold hover:brightness-125 transition-all ${DEGRADADO_AUTH}`}
         >
           + Crear proyecto
         </Link>
