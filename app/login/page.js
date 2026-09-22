@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { Suspense, useActionState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { login } from "./actions";
@@ -9,9 +9,23 @@ import { PALETA, DEGRADADO_AUTH } from "../estilos";
 const claseInput =
   "w-full border border-gray-300 px-3 py-2.5 text-sm transition-colors focus:outline-none focus:border-gray-900";
 
+function AvisoRegistro() {
+  const recienRegistrado = useSearchParams().get("registrado") === "1";
+  if (!recienRegistrado) return null;
+
+  return (
+    <p
+      className="text-sm mb-4 px-3 py-2 border"
+      style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
+    >
+      Cuenta creada. Revisá tu email si hace falta confirmarla, y después
+      iniciá sesión.
+    </p>
+  );
+}
+
 export default function LoginPage() {
   const [state, action, pending] = useActionState(login, undefined);
-  const recienRegistrado = useSearchParams().get("registrado") === "1";
 
   return (
     <div
@@ -42,15 +56,9 @@ export default function LoginPage() {
             Entrá con tu cuenta de I-CASE Tool.
           </p>
 
-          {recienRegistrado && (
-            <p
-              className="text-sm mb-4 px-3 py-2 border"
-              style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
-            >
-              Cuenta creada. Revisá tu email si hace falta confirmarla, y
-              después iniciá sesión.
-            </p>
-          )}
+          <Suspense fallback={null}>
+            <AvisoRegistro />
+          </Suspense>
 
           <form action={action} className="flex flex-col gap-4">
             <div>
