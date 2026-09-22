@@ -9,17 +9,24 @@ import { PALETA, DEGRADADO_AUTH } from "../estilos";
 const claseInput =
   "w-full border border-gray-300 px-3 py-2.5 text-sm transition-colors focus:outline-none focus:border-gray-900";
 
-function AvisoRegistro() {
-  const recienRegistrado = useSearchParams().get("registrado") === "1";
-  if (!recienRegistrado) return null;
+function Avisos() {
+  const params = useSearchParams();
+
+  const mensaje =
+    params.get("registrado") === "1"
+      ? "Cuenta creada. Revisá tu email si hace falta confirmarla, y después iniciá sesión."
+      : params.get("sesion") === "cerrada"
+      ? "Cerraste sesión correctamente."
+      : null;
+
+  if (!mensaje) return null;
 
   return (
     <p
-      className="text-sm mb-4 px-3 py-2 border"
+      className="text-sm mb-4 px-3 py-2 border animate-[fade-in_200ms_ease-out]"
       style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
     >
-      Cuenta creada. Revisá tu email si hace falta confirmarla, y después
-      iniciá sesión.
+      {mensaje}
     </p>
   );
 }
@@ -57,7 +64,7 @@ export default function LoginPage() {
           </p>
 
           <Suspense fallback={null}>
-            <AvisoRegistro />
+            <Avisos />
           </Suspense>
 
           <form action={action} className="flex flex-col gap-4">
