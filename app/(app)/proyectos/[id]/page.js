@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/lib/supabase/client";
 import { pedirJson } from "@/lib/pedirJson";
 import mermaid from "mermaid";
 import MockupsGenerator from "./MockupsGenerator";
@@ -10,8 +10,8 @@ import AnalisisResultado from "./AnalisisResultado";
 import DiagramaBox from "./DiagramaBox";
 import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
-import { useAlert } from "../../AlertProvider";
-import { PALETA } from "../../estilos";
+import { useAlert } from "../../../AlertProvider";
+import { PALETA } from "../../../estilos";
 
 function BotonAprobar({ aprobado, onClick, etiqueta }) {
   if (aprobado) {
@@ -42,6 +42,7 @@ mermaid.initialize({
 });
 
 export default function WorkspaceProyecto() {
+  const [supabase] = useState(() => createClient());
   const { id } = useParams();
   const { mostrarError } = useAlert();
   const [proyecto, setProyecto] = useState(null);
@@ -87,7 +88,7 @@ export default function WorkspaceProyecto() {
       }
     }
     cargarProyecto();
-  }, [id]);
+  }, [id, supabase]);
 
   async function renderizarDiagrama(codigo) {
     try {

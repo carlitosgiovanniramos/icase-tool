@@ -9,6 +9,10 @@ export const PALETA = {
   marron: "#5c4425",
 };
 
+// Única excepción deliberada a "sin degradados": el fondo de login/registro.
+export const DEGRADADO_AUTH =
+  "bg-gradient-to-br from-[#111827] via-[#1e293b] to-[#3f5750]";
+
 export const ROTACION_COLORES = [
   PALETA.navy,
   PALETA.carmesi,

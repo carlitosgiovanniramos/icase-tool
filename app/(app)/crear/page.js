@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/lib/supabase/client";
 import { pedirJson } from "@/lib/pedirJson";
-import { useAlert } from "../AlertProvider";
-import { PALETA } from "../estilos";
+import { useAlert } from "../../AlertProvider";
+import { PALETA } from "../../estilos";
 
 function Campo({ etiqueta, opcional, children }) {
   return (
@@ -28,6 +28,7 @@ const claseInput =
   "w-full border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-gray-900";
 
 export default function CrearProyecto() {
+  const [supabase] = useState(() => createClient());
   const [nombre, setNombre] = useState("");
   const [prompt, setPrompt] = useState("");
   const [documento, setDocumento] = useState(null);
@@ -37,8 +38,8 @@ export default function CrearProyecto() {
   const router = useRouter();
   const { mostrarError } = useAlert();
 
-  async function subirArchivo(file, carpeta) {
-    const nombreArchivo = `${carpeta}/${Date.now()}-${file.name}`;
+  async function subirArchivo(file, carpeta, userId) {
+    const nombreArchivo = `${userId}/${carpeta}/${Date.now()}-${file.name}`;
 
     const { error } = await supabase.storage
       .from("archivos-proyecto")
@@ -58,12 +59,16 @@ export default function CrearProyecto() {
     setCargando(true);
 
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       let documentoUrl = null;
       let documentoTexto = null;
       let imagenUrl = null;
 
       if (documento) {
-        documentoUrl = await subirArchivo(documento, "documentos");
+        documentoUrl = await subirArchivo(documento, "documentos", user.id);
 
         const data = await pedirJson("/api/procesar-documento", {
           method: "POST",
@@ -75,7 +80,7 @@ export default function CrearProyecto() {
       }
 
       if (imagen) {
-        imagenUrl = await subirArchivo(imagen, "imagenes");
+        imagenUrl = await subirArchivo(imagen, "imagenes", user.id);
       }
 
       const { error } = await supabase.from("proyectos").insert([

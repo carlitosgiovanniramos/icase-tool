@@ -8,7 +8,7 @@ import {
   CATEGORIA_COLOR_DEFECTO,
   PRIORIDAD_COLORES,
   PRIORIDAD_COLOR_DEFECTO,
-} from "../../estilos";
+} from "../../../estilos";
 
 function iniciales(nombre) {
   return nombre

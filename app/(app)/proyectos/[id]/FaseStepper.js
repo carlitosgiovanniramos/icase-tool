@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PALETA } from "../../estilos";
+import { PALETA } from "../../../estilos";
 
 export default function FaseStepper({ fasesAprobadas, vista, onNavegar }) {
   const [oculto, setOculto] = useState(false);
