@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/lib/supabase/client";
 import { pedirJson } from "@/lib/pedirJson";
-import { useAlert } from "../../AlertProvider";
-import { useBloqueoModal } from "../../useBloqueoModal";
-import { PALETA } from "../../estilos";
+import { useAlert } from "../../../AlertProvider";
+import { useBloqueoModal } from "../../../useBloqueoModal";
+import { PALETA } from "../../../estilos";
 
 const SCRIPT_INTERCEPTAR_NAVEGACION = `
 <script>
@@ -52,6 +52,7 @@ export default function MockupsGenerator({
   mockupsIniciales,
   onMockupsChange,
 }) {
+  const [supabase] = useState(() => createClient());
   const [cantidad, setCantidad] = useState(4);
   const [mockups, setMockups] = useState(null);
   const [pestañaActiva, setPestañaActiva] = useState(0);

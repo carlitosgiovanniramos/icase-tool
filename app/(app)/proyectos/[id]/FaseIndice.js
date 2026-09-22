@@ -1,6 +1,6 @@
 "use client";
 
-import { PALETA } from "../../estilos";
+import { PALETA } from "../../../estilos";
 
 export default function FaseIndice({ fasesAprobadas, onNavegar }) {
   const analisisAprobado = !!fasesAprobadas?.analisis;
