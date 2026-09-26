@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { pedirJson } from "@/lib/pedirJson";
-import { useAlert } from "../../../AlertProvider";
 import { useBloqueoModal } from "../../../useBloqueoModal";
 import { PALETA } from "../../../estilos";
 
@@ -46,29 +43,24 @@ function pantallaQueCoincide(mockups, textoLink) {
   });
 }
 
+// La generación y el guardado viven en la página (para que la cascada pueda regenerar el
+// prototipo); este componente solo muestra las pantallas y avisa con onGenerar / onEliminar.
 export default function MockupsGenerator({
-  proyectoId,
-  analisis,
-  mockupsIniciales,
-  onMockupsChange,
+  mockups,
+  cargando, // "wireframe" | "mockup" | null
+  deshabilitado,
+  bloqueado, // prototipo aprobado: solo se pueden ver las pantallas
+  onGenerar,
+  onEliminar,
 }) {
-  const [supabase] = useState(() => createClient());
-  const [cantidad, setCantidad] = useState(4);
-  const [mockups, setMockups] = useState(null);
-  const [pestañaActiva, setPestañaActiva] = useState(0);
-  const [cargando, setCargando] = useState(null); // "wireframe" | "mockup" | null
+  const [cantidad, setCantidad] = useState(mockups?.length || 4);
+  const [pestañaElegida, setPestañaActiva] = useState(0);
   const [expandido, setExpandido] = useState(false);
-  const { mostrarError } = useAlert();
 
   useBloqueoModal(expandido, () => setExpandido(false));
 
-  useEffect(() => {
-    if (mockupsIniciales) setMockups(mockupsIniciales);
-  }, [mockupsIniciales]);
-
-  useEffect(() => {
-    onMockupsChange?.(mockups);
-  }, [mockups]);
+  // Al regenerarse (a mano o en cascada) puede haber menos pantallas que la pestaña elegida.
+  const pestañaActiva = Math.min(pestañaElegida, Math.max((mockups?.length ?? 1) - 1, 0));
 
   useEffect(() => {
     if (!mockups) return;
@@ -83,68 +75,31 @@ export default function MockupsGenerator({
     return () => window.removeEventListener("message", alRecibirMensaje);
   }, [mockups]);
 
-  async function generar(modo) {
-    setCargando(modo);
-    try {
-      const data = await pedirJson("/api/generar-mockups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          analisis,
-          cantidad: Number(cantidad) || 4,
-          modo,
-        }),
-      });
-
-      if (data.error) {
-        mostrarError(data.error, "Error al generar el prototipo");
-        return;
-      }
-
-      setMockups(data.pantallas);
-      setPestañaActiva(0);
-      await supabase
-        .from("proyectos")
-        .update({ mockups: data.pantallas })
-        .eq("id", proyectoId);
-    } catch (err) {
-      mostrarError(err.message, "Error de conexión");
-    } finally {
-      setCargando(null);
-    }
-  }
-
-  async function eliminarMockups() {
-    if (!confirm("¿Eliminar los mockups generados?")) return;
-
-    setMockups(null);
-    await supabase
-      .from("proyectos")
-      .update({ mockups: null })
-      .eq("id", proyectoId);
-  }
+  const generar = (modo) => onGenerar(modo, Number(cantidad) || 4);
 
   return (
     <div className="mt-6">
-      <div className="flex items-center gap-2 flex-wrap">
-        <label className="text-sm text-gray-500">
-          Cantidad de pantallas principales
-        </label>
-        <input
-          type="number"
-          min={1}
-          max={10}
-          value={cantidad}
-          onChange={(e) => setCantidad(e.target.value)}
-          className="w-20 border border-gray-300 px-2 py-1 text-sm"
-        />
-      </div>
+      {!bloqueado && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <label className="text-sm text-gray-500">
+            Cantidad de pantallas principales
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={cantidad}
+            onChange={(e) => setCantidad(e.target.value)}
+            className="w-20 border border-gray-300 px-2 py-1 text-sm"
+          />
+        </div>
+      )}
 
-      <div className="flex items-center justify-between gap-2 flex-wrap mt-3">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className={`flex items-center gap-2 flex-wrap ${bloqueado ? "hidden" : ""}`}>
           <button
             onClick={() => generar("wireframe")}
-            disabled={!!cargando}
+            disabled={deshabilitado}
             style={{ backgroundColor: PALETA.oliva }}
             className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
           >
@@ -153,7 +108,7 @@ export default function MockupsGenerator({
 
           <button
             onClick={() => generar("mockup")}
-            disabled={!!cargando}
+            disabled={deshabilitado}
             style={{ backgroundColor: PALETA.carmesi }}
             className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
           >
@@ -162,7 +117,8 @@ export default function MockupsGenerator({
 
           {mockups && (
             <button
-              onClick={eliminarMockups}
+              onClick={onEliminar}
+              disabled={deshabilitado}
               title="Eliminar mockups"
               style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
               className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm"
