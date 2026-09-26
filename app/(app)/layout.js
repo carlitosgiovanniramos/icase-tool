@@ -1,4 +1,5 @@
 import SidebarNav from "../SidebarNav";
+import InterruptorClaude from "../InterruptorClaude";
 import AlertProvider from "../AlertProvider";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "./actions";
@@ -25,7 +26,11 @@ export default async function AppLayout({ children }) {
 
           <SidebarNav />
 
-          <div className="mt-auto pt-4 border-t border-white/10">
+          <div className="mt-auto">
+            <InterruptorClaude />
+          </div>
+
+          <div className="pt-4 border-t border-white/10">
             <div className="flex items-center gap-2 mb-3">
               <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0">
                 <svg

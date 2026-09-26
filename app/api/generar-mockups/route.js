@@ -1,20 +1,50 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { generarContenido } from "@/lib/gemini";
+import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export const maxDuration = 300;
+
+// El HTML no va dentro de JSON: los modelos se equivocan al escapar tanto HTML/CSS y la
+// respuesta queda inválida. Cada pantalla va precedida de un marcador y se separan aquí.
+const MARCADOR_PANTALLA = "=== PANTALLA:";
+const MARCADOR_FIN = "=== FIN ===";
+
+function extraerPantallas(texto) {
+  const cuerpo = texto.split(MARCADOR_FIN)[0];
+  return cuerpo
+    .split(MARCADOR_PANTALLA)
+    .slice(1)
+    .map((bloque) => {
+      const salto = bloque.indexOf("\n");
+      const nombre = bloque.slice(0, salto).replace(/=+\s*$/, "").trim();
+      const html = bloque
+        .slice(salto + 1)
+        .trim()
+        .replace(/^```(?:html)?\s*/i, "")
+        .replace(/\s*```$/, "")
+        .trim();
+      return { nombre, html };
+    })
+    // Si la respuesta se cortó por el límite de tokens, la última pantalla queda incompleta.
+    .filter((p) => p.nombre && /<\/(html|body)>\s*$/i.test(p.html));
+}
 
 export async function POST(request) {
   try {
-    const { analisis, cantidad, modo } = await request.json();
+    const { analisis, diagramaEr, cantidad, modo, indicaciones, usarClaude } = await request.json();
 
     const cantidadPantallas = Math.min(Math.max(Number(cantidad) || 4, 1), 10);
     const esWireframe = modo === "wireframe";
 
-    const funcionales = analisis.requerimientos_funcionales
-      .map((r) => `${r.codigo}: ${r.descripcion}`)
-      .join("\n");
+    const funcionales = formatearRequerimientos(analisis.requerimientos_funcionales);
+    const actores = formatearActores(analisis);
 
-    const actores = analisis.actores.map((a) => a.nombre).join(", ");
+    const contextoEr = diagramaEr
+      ? `
+Modelo de datos aprobado (diagrama entidad-relación en Mermaid). Los formularios, tablas y detalles de las pantallas deben usar estas entidades y sus atributos:
+${diagramaEr}
+`
+      : "";
 
     const estiloInstrucciones = esWireframe
       ? `Genera un WIREFRAME de baja fidelidad para cada pantalla:
@@ -52,32 +82,38 @@ Prohibido explícitamente: look de plantilla Bootstrap por defecto, formularios 
     const instrucciones = `
 Eres un diseñador UI/UX experto. Con base en estos actores y requerimientos funcionales, diseña exactamente ${cantidadPantallas} pantallas principales de un sistema web.
 
-Actores: ${actores}
+Actores:
+${actores}
 
-Requerimientos funcionales:
+Requerimientos funcionales (con los actores que usan cada función; prioriza las pantallas de los requerimientos de prioridad alta):
 ${funcionales}
-
+${contextoEr}
 ${estiloInstrucciones}
+${formatearIndicaciones(indicaciones)}
 
 Para cada pantalla, genera código HTML autocontenido (con CSS embebido en una etiqueta <style> dentro del mismo documento, sin dependencias externas).
 
-Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adicional:
-{
-  "pantallas": [
-    { "nombre": "Nombre de la pantalla", "html": "<html>documento completo aquí</html>" }
-  ]
-}
+Formato de respuesta (obligatorio): NO uses JSON ni bloques de código markdown. Escribe cada pantalla precedida por una línea marcador con su nombre, seguida del documento HTML completo tal cual, y termina con ${MARCADOR_FIN}:
+
+${MARCADOR_PANTALLA} Nombre de la primera pantalla ===
+<!DOCTYPE html>
+<html>...documento completo...</html>
+${MARCADOR_PANTALLA} Nombre de la segunda pantalla ===
+<!DOCTYPE html>
+<html>...documento completo...</html>
+${MARCADOR_FIN}
+
+No escribas ningún otro texto antes, entre ni después de las pantallas.
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: instrucciones,
-      config: { responseMimeType: "application/json" },
-    });
+    const response = await generarContenido({ usarClaude, contents: instrucciones });
 
-    const resultado = JSON.parse(response.text);
+    const pantallas = extraerPantallas(response.text);
+    if (!pantallas.length) {
+      throw new Error("La IA no devolvió las pantallas en el formato esperado. Intenta generarlas de nuevo.");
+    }
 
-    return NextResponse.json(resultado);
+    return NextResponse.json({ pantallas, modelo_ia: response.modelVersion, costo_ia: response.costoUsd });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

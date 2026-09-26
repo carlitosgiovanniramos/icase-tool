@@ -1,22 +1,29 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { generarContenido } from "@/lib/gemini";
+import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export const maxDuration = 300;
 
 export async function POST(request) {
   try {
-    const { analisis } = await request.json();
+    const { analisis, pantallas, indicaciones, usarClaude } = await request.json();
 
-    const funcionales = analisis.requerimientos_funcionales
-      .map((r) => r.descripcion)
-      .join("\n");
+    const contextoPantallas = pantallas?.length
+      ? `
+Pantallas ya diseñadas en el prototipo aprobado. El árbol debe incluirlas todas, con estos mismos nombres:
+${pantallas.map((p) => `- ${p}`).join("\n")}
+`
+      : "";
 
     const instrucciones = `
-Eres un arquitecto de información experto. Con base en estos requerimientos funcionales, diseña el árbol de navegación de la aplicación web (qué pantallas existen y cómo se organizan jerárquicamente).
+Eres un arquitecto de información experto. Con base en este análisis aprobado, diseña el árbol de navegación de la aplicación web (qué pantallas existen y cómo se organizan jerárquicamente).
 
-Requerimientos funcionales:
-${funcionales}
+Actores:
+${formatearActores(analisis)}
 
+Requerimientos funcionales (con los actores que usan cada función; agrupa las pantallas de forma que cada actor encuentre fácilmente lo suyo):
+${formatearRequerimientos(analisis.requerimientos_funcionales)}
+${contextoPantallas}${formatearIndicaciones(indicaciones)}
 Genera el árbol usando la sintaxis "flowchart TD" de Mermaid (igual estilo de cajas y líneas que un diagrama técnico, NO un mindmap):
 - Un único nodo raíz con forma de estadio: RAIZ(["Nombre del sistema"])
 - Los hijos directos de la raíz son las secciones principales de navegación, como nodos rectangulares: SEC1[Nombre de la sección]
@@ -60,14 +67,14 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adiciona
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+    const response = await generarContenido({
+      usarClaude,
       contents: instrucciones,
       config: { responseMimeType: "application/json" },
     });
 
     const resultado = JSON.parse(response.text);
-    return NextResponse.json(resultado);
+    return NextResponse.json({ ...resultado, modelo_ia: response.modelVersion, costo_ia: response.costoUsd });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

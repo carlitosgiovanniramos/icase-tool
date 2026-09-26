@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { generarContenido } from "@/lib/gemini";
+import { formatearContexto } from "@/lib/contexto";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export const maxDuration = 300;
 
 export async function POST(request) {
   try {
-    const { prompt, documentoTexto, imagenUrl } = await request.json();
+    const { prompt, documentoTexto, imagenUrl, contexto: contextoElicitacion, usarClaude } = await request.json();
 
     let contexto = `Idea del usuario: ${prompt}`;
+
+    const elicitacion = formatearContexto(contextoElicitacion);
+    if (elicitacion) {
+      contexto += `\n\nInformación de elicitación proporcionada por el usuario. Tiene prioridad sobre cualquier suposición tuya; respeta especialmente el alcance, los usuarios y las reglas de negocio:\n${elicitacion}`;
+    }
 
     if (documentoTexto) {
       contexto += `\n\nContexto adicional extraído de un documento adjunto:\n${documentoTexto}`;
@@ -70,7 +76,7 @@ Reglas:
 - "actores" es un arreglo con nombres de actores que ya definiste en la lista "actores"; usa [] si no aplica un actor humano directo.
 - "precondiciones" y "postcondiciones" deben ser concretas y verificables (qué debe cumplirse antes y qué queda garantizado después). Si para un requerimiento no funcional realmente no aplica alguna, usa "No aplica".
 - El conjunto completo de requerimientos, visto en su totalidad, debe ser consistente (sin contradicciones entre sí) y completo (cubre todo el alcance descrito, sin dejar huecos).
-- Genera al menos 3 actores. La cantidad de requerimientos funcionales y no funcionales la defines tú según el alcance real del sistema descrito.
+- La cantidad de actores, requerimientos funcionales y no funcionales la defines tú según el alcance real del sistema descrito; no inventes actores que el contexto no justifique.
 `;
 
     const parts = [{ text: instrucciones }];
@@ -84,15 +90,15 @@ Reglas:
       parts.push({ inlineData: { mimeType, data: base64Img } });
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+    const response = await generarContenido({
+      usarClaude,
       contents: parts,
       config: { responseMimeType: "application/json" },
     });
 
     const resultado = JSON.parse(response.text);
 
-    return NextResponse.json(resultado);
+    return NextResponse.json({ ...resultado, modelo_ia: response.modelVersion, costo_ia: response.costoUsd });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

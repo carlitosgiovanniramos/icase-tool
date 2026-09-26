@@ -39,13 +39,26 @@ export default function CrearProyecto() {
   const { mostrarError } = useAlert();
 
   async function subirArchivo(file, carpeta, userId) {
-    const nombreArchivo = `${userId}/${carpeta}/${Date.now()}-${file.name}`;
+    // Sin espacios ni símbolos en la ruta: evitan problemas en la URL pública del archivo.
+    const nombreSeguro = file.name
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^\w.-]+/g, "-");
+    const nombreArchivo = `${userId}/${carpeta}/${Date.now()}-${nombreSeguro}`;
 
     const { error } = await supabase.storage
       .from("archivos-proyecto")
       .upload(nombreArchivo, file);
 
-    if (error) throw error;
+    if (error) {
+      const tipo = carpeta === "imagenes" ? "la imagen" : "el documento";
+      throw new Error(
+        /row-level security/i.test(error.message)
+          ? `No se pudo subir ${tipo}: Supabase Storage no tiene permiso para guardar archivos. ` +
+            `Ejecuta supabase/rls_storage.sql en el SQL Editor de Supabase.`
+          : `No se pudo subir ${tipo}: ${error.message}`
+      );
+    }
 
     const { data } = supabase.storage
       .from("archivos-proyecto")
@@ -93,7 +106,14 @@ export default function CrearProyecto() {
         },
       ]);
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(
+          /row-level security/i.test(error.message)
+            ? "Los archivos se subieron, pero no se pudo guardar el proyecto: la tabla 'proyectos' " +
+              "rechazó el registro por sus políticas de seguridad. Revisa supabase/rls_proyectos.sql."
+            : `No se pudo guardar el proyecto: ${error.message}`
+        );
+      }
 
       router.push("/");
     } catch (err) {

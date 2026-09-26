@@ -11,7 +11,7 @@ Proyecto académico — Primer parcial: fases de **Análisis y Diseño**. La imp
 | Frontend + Backend | Next.js (JavaScript, App Router) |
 | Estilos | Tailwind CSS |
 | Base de datos | Supabase (PostgreSQL) |
-| Motor de IA | API de Google Gemini |
+| Motor de IA | API de Google Gemini (respaldo opcional: Groq) |
 | Renderizado de diagramas | mermaid.js *(pendiente de integrar)* |
 
 ## Requisitos previos
@@ -36,6 +36,18 @@ Crear un archivo `.env.local` en la raíz del proyecto (no se sube al repositori
 NEXT_PUBLIC_SUPABASE_URL=tu_project_url_de_supabase
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=tu_publishable_key_de_supabase
 GEMINI_API_KEY=tu_api_key_de_gemini
+
+# Opcional: respaldo cuando todos los modelos de Gemini están saturados (clave gratuita en console.groq.com)
+GROQ_API_KEY=tu_api_key_de_groq
+
+# Opcional: Claude (de pago) para pruebas reales. Solo se usa con el interruptor
+# "Usar Claude" de la barra lateral activado. Modelo por defecto: claude-sonnet-5
+ANTHROPIC_API_KEY=tu_api_key_de_anthropic
+# CLAUDE_MODELO=claude-sonnet-5
+
+# Opcional: orden de modelos a probar (separados por comas)
+# GEMINI_MODELOS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview
+# GROQ_MODELOS=openai/gpt-oss-120b,openai/gpt-oss-20b
 ```
 
 Cada integrante debe generar sus propias credenciales de desarrollo, o solicitar las del proyecto compartido al equipo.
