@@ -42,13 +42,136 @@ function BotonAccion({ onClick, children, invertido }) {
   );
 }
 
+function Pestana({ activa, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={activa ? { backgroundColor: PALETA.navy, borderColor: PALETA.navy } : undefined}
+      className={`border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${
+        activa ? "text-white" : "border-gray-300 text-gray-600 hover:bg-gray-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Vista de código Mermaid con vista previa en vivo. Si el paso no es editable (aprobado o con
+// una generación en curso), el código se puede ver pero no modificar.
+function EditorCodigo({ codigo, editable, renderizar, onGuardar }) {
+  // El borrador guarda contra qué código se empezó a editar: si el diagrama se regenera
+  // mientras tanto, el borrador viejo se descarta solo.
+  const [borrador, setBorrador] = useState(null); // { base, texto }
+  const [vista, setVista] = useState({ svg: null, error: null });
+  const [guardando, setGuardando] = useState(false);
+
+  const texto = borrador?.base === codigo ? borrador.texto : codigo;
+  const modificado = texto !== codigo;
+
+  // Vista previa: se vuelve a dibujar un momento después de dejar de escribir.
+  useEffect(() => {
+    let cancelado = false;
+    const temporizador = setTimeout(async () => {
+      try {
+        const svg = await renderizar(texto);
+        if (!cancelado) setVista({ svg, error: null });
+      } catch (err) {
+        if (!cancelado) setVista((v) => ({ svg: v.svg, error: err.message || String(err) }));
+      }
+    }, 500);
+    return () => {
+      cancelado = true;
+      clearTimeout(temporizador);
+    };
+  }, [texto, renderizar]);
+
+  async function guardar() {
+    setGuardando(true);
+    try {
+      // onGuardar devuelve false si no se pudo guardar: el borrador se conserva.
+      if ((await onGuardar(texto)) !== false) setBorrador(null);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <textarea
+          value={texto}
+          onChange={(e) => setBorrador({ base: codigo, texto: e.target.value })}
+          readOnly={!editable}
+          spellCheck={false}
+          className={`w-full h-[480px] border border-gray-300 p-3 font-mono text-xs leading-relaxed resize-y focus:outline-none focus:border-gray-900 ${
+            editable ? "bg-white" : "bg-gray-50 text-gray-600"
+          }`}
+        />
+        <div className="border border-gray-300 h-[480px] overflow-auto bg-white flex flex-col">
+          {vista.error && (
+            <p
+              className="text-xs font-mono px-3 py-2 border-b border-gray-200 whitespace-pre-wrap"
+              style={{ color: PALETA.carmesi }}
+            >
+              {vista.error}
+            </p>
+          )}
+          {vista.svg && (
+            <div
+              className={`flex-1 p-4 flex justify-center [&_svg]:max-w-none ${
+                vista.error ? "opacity-40" : ""
+              }`}
+              dangerouslySetInnerHTML={{ __html: vista.svg }}
+            />
+          )}
+        </div>
+      </div>
+
+      {editable ? (
+        <div className="flex items-center gap-2 mt-3">
+          <button
+            onClick={guardar}
+            disabled={!modificado || !!vista.error || guardando}
+            style={{ backgroundColor: PALETA.navy }}
+            className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
+          >
+            {guardando ? "Guardando..." : "Guardar cambios"}
+          </button>
+          {modificado && (
+            <button
+              onClick={() => setBorrador(null)}
+              disabled={guardando}
+              className="border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
+            >
+              Descartar
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 mt-2">Solo lectura. Pulsa Editar para modificarlo.</p>
+      )}
+    </div>
+  );
+}
+
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
 const ZOOM_PASO = 0.25;
 
 const MARGEN_CONTENEDOR = 48; // padding p-6 (24px) en cada lado
 
-export default function DiagramaBox({ svg, titulo, nombreArchivo }) {
+// codigo / renderizar / onGuardarCodigo / editable son opcionales: con ellos aparece la
+// pestaña "Código" para ver y modificar el Mermaid del diagrama.
+export default function DiagramaBox({
+  svg,
+  titulo,
+  nombreArchivo,
+  codigo,
+  renderizar,
+  onGuardarCodigo,
+  editable,
+}) {
+  const [modo, setModo] = useState("diagrama"); // "diagrama" | "codigo"
   const [expandido, setExpandido] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [dimAjuste, setDimAjuste] = useState(null); // {width, height} en px, ya ajustado al contenedor
@@ -95,18 +218,41 @@ export default function DiagramaBox({ svg, titulo, nombreArchivo }) {
   return (
     <>
       <div className="mt-6">
-        <div className="flex items-center justify-end gap-2 mb-2">
-          <BotonAccion onClick={() => setExpandido(true)}>Expandir</BotonAccion>
-          <BotonAccion onClick={() => descargarComoSvg(svg, nombreArchivo)}>
-            Descargar SVG
-          </BotonAccion>
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            {codigo && renderizar && (
+              <>
+                <Pestana activa={modo === "diagrama"} onClick={() => setModo("diagrama")}>
+                  Diagrama
+                </Pestana>
+                <Pestana activa={modo === "codigo"} onClick={() => setModo("codigo")}>
+                  Código
+                </Pestana>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <BotonAccion onClick={() => setExpandido(true)}>Expandir</BotonAccion>
+            <BotonAccion onClick={() => descargarComoSvg(svg, nombreArchivo)}>
+              Descargar SVG
+            </BotonAccion>
+          </div>
         </div>
 
-        <div
-          onClick={() => setExpandido(true)}
-          className="border border-gray-300 p-4 overflow-auto flex justify-center [&_svg]:max-w-none bg-white cursor-zoom-in"
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+        {modo === "codigo" && codigo && renderizar ? (
+          <EditorCodigo
+            codigo={codigo}
+            editable={editable && !!onGuardarCodigo}
+            renderizar={renderizar}
+            onGuardar={onGuardarCodigo}
+          />
+        ) : (
+          <div
+            onClick={() => setExpandido(true)}
+            className="border border-gray-300 p-4 overflow-auto flex justify-center [&_svg]:max-w-none bg-white cursor-zoom-in"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        )}
       </div>
 
       {expandido && (

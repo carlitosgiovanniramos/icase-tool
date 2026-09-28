@@ -19,7 +19,11 @@ export default function FaseStepper({ fasesAprobadas, vista, onNavegar }) {
   }, []);
 
   const analisisAprobado = !!fasesAprobadas?.analisis;
-  const disenoAprobado = !!fasesAprobadas?.diseno_arquitectura;
+  // Proyectos anteriores a la aprobación general del Diseño: contaba la arquitectura.
+  const disenoAprobado =
+    fasesAprobadas?.diseno === undefined
+      ? !!fasesAprobadas?.diseno_arquitectura
+      : !!fasesAprobadas.diseno;
 
   const pasos = [
     {

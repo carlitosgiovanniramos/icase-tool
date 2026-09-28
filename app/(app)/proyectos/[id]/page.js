@@ -4,9 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { pedirIA } from "@/lib/preferenciaClaude";
+import { subirArchivoProyecto } from "@/lib/archivos";
 import { limpiarMermaid } from "@/lib/mermaid";
 import mermaid from "mermaid";
 import MockupsGenerator from "./MockupsGenerator";
+import ConfigPrototipo from "./ConfigPrototipo";
 import AnalisisResultado from "./AnalisisResultado";
 import BadgeModelo from "./BadgeModelo";
 import ContextoAnalisis from "./ContextoAnalisis";
@@ -36,6 +38,19 @@ function BotonAprobar({ aprobado, onClick, etiqueta, disabled }) {
       className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
     >
       Aprobar {etiqueta}
+    </button>
+  );
+}
+
+function BotonRechazar({ etiqueta, onClick, disabled }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
+      className="border bg-transparent hover:bg-red-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+    >
+      Rechazar {etiqueta}
     </button>
   );
 }
@@ -286,12 +301,59 @@ mermaid.initialize({
 
 async function renderizar(codigo) {
   await document.fonts.ready;
+  const limpio = limpiarMermaid(codigo);
+  // parse valida sin tocar el DOM; render con código inválido deja restos en la página.
+  await mermaid.parse(limpio);
   const idUnico = "diagrama-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-  const { svg } = await mermaid.render(idUnico, limpiarMermaid(codigo));
+  const { svg } = await mermaid.render(idUnico, limpio);
   return svg;
 }
 
 const SIN_ARTEFACTOS = Object.fromEntries(PASOS.map((p) => [p.clave, null]));
+
+// Tipos del diagrama del sistema (las instrucciones de cada uno están en
+// app/api/generar-diagrama-sistema/route.js).
+const TIPOS_DIAGRAMA_SISTEMA = [
+  {
+    clave: "contexto",
+    nombre: "Contexto",
+    descripcion: "El sistema como una caja, rodeado de sus actores y sistemas externos, y qué intercambian.",
+  },
+  {
+    clave: "despliegue",
+    nombre: "Despliegue",
+    descripcion: "Dónde se ejecuta cada parte (celulares, navegador, nube, base de datos) y cómo se comunican.",
+  },
+  {
+    clave: "flujo",
+    nombre: "Flujo",
+    descripcion: "El proceso principal del sistema de punta a punta, con sus decisiones.",
+  },
+  {
+    clave: "componentes",
+    nombre: "Componentes",
+    descripcion: "Los módulos internos del sistema y las dependencias entre ellos.",
+  },
+];
+
+// Plataformas por defecto del prototipo: las del contexto del análisis que aplican (Web/Móvil).
+function plataformasDePrototipo(contexto) {
+  const aplicables = (contexto?.plataformas || []).filter((p) => p === "Web" || p === "Móvil");
+  return aplicables.length ? aplicables : ["Web"];
+}
+
+// Pantallas del prototipo a generar: las marcadas en la configuración o, en proyectos sin
+// lista de pantallas (anteriores a esta opción), las que ya están generadas.
+function planPrototipo(config, mockups) {
+  if (config?.pantallas?.length) return config.pantallas.filter((p) => p.seleccionada !== false);
+  return (mockups || []).map((p) => ({
+    nombre: p.nombre,
+    descripcion: "",
+    rfs: p.rfs || [],
+    actores: [],
+    plataforma: p.plataforma || "Web",
+  }));
+}
 
 export default function WorkspaceProyecto() {
   const [supabase] = useState(() => createClient());
@@ -420,10 +482,21 @@ export default function WorkspaceProyecto() {
   // ---------- Generación ----------
 
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
+  // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   async function pedirPaso(clave, opciones = {}) {
+    if (clave === "prototipo") {
+      const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
+      if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
+      const { generadas, fallidas } = await generarPantallas(plan, opciones.onProgreso);
+      if (!generadas.length) throw new Error(fallidas.join("\n"));
+      return { valor: generadas, modelo: generadas.at(-1).modelo, fallidas };
+    }
+
     const a = artefactosRef.current;
     const proyectoActual = proyectoRef.current;
     const indicaciones = contextoRef.current.indicaciones?.[clave];
+    const plataformasDelSistema =
+      contextoRef.current.prototipo?.plataformas || plataformasDePrototipo(contextoRef.current);
     const cuerpos = {
       analisis: {
         prompt: proyectoActual.prompt,
@@ -433,17 +506,25 @@ export default function WorkspaceProyecto() {
       },
       casos_uso: { analisis: a.analisis },
       er: { analisis: a.analisis, casosUso: a.casos_uso },
-      prototipo: {
-        analisis: a.analisis,
-        diagramaEr: a.er,
-        cantidad: opciones.cantidad || a.prototipo?.length || 4,
-        modo: opciones.modo || fasesRef.current.modo_prototipo || "mockup",
-      },
       arbol: {
         analisis: a.analisis,
         pantallas: (a.prototipo || []).map((p) => p.nombre),
       },
-      arquitectura: { analisis: a.analisis, diagramaEr: a.er, arbolNavegacion: a.arbol },
+      arquitectura: {
+        analisis: a.analisis,
+        diagramaEr: a.er,
+        arbolNavegacion: a.arbol,
+        plataformas: plataformasDelSistema,
+        tecnologias: contextoRef.current.tecnologias,
+        calidad: contextoRef.current.calidad,
+      },
+      sistema: {
+        analisis: a.analisis,
+        tipo: contextoRef.current.tipoSistema || "contexto",
+        plataformas: plataformasDelSistema,
+        tecnologias: contextoRef.current.tecnologias,
+        diagramaArquitectura: a.arquitectura,
+      },
     };
 
     const data = await pedirIA(PASO[clave].ruta, { ...cuerpos[clave], indicaciones });
@@ -451,9 +532,188 @@ export default function WorkspaceProyecto() {
 
     const { modelo_ia: modelo, ...resto } = data;
     if (clave === "analisis") return { valor: resto, modelo };
-    if (clave === "prototipo") return { valor: resto.pantallas, modelo };
     // Se guarda ya limpio, para que los pasos siguientes reciban código Mermaid válido.
     return { valor: limpiarMermaid(resto.diagrama_mermaid), modelo };
+  }
+
+  // Genera las pantallas indicadas, una petición por pantalla, con el mismo estilo para todas.
+  // Las que fallan no detienen a las demás: se devuelven en "fallidas" para reintentarlas.
+  async function generarPantallas(lista, onProgreso) {
+    const a = artefactosRef.current;
+    const config = contextoRef.current.prototipo || {};
+    const estilo = {
+      modo: config.modo || "mockup",
+      color: config.color,
+      tema: config.tema || "claro",
+      logoUrl: config.logoUrl,
+      referencias: config.referencias || [],
+    };
+    const todas = planPrototipo(config, a.prototipo);
+
+    const generadas = [];
+    const fallidas = [];
+    for (const [i, pantalla] of lista.entries()) {
+      onProgreso?.(i, lista.length, pantalla.nombre);
+      try {
+        const data = await pedirIA("/api/generar-mockups", {
+          analisis: a.analisis,
+          diagramaEr: a.er,
+          pantalla,
+          pantallas: todas,
+          estilo,
+          indicaciones: contextoRef.current.indicaciones?.prototipo,
+        });
+        if (data.error) throw new Error(data.error);
+        generadas.push({
+          nombre: pantalla.nombre,
+          html: data.html,
+          plataforma: pantalla.plataforma || "Web",
+          rfs: pantalla.rfs || [],
+          modelo: data.modelo_ia,
+        });
+      } catch (err) {
+        fallidas.push(`${pantalla.nombre}: ${err.message}`);
+      }
+    }
+    return { generadas, fallidas };
+  }
+
+  const progresoPantallas = (clave, extra) => (i, total, nombre) =>
+    setCargando({ paso: clave, ...extra, detalle: `Generando ${i + 1}/${total}: ${nombre}...` });
+
+  async function proponerPantallas() {
+    setCargando({ paso: "proponer" });
+    try {
+      const a = artefactosRef.current;
+      const inicial = contextoRef.current.prototipo || {};
+      const data = await pedirIA("/api/proponer-pantallas", {
+        analisis: a.analisis,
+        diagramaEr: a.er,
+        plataformas: inicial.plataformas || plataformasDePrototipo(contextoRef.current),
+        indicaciones: contextoRef.current.indicaciones?.prototipo,
+      });
+      if (data.error) throw new Error(data.error);
+
+      // Se relee la configuración: puede haber cambiado mientras la IA respondía.
+      const config = contextoRef.current.prototipo || {};
+      const manuales = (config.pantallas || []).filter((p) => p.origen === "manual");
+      const propuestas = (data.pantallas || []).map((p) => ({
+        ...p,
+        id: crypto.randomUUID(),
+        seleccionada: true,
+        origen: "ia",
+      }));
+      cambiarConfigPrototipo({
+        ...config,
+        pantallas: [...propuestas, ...manuales],
+        color: config.color || data.color_primario,
+        modeloPantallas: data.modelo_ia,
+      });
+    } catch (err) {
+      mostrarError(err.message, "No se pudieron proponer las pantallas");
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // Genera solo las pantallas marcadas que todavía no existen y las agrega al prototipo.
+  async function agregarPantallasFaltantes() {
+    const actuales = artefactosRef.current.prototipo || [];
+    const existentes = new Set(actuales.map((p) => p.nombre));
+    const faltan = planPrototipo(contextoRef.current.prototipo, actuales).filter(
+      (p) => !existentes.has(p.nombre)
+    );
+    if (!faltan.length) return;
+
+    setCargando({ paso: "prototipo" });
+    try {
+      const { generadas, fallidas } = await generarPantallas(faltan, progresoPantallas("prototipo"));
+      if (generadas.length) {
+        await guardarArtefacto("prototipo", [...actuales, ...generadas]);
+        await marcarCambio("prototipo", {}, generadas.at(-1).modelo);
+      }
+      if (fallidas.length) {
+        mostrarError(fallidas.join("\n"), "No se pudieron generar algunas pantallas");
+      }
+    } catch (err) {
+      mostrarError(err.message, "No se pudieron generar las pantallas");
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  async function regenerarPantalla(indice) {
+    const actuales = artefactosRef.current.prototipo;
+    const actual = actuales[indice];
+    const especificacion = planPrototipo(contextoRef.current.prototipo, actuales).find(
+      (p) => p.nombre === actual.nombre
+    ) || {
+      nombre: actual.nombre,
+      descripcion: "",
+      rfs: actual.rfs || [],
+      actores: [],
+      plataforma: actual.plataforma || "Web",
+    };
+
+    setCargando({ paso: "prototipo", indice, detalle: `Regenerando: ${actual.nombre}...` });
+    try {
+      const { generadas, fallidas } = await generarPantallas([especificacion]);
+      if (!generadas.length) throw new Error(fallidas.join("\n"));
+      await guardarArtefacto(
+        "prototipo",
+        actuales.map((p, i) => (i === indice ? generadas[0] : p))
+      );
+      await marcarCambio("prototipo", {}, generadas[0].modelo);
+    } catch (err) {
+      mostrarError(err.message, "No se pudo regenerar la pantalla");
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // Guarda el HTML editado a mano de una pantalla. Cuenta como un cambio del prototipo (pierde
+  // la aprobación y los pasos siguientes quedan desactualizados). Devuelve false si falla.
+  async function guardarHtmlPantalla(indice, html) {
+    const actuales = artefactosRef.current.prototipo;
+    try {
+      await guardarArtefacto(
+        "prototipo",
+        actuales.map((p, i) => (i === indice ? { ...p, html, modelo: "manual" } : p))
+      );
+      await marcarCambio("prototipo");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo guardar la pantalla");
+      return false;
+    }
+  }
+
+  async function quitarPantalla(indice) {
+    const actuales = artefactosRef.current.prototipo;
+    if (
+      !(await confirmar(
+        "Se quitará del prototipo.",
+        `¿Quitar la pantalla "${actuales[indice].nombre}"?`,
+        "Quitar"
+      ))
+    ) {
+      return;
+    }
+    const restantes = actuales.filter((_, i) => i !== indice);
+    try {
+      await guardarArtefacto("prototipo", restantes.length ? restantes : null);
+      await marcarCambio("prototipo");
+    } catch (err) {
+      mostrarError(err.message, "No se pudo quitar la pantalla");
+    }
+  }
+
+  function cambiarConfigPrototipo(nuevo) {
+    cambiarContexto({ ...contextoRef.current, prototipo: nuevo });
+  }
+
+  function subirImagenEstilo(archivo) {
+    return subirArchivoProyecto(supabase, archivo, "estilo");
   }
 
   // Un paso cambió (se generó, se editó o se eliminó): pierde su aprobación junto con todos
@@ -468,6 +728,10 @@ export default function WorkspaceProyecto() {
         delete f.pendientes[clave];
         if (modelo) f.modelos[clave] = modelo;
       }
+      // Un cambio en una subfase quita también la aprobación general de su fase. El Diseño
+      // depende de todo lo anterior, así que cualquier cambio le quita la aprobación.
+      if (!clave || PASO[clave].fase === "analisis") f.analisis = false;
+      f.diseno = false;
       for (const p of clave ? pasosDespuesDe(clave) : PASOS) {
         f[p.aprobacion] = false;
         if (artefactosRef.current[p.clave]) f.pendientes[p.clave] = "desactualizado";
@@ -484,12 +748,20 @@ export default function WorkspaceProyecto() {
     );
   }
 
-  async function generarPaso(clave, opciones = {}) {
-    setCargando({ paso: clave, modo: opciones.modo });
+  async function generarPaso(clave) {
+    setCargando({ paso: clave });
     try {
-      const { valor, modelo } = await pedirPaso(clave, opciones);
+      const { valor, modelo, fallidas } = await pedirPaso(clave, {
+        onProgreso: progresoPantallas(clave),
+      });
       await guardarArtefacto(clave, valor);
-      await marcarCambio(clave, clave === "prototipo" ? { modo_prototipo: opciones.modo } : {}, modelo);
+      await marcarCambio(clave, {}, modelo);
+      if (fallidas?.length) {
+        mostrarInfo(
+          `No se pudieron generar:\n${fallidas.join("\n")}\n\nPuedes generarlas con "Agregar faltantes".`,
+          "Prototipo generado con errores"
+        );
+      }
     } catch (err) {
       mostrarError(err.message, `No se pudo generar: ${PASO[clave].nombre}`);
     } finally {
@@ -505,10 +777,19 @@ export default function WorkspaceProyecto() {
         const p = pasos[i];
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
-          const { valor, modelo } = await pedirPaso(p.clave);
+          const { valor, modelo } = await pedirPaso(p.clave, {
+            onProgreso: (j, total, pantalla) =>
+              setProgreso({
+                indice: i,
+                total: pasos.length,
+                nombre: `${p.nombre} (pantalla ${j + 1}/${total}: ${pantalla})`,
+              }),
+          });
           await guardarArtefacto(p.clave, valor);
           await guardarFases((f) => {
             f[p.aprobacion] = false;
+            if (p.fase === "analisis") f.analisis = false;
+            f.diseno = false;
             f.pendientes[p.clave] = "revision";
             if (modelo) f.modelos[p.clave] = modelo;
             return f;
@@ -572,7 +853,13 @@ export default function WorkspaceProyecto() {
       return f;
     });
 
-    const aActualizar = desactualizados(pasosDespuesDe(clave));
+    // La cascada no cruza de fase: el Diseño se actualiza al aprobar la fase de Análisis.
+    const fase = PASO[clave].fase;
+    await actualizarEnCascada(pasosDespuesDe(clave).filter((p) => p.fase === fase));
+  }
+
+  async function actualizarEnCascada(pasos) {
+    const aActualizar = desactualizados(pasos);
     if (!aActualizar.length) return;
 
     const continuar = await confirmar(
@@ -582,6 +869,24 @@ export default function WorkspaceProyecto() {
       "Actualizar"
     );
     if (continuar) await ejecutarCascada(aActualizar);
+  }
+
+  // Aprobación general de la fase de Análisis: requiere sus dos subfases aprobadas y habilita
+  // el Diseño (actualizándolo en cascada si quedó desactualizado).
+  async function aprobarFaseAnalisis() {
+    await guardarFases((f) => {
+      f.analisis = true;
+      return f;
+    });
+    await actualizarEnCascada(PASOS.filter((p) => p.fase === "diseno"));
+  }
+
+  // Aprobación general de la fase de Diseño: requiere sus cuatro subfases aprobadas.
+  async function aprobarFaseDiseno() {
+    await guardarFases((f) => {
+      f.diseno = true;
+      return f;
+    });
   }
 
   // ---------- Datos del proyecto ----------
@@ -652,6 +957,14 @@ export default function WorkspaceProyecto() {
     });
   }
 
+  // Rechazar un paso generado: se descarta para ajustar las indicaciones y generarlo de nuevo.
+  function rechazarPaso(clave, titulo) {
+    return eliminarPaso(clave, titulo, {
+      introduccion: "Se descartará para que ajustes las indicaciones y lo generes de nuevo.",
+      textoConfirmar: "Rechazar",
+    });
+  }
+
   async function eliminarActor(nombre) {
     const analisis = artefactosRef.current.analisis;
     const tieneActor = (r) =>
@@ -692,6 +1005,19 @@ export default function WorkspaceProyecto() {
       await marcarCambio("analisis");
     } catch (err) {
       mostrarError(err.message, "No se pudo quitar el actor");
+    }
+  }
+
+  // Guardar el código Mermaid editado a mano: cuenta como un cambio del paso (pierde la
+  // aprobación y los pasos siguientes quedan desactualizados). Devuelve false si falla.
+  async function guardarCodigoDiagrama(clave, codigo) {
+    try {
+      await guardarArtefacto(clave, limpiarMermaid(codigo));
+      await marcarCambio(clave, {}, "manual");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo guardar el código");
+      return false;
     }
   }
 
@@ -813,17 +1139,34 @@ export default function WorkspaceProyecto() {
       ? !!(fasesAprobadas.analisis || artefactos.casos_uso)
       : !!fasesAprobadas.requerimientos;
 
+  // Proyectos anteriores a la subfase "casos de uso": estaba aprobada si la fase lo estaba.
+  const casosUsoAprobados =
+    fasesAprobadas.casos_uso === undefined
+      ? !!fasesAprobadas.analisis
+      : !!fasesAprobadas.casos_uso;
+
   const aprobado = (clave) =>
-    clave === "analisis" ? requerimientosAprobados : !!fasesAprobadas[PASO[clave].aprobacion];
+    clave === "analisis"
+      ? requerimientosAprobados
+      : clave === "casos_uso"
+      ? casosUsoAprobados
+      : !!fasesAprobadas[PASO[clave].aprobacion];
   const bloqueado = (clave) => aprobado(clave) && !desbloqueados.includes(clave);
   const enEdicion = (clave) => aprobado(clave) && desbloqueados.includes(clave);
+
+  const configPrototipo = contexto.prototipo || {};
+  const planActual = planPrototipo(configPrototipo, artefactos.prototipo);
+  const nombresGenerados = (artefactos.prototipo || []).map((p) => p.nombre);
+  const faltantes = planActual.filter((p) => !nombresGenerados.includes(p.nombre));
   const analisisEditable = !ocupado && !bloqueado("analisis");
 
-  const faseActual = !fasesAprobadas.analisis
-    ? "analisis"
-    : !fasesAprobadas.diseno_arquitectura
-    ? "diseno"
-    : null;
+  // Proyectos anteriores a la aprobación general del Diseño: contaba la arquitectura.
+  const disenoAprobado =
+    fasesAprobadas.diseno === undefined
+      ? !!fasesAprobadas.diseno_arquitectura
+      : !!fasesAprobadas.diseno;
+
+  const faseActual = !fasesAprobadas.analisis ? "analisis" : !disenoAprobado ? "diseno" : null;
 
   const aviso = (
     <AvisoCascada
@@ -1047,7 +1390,9 @@ export default function WorkspaceProyecto() {
                 disabled={ocupado}
               />
               {!requerimientosAprobados && (
-                <button
+                <BotonRechazar
+                  etiqueta="Requerimientos"
+                  disabled={ocupado}
                   onClick={() =>
                     eliminarPaso("analisis", "¿Rechazar los requerimientos?", {
                       tambien: ["casos_uso"],
@@ -1056,12 +1401,7 @@ export default function WorkspaceProyecto() {
                       textoConfirmar: "Rechazar",
                     })
                   }
-                  disabled={ocupado}
-                  style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
-                  className="border bg-transparent hover:bg-red-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-                >
-                  Rechazar Requerimientos
-                </button>
+                />
               )}
             </div>
           </>
@@ -1114,29 +1454,67 @@ export default function WorkspaceProyecto() {
               svg={svgs.casos_uso}
               titulo="Diagrama de casos de uso"
               nombreArchivo="diagrama-casos-de-uso"
+              codigo={artefactos.casos_uso}
+              renderizar={renderizar}
+              editable={!ocupado && !bloqueado("casos_uso")}
+              onGuardarCodigo={(codigo) => guardarCodigoDiagrama("casos_uso", codigo)}
             />
 
             {svgs.casos_uso && (
-              <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3">
+              <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3 flex-wrap">
                 <BotonAprobar
-                  aprobado={!!fasesAprobadas.analisis}
+                  aprobado={casosUsoAprobados}
                   onClick={() => aprobarPaso("casos_uso")}
-                  etiqueta="Análisis"
+                  etiqueta="Casos de uso"
                   disabled={ocupado}
                 />
-
-                {fasesAprobadas.analisis && (
-                  <button
-                    onClick={() => setVista("diseno")}
-                    style={{ backgroundColor: PALETA.navy }}
-                    className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
-                  >
-                    Continuar a Diseño →
-                  </button>
+                {!casosUsoAprobados && (
+                  <BotonRechazar
+                    etiqueta="Casos de uso"
+                    disabled={ocupado}
+                    onClick={() =>
+                      rechazarPaso("casos_uso", "¿Rechazar el diagrama de casos de uso?")
+                    }
+                  />
                 )}
               </div>
             )}
           </>
+        )}
+
+        {/* --- Aprobación general de la fase: requiere las dos subfases aprobadas --- */}
+        {requerimientosAprobados && casosUsoAprobados && svgs.casos_uso && (
+          <div
+            className="mt-8 border-2 p-4 flex items-center justify-between gap-3 flex-wrap"
+            style={{ borderColor: fasesAprobadas.analisis ? PALETA.oliva : PALETA.navy }}
+          >
+            <div>
+              <p className="text-sm font-bold text-gray-900">Fase de Análisis</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {fasesAprobadas.analisis
+                  ? "Aprobada. Ya puedes continuar con el Diseño."
+                  : "Requerimientos y casos de uso aprobados."}
+              </p>
+            </div>
+            {fasesAprobadas.analisis ? (
+              <button
+                onClick={() => setVista("diseno")}
+                style={{ backgroundColor: PALETA.navy }}
+                className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+              >
+                Continuar a Diseño →
+              </button>
+            ) : (
+              <button
+                onClick={aprobarFaseAnalisis}
+                disabled={ocupado}
+                style={{ backgroundColor: PALETA.oliva }}
+                className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
+              >
+                Aprobar fase de Análisis
+              </button>
+            )}
+          </div>
         )}
         </div>
       </section>
@@ -1209,16 +1587,27 @@ export default function WorkspaceProyecto() {
               svg={svgs.er}
               titulo="Diagrama entidad-relación"
               nombreArchivo="diagrama-entidad-relacion"
+              codigo={artefactos.er}
+              renderizar={renderizar}
+              editable={!ocupado && !bloqueado("er")}
+              onGuardarCodigo={(codigo) => guardarCodigoDiagrama("er", codigo)}
             />
 
             {svgs.er && (
-              <div className="mt-4">
+              <div className="mt-4 flex items-center gap-3 flex-wrap">
                 <BotonAprobar
                   aprobado={!!fasesAprobadas.diseno_er}
                   onClick={() => aprobarPaso("er")}
                   etiqueta="Diagrama entidad-relación"
                   disabled={ocupado}
                 />
+                {!fasesAprobadas.diseno_er && (
+                  <BotonRechazar
+                    etiqueta="Diagrama entidad-relación"
+                    disabled={ocupado}
+                    onClick={() => rechazarPaso("er", "¿Rechazar el diagrama entidad-relación?")}
+                  />
+                )}
               </div>
             )}
 
@@ -1230,13 +1619,25 @@ export default function WorkspaceProyecto() {
                 </TituloPaso>
 
                 {!bloqueado("prototipo") && (
-                  <CampoIndicaciones
-                    clave="prototipo"
-                    valor={contexto.indicaciones?.prototipo}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: estilo oscuro; prioriza la vista móvil"
-                  />
+                  <>
+                    <ConfigPrototipo
+                      valor={configPrototipo}
+                      onChange={cambiarConfigPrototipo}
+                      plataformasPorDefecto={plataformasDePrototipo(contexto)}
+                      generadas={nombresGenerados}
+                      deshabilitado={ocupado}
+                      onProponer={proponerPantallas}
+                      proponiendo={generando("proponer")}
+                      onSubirImagen={subirImagenEstilo}
+                    />
+                    <CampoIndicaciones
+                      clave="prototipo"
+                      valor={contexto.indicaciones?.prototipo}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: el dashboard debe tener un mapa con las unidades"
+                    />
+                  </>
                 )}
 
                 <ControlesPaso
@@ -1246,25 +1647,63 @@ export default function WorkspaceProyecto() {
                   deshabilitado={ocupado}
                   onEditar={desbloquearPaso}
                   onCancelarEdicion={cancelarEdicion}
-                />
+                >
+                  <BotonGenerar
+                    onClick={() => generarPaso("prototipo")}
+                    disabled={ocupado || !planActual.length}
+                    cargando={generando("prototipo")}
+                    textoCargando={cargando?.detalle || "Generando..."}
+                    color={PALETA.naranjaOscuro}
+                  >
+                    {artefactos.prototipo ? "Regenerar prototipo" : "Generar prototipo"} (
+                    {planActual.length} {planActual.length === 1 ? "pantalla" : "pantallas"})
+                  </BotonGenerar>
+
+                  {artefactos.prototipo && faltantes.length > 0 && (
+                    <button
+                      onClick={agregarPantallasFaltantes}
+                      disabled={ocupado}
+                      style={{ borderColor: PALETA.naranjaOscuro, color: PALETA.naranjaOscuro }}
+                      className="border bg-transparent hover:bg-orange-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    >
+                      Agregar faltantes ({faltantes.length})
+                    </button>
+                  )}
+
+                  {artefactos.prototipo && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("prototipo", "¿Eliminar el prototipo?")}
+                      disabled={ocupado}
+                      title="Eliminar todas las pantallas"
+                    />
+                  )}
+                </ControlesPaso>
 
                 <MockupsGenerator
                   mockups={artefactos.prototipo}
-                  cargando={generando("prototipo") ? cargando.modo : null}
                   deshabilitado={ocupado}
                   bloqueado={bloqueado("prototipo")}
-                  onGenerar={(modo, cantidad) => generarPaso("prototipo", { modo, cantidad })}
-                  onEliminar={() => eliminarPaso("prototipo", "¿Eliminar los mockups generados?")}
+                  regenerando={generando("prototipo") ? cargando.indice ?? null : null}
+                  onRegenerar={regenerarPantalla}
+                  onQuitar={quitarPantalla}
+                  onGuardarHtml={guardarHtmlPantalla}
                 />
 
                 {artefactos.prototipo && (
-                  <div className="mt-4">
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
                     <BotonAprobar
                       aprobado={!!fasesAprobadas.diseno_prototipo}
                       onClick={() => aprobarPaso("prototipo")}
                       etiqueta="Prototipo"
                       disabled={ocupado}
                     />
+                    {!fasesAprobadas.diseno_prototipo && (
+                      <BotonRechazar
+                        etiqueta="Prototipo"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("prototipo", "¿Rechazar el prototipo?")}
+                      />
+                    )}
                   </div>
                 )}
               </>
@@ -1317,16 +1756,27 @@ export default function WorkspaceProyecto() {
                   svg={svgs.arbol}
                   titulo="Árbol de navegación"
                   nombreArchivo="arbol-de-navegacion"
+                  codigo={artefactos.arbol}
+                  renderizar={renderizar}
+                  editable={!ocupado && !bloqueado("arbol")}
+                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arbol", codigo)}
                 />
 
                 {svgs.arbol && (
-                  <div className="mt-4">
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
                     <BotonAprobar
                       aprobado={!!fasesAprobadas.diseno_arbol}
                       onClick={() => aprobarPaso("arbol")}
                       etiqueta="Árbol de navegación"
                       disabled={ocupado}
                     />
+                    {!fasesAprobadas.diseno_arbol && (
+                      <BotonRechazar
+                        etiqueta="Árbol de navegación"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("arbol", "¿Rechazar el árbol de navegación?")}
+                      />
+                    )}
                   </div>
                 )}
               </>
@@ -1340,13 +1790,29 @@ export default function WorkspaceProyecto() {
                 </TituloPaso>
 
                 {!bloqueado("arquitectura") && (
-                  <CampoIndicaciones
-                    clave="arquitectura"
-                    valor={contexto.indicaciones?.arquitectura}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: incluye un servicio de notificaciones push"
-                  />
+                  <>
+                    <label className="block mb-3">
+                      <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                        Tecnologías preferidas (opcional)
+                      </span>
+                      <input
+                        value={contexto.tecnologias || ""}
+                        onChange={(e) =>
+                          cambiarContexto({ ...contextoRef.current, tecnologias: e.target.value })
+                        }
+                        placeholder="Ej: Next.js, Supabase, Flutter para la app móvil"
+                        disabled={ocupado}
+                        className={CLASE_INPUT}
+                      />
+                    </label>
+                    <CampoIndicaciones
+                      clave="arquitectura"
+                      valor={contexto.indicaciones?.arquitectura}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: incluye un servicio de notificaciones push"
+                    />
+                  </>
                 )}
 
                 <ControlesPaso
@@ -1379,29 +1845,182 @@ export default function WorkspaceProyecto() {
                   svg={svgs.arquitectura}
                   titulo="Diagrama de arquitectura"
                   nombreArchivo="diagrama-arquitectura"
+                  codigo={artefactos.arquitectura}
+                  renderizar={renderizar}
+                  editable={!ocupado && !bloqueado("arquitectura")}
+                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arquitectura", codigo)}
                 />
 
                 {svgs.arquitectura && (
-                  <div className="mt-4 flex items-center gap-3">
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
                     <BotonAprobar
                       aprobado={!!fasesAprobadas.diseno_arquitectura}
                       onClick={() => aprobarPaso("arquitectura")}
                       etiqueta="Diagrama de arquitectura"
                       disabled={ocupado}
                     />
-
-                    {fasesAprobadas.diseno_arquitectura && (
-                      <span
-                        className="text-sm font-semibold"
-                        style={{ color: PALETA.oliva }}
-                      >
-                        ✓ Proyecto completado
-                      </span>
+                    {!fasesAprobadas.diseno_arquitectura && (
+                      <BotonRechazar
+                        etiqueta="Diagrama de arquitectura"
+                        disabled={ocupado}
+                        onClick={() =>
+                          rechazarPaso("arquitectura", "¿Rechazar el diagrama de arquitectura?")
+                        }
+                      />
                     )}
                   </div>
                 )}
               </>
             )}
+
+            {/* --- Diagrama del sistema --- */}
+            {fasesAprobadas.diseno_arquitectura && (
+              <>
+                <TituloPaso color={PALETA.naranjaOscuro} estado={pendientes.sistema} modelo={modelos.sistema}>
+                  Diagrama del sistema
+                </TituloPaso>
+
+                {!bloqueado("sistema") && (
+                  <>
+                    <div className="mb-3">
+                      <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                        Tipo
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {TIPOS_DIAGRAMA_SISTEMA.map((t) => {
+                          const activo = (contexto.tipoSistema || "contexto") === t.clave;
+                          return (
+                            <button
+                              key={t.clave}
+                              type="button"
+                              title={t.descripcion}
+                              onClick={() =>
+                                cambiarContexto({ ...contextoRef.current, tipoSistema: t.clave })
+                              }
+                              disabled={ocupado}
+                              aria-pressed={activo}
+                              style={
+                                activo
+                                  ? { backgroundColor: PALETA.navy, borderColor: PALETA.navy }
+                                  : undefined
+                              }
+                              className={`border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                                activo ? "text-white" : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                              }`}
+                            >
+                              {t.nombre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {
+                          TIPOS_DIAGRAMA_SISTEMA.find(
+                            (t) => t.clave === (contexto.tipoSistema || "contexto")
+                          ).descripcion
+                        }
+                      </p>
+                    </div>
+                    <CampoIndicaciones
+                      clave="sistema"
+                      valor={contexto.indicaciones?.sistema}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: incluye la integración con el ECU-911"
+                    />
+                  </>
+                )}
+
+                <ControlesPaso
+                  clave="sistema"
+                  bloqueado={bloqueado("sistema")}
+                  enEdicion={enEdicion("sistema")}
+                  deshabilitado={ocupado}
+                  onEditar={desbloquearPaso}
+                  onCancelarEdicion={cancelarEdicion}
+                >
+                  <BotonGenerar
+                    onClick={() => generarPaso("sistema")}
+                    disabled={ocupado}
+                    cargando={generando("sistema")}
+                    color={PALETA.naranjaOscuro}
+                  >
+                    Generar diagrama del sistema
+                  </BotonGenerar>
+
+                  {svgs.sistema && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("sistema", "¿Eliminar el diagrama del sistema?")}
+                      disabled={ocupado}
+                      title="Eliminar diagrama del sistema"
+                    />
+                  )}
+                </ControlesPaso>
+
+                <DiagramaBox
+                  svg={svgs.sistema}
+                  titulo="Diagrama del sistema"
+                  nombreArchivo="diagrama-del-sistema"
+                  codigo={artefactos.sistema}
+                  renderizar={renderizar}
+                  editable={!ocupado && !bloqueado("sistema")}
+                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("sistema", codigo)}
+                />
+
+                {svgs.sistema && (
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.diseno_sistema}
+                      onClick={() => aprobarPaso("sistema")}
+                      etiqueta="Diagrama del sistema"
+                      disabled={ocupado}
+                    />
+                    {!fasesAprobadas.diseno_sistema && (
+                      <BotonRechazar
+                        etiqueta="Diagrama del sistema"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("sistema", "¿Rechazar el diagrama del sistema?")}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* --- Aprobación general de la fase: requiere las cinco subfases aprobadas --- */}
+            {fasesAprobadas.diseno_er &&
+              fasesAprobadas.diseno_prototipo &&
+              fasesAprobadas.diseno_arbol &&
+              fasesAprobadas.diseno_arquitectura &&
+              fasesAprobadas.diseno_sistema && (
+                <div
+                  className="mt-8 border-2 p-4 flex items-center justify-between gap-3 flex-wrap"
+                  style={{ borderColor: disenoAprobado ? PALETA.oliva : PALETA.naranjaOscuro }}
+                >
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Fase de Diseño</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {disenoAprobado
+                        ? "Aprobada. Proyecto completado."
+                        : "Entidad-relación, prototipo, árbol, arquitectura y sistema aprobados."}
+                    </p>
+                  </div>
+                  {disenoAprobado ? (
+                    <span className="text-sm font-semibold" style={{ color: PALETA.oliva }}>
+                      ✓ Proyecto completado
+                    </span>
+                  ) : (
+                    <button
+                      onClick={aprobarFaseDiseno}
+                      disabled={ocupado}
+                      style={{ backgroundColor: PALETA.oliva }}
+                      className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
+                    >
+                      Aprobar fase de Diseño
+                    </button>
+                  )}
+                </div>
+              )}
           </div>
         </section>
       )}

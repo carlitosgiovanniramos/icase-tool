@@ -4,116 +4,140 @@ import { formatearActores, formatearRequerimientos, formatearIndicaciones } from
 
 export const maxDuration = 300;
 
-// El HTML no va dentro de JSON: los modelos se equivocan al escapar tanto HTML/CSS y la
-// respuesta queda inválida. Cada pantalla va precedida de un marcador y se separan aquí.
-const MARCADOR_PANTALLA = "=== PANTALLA:";
-const MARCADOR_FIN = "=== FIN ===";
+// Genera UNA pantalla del prototipo por petición: así un boceto completo de muchas pantallas no
+// se corta por el límite de salida, y cada pantalla se puede regenerar por separado. La
+// coherencia visual entre pantallas la dan el mismo estilo, color, logo y referencias.
 
-function extraerPantallas(texto) {
-  const cuerpo = texto.split(MARCADOR_FIN)[0];
-  return cuerpo
-    .split(MARCADOR_PANTALLA)
-    .slice(1)
-    .map((bloque) => {
-      const salto = bloque.indexOf("\n");
-      const nombre = bloque.slice(0, salto).replace(/=+\s*$/, "").trim();
-      const html = bloque
-        .slice(salto + 1)
-        .trim()
-        .replace(/^```(?:html)?\s*/i, "")
-        .replace(/\s*```$/, "")
-        .trim();
-      return { nombre, html };
-    })
-    // Si la respuesta se cortó por el límite de tokens, la última pantalla queda incompleta.
-    .filter((p) => p.nombre && /<\/(html|body)>\s*$/i.test(p.html));
+const MAX_IMAGENES = 4; // logo + hasta 3 capturas de referencia
+
+async function aParteImagen(url) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const mimeType = resp.headers.get("content-type") || "image/png";
+    if (!mimeType.startsWith("image/")) return null;
+    const data = Buffer.from(await resp.arrayBuffer()).toString("base64");
+    return { inlineData: { mimeType, data } };
+  } catch {
+    return null; // una referencia que no carga no debe impedir generar la pantalla
+  }
+}
+
+// El modelo responde con el documento HTML; se quita cualquier texto o markdown alrededor.
+function extraerHtml(texto) {
+  const inicio = texto.search(/<!doctype html|<html/i);
+  const fin = texto.toLowerCase().lastIndexOf("</html>");
+  if (inicio === -1 || fin === -1) return null;
+  return texto.slice(inicio, fin + "</html>".length);
+}
+
+function instruccionesDeEstilo({ esWireframe, color, tema }) {
+  if (esWireframe) {
+    return `Genera un WIREFRAME de baja fidelidad:
+- Solo escala de grises (blancos, negros y grises), sin colores de marca ni imágenes reales.
+- Representa bloques de contenido, botones e inputs como rectángulos simples con bordes (outline), usando el nombre real del campo cuando sea claro.
+- Tipografía neutra (sans-serif del sistema), sin sombras, gradientes ni bordes redondeados decorativos.
+- El objetivo es mostrar la estructura y disposición de los elementos, no el diseño visual final.`;
+  }
+
+  const oscuro = tema === "oscuro";
+  return `Genera un MOCKUP de alta fidelidad, con el nivel de detalle de un producto SaaS real (piensa en Linear, Notion, Stripe Dashboard o Vercel), NO una plantilla genérica de admin panel. Sistema de diseño obligatorio:
+
+1. Identidad y paleta:
+   - Color primario de marca: ${color || "elige uno coherente con el dominio (no azul genérico salvo que encaje)"}. Úsalo en botones primarios, elementos activos y acentos; define 1-2 colores de acento que combinen.
+   - Tema ${oscuro ? "OSCURO: fondo #0f172a / #111827, superficies un poco más claras, texto claro" : "CLARO: fondo neutro (blanco o gris muy claro, ej. #f8fafc), nunca fondos saturados ocupando toda la pantalla"}.
+
+2. Tipografía: pila del sistema (-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif). Escala clara: títulos ~24-28px bold, subtítulos ~16-18px semibold, cuerpo ~14px, secundario ~12-13px.
+
+3. Espaciado y layout: escala de 4px (4, 8, 12, 16, 24, 32, 48). Tarjetas con borde sutil O sombra suave, border-radius consistente (8-12px).
+
+4. Componentes: botones primarios con el color de marca y buen padding; secundarios con borde. Tablas con encabezado diferenciado y estados (badges) con color semántico en fondo claro. Inputs con borde sutil y foco visible. Iconos SVG inline estilo línea (Lucide/Feather), no emojis.
+
+5. Datos de ejemplo realistas y coherentes con el dominio, nunca "Lorem ipsum".
+
+Prohibido: look de plantilla Bootstrap por defecto, formularios centrados sin contexto de producto, componentes sin padding ni alineación cuidada.`;
 }
 
 export async function POST(request) {
   try {
-    const { analisis, diagramaEr, cantidad, modo, indicaciones, usarClaude } = await request.json();
+    const {
+      analisis,
+      diagramaEr,
+      pantalla,
+      pantallas = [],
+      estilo = {},
+      indicaciones,
+      usarClaude,
+    } = await request.json();
 
-    const cantidadPantallas = Math.min(Math.max(Number(cantidad) || 4, 1), 10);
-    const esWireframe = modo === "wireframe";
+    const esWireframe = estilo.modo === "wireframe";
+    const esMovil = /m[oó]vil/i.test(pantalla.plataforma || "");
 
-    const funcionales = formatearRequerimientos(analisis.requerimientos_funcionales);
-    const actores = formatearActores(analisis);
+    // Secciones de la misma plataforma: forman el menú de navegación de esta pantalla.
+    const secciones = pantallas
+      .filter((p) => (p.plataforma || "Web") === (pantalla.plataforma || "Web"))
+      .map((p) => p.nombre);
 
-    const contextoEr = diagramaEr
-      ? `
-Modelo de datos aprobado (diagrama entidad-relación en Mermaid). Los formularios, tablas y detalles de las pantallas deben usar estas entidades y sus atributos:
-${diagramaEr}
-`
-      : "";
+    const rfsDePantalla = new Set(pantalla.rfs || []);
+    const rfsPantalla = analisis.requerimientos_funcionales.filter((r) => rfsDePantalla.has(r.codigo));
 
-    const estiloInstrucciones = esWireframe
-      ? `Genera un WIREFRAME de baja fidelidad para cada pantalla:
-- Solo escala de grises (blancos, negros y grises), sin colores de marca ni imágenes reales.
-- Representa bloques de contenido, botones e inputs como rectángulos simples con bordes (outline), usando texto tipo "Botón", "Imagen", "Texto" o el nombre real del campo cuando sea claro.
-- Tipografía neutra (sans-serif del sistema), sin sombras, gradientes ni bordes redondeados decorativos.
-- El objetivo es mostrar la estructura y disposición de los elementos, no el diseño visual final.`
-      : `Genera un MOCKUP de alta fidelidad para cada pantalla, con el nivel de detalle de un producto SaaS real (piensa en Linear, Notion, Stripe Dashboard o Vercel), NO en una plantilla genérica de admin panel gratuito. Sigue este sistema de diseño en TODAS las pantallas, sin excepción:
+    const [logo, ...referencias] = await Promise.all([
+      estilo.logoUrl ? aParteImagen(estilo.logoUrl) : null,
+      ...(estilo.referencias || []).slice(0, MAX_IMAGENES - 1).map(aParteImagen),
+    ]);
+    const capturas = referencias.filter(Boolean);
+    const imagenes = [logo, ...capturas].filter(Boolean);
 
-1. Identidad y paleta:
-   - Antes de generar nada, define un color primario de marca y 1-2 colores de acento que tengan sentido para el dominio del proyecto (no uses azul genérico por defecto salvo que encaje).
-   - Usa esa MISMA paleta, MISMA tipografía y MISMO estilo de componentes en las ${cantidadPantallas} pantallas, como si fueran capturas de un solo producto real.
-   - Fondo neutro (blanco o gris muy claro, ej. #f8fafc), nunca fondos de color saturado ocupando toda la pantalla.
-
-2. Tipografía:
-   - Usa la pila del sistema: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif. NO uses Times New Roman, Comic Sans ni la fuente serif por defecto del navegador.
-   - Define una escala clara: títulos de página ~24-28px/bold, subtítulos ~16-18px/semibold, cuerpo ~14px/regular, texto secundario ~12-13px/gris medio. Usa letter-spacing negativo sutil en títulos grandes.
-
-3. Espaciado y layout:
-   - Usa una escala de espaciado consistente en múltiplos de 4px (4, 8, 12, 16, 24, 32, 48). Nunca amontones elementos ni dejes márgenes al azar.
-   - Estructura tipo producto real: barra lateral de navegación (si aplica) + header con contexto (nombre de usuario, breadcrumb o título de sección) + contenido principal en un grid ordenado.
-   - Las tarjetas/paneles usan borde sutil (1px, color gris muy claro) O sombra sutil (box-shadow suave), nunca ambos exagerados a la vez. border-radius consistente (8-12px) en todos los contenedores.
-
-4. Componentes:
-   - Botones primarios con el color de marca, texto blanco, buen padding (no botones diminutos ni gigantes); botones secundarios con borde y fondo transparente.
-   - Tablas con encabezado diferenciado (fondo gris claro o texto en mayúsculas pequeñas), filas con separación clara, estados (badges/pills) con color semántico (verde=éxito, rojo=alerta, ámbar=pendiente) en fondo claro con texto del mismo tono oscuro, nunca colores saturados planos.
-   - Inputs con borde sutil, buen padding interno y estado de foco visible.
-   - Iconografía: usa SVG inline simples (stroke, estilo "line icons" tipo Lucide/Feather) para navegación y acciones. Emojis solo como excepción puntual, nunca como reemplazo sistemático de iconos reales.
-
-5. Datos de ejemplo:
-   - Usa datos de muestra realistas y coherentes con el dominio del proyecto (nombres, cifras, estados), nunca "Lorem ipsum" ni "Texto de ejemplo".
-
-Prohibido explícitamente: look de plantilla Bootstrap por defecto, formularios centrados sin contexto de producto, combinaciones de colores al azar entre pantallas, tipografía inconsistente entre pantallas, componentes sin padding/alineación cuidada.`;
+    const textoImagenes = [
+      logo &&
+        "La primera imagen adjunta es el LOGO del sistema: inclúyelo en la interfaz recreándolo con SVG o texto estilizado, sin enlazar archivos externos.",
+      capturas.length &&
+        `${logo ? "Las demás imágenes" : "Las imágenes adjuntas"} son REFERENCIAS DE ESTILO: imita su tipo de layout, densidad, componentes y sensación visual (no su contenido).`,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     const instrucciones = `
-Eres un diseñador UI/UX experto. Con base en estos actores y requerimientos funcionales, diseña exactamente ${cantidadPantallas} pantallas principales de un sistema web.
+Eres un diseñador UI/UX experto. Diseña UNA pantalla de un sistema, como parte de un prototipo de varias pantallas que deben verse como un solo producto.
 
-Actores:
-${actores}
+Actores del sistema:
+${formatearActores(analisis)}
 
-Requerimientos funcionales (con los actores que usan cada función; prioriza las pantallas de los requerimientos de prioridad alta):
-${funcionales}
-${contextoEr}
-${estiloInstrucciones}
-${formatearIndicaciones(indicaciones)}
+PANTALLA A DISEÑAR: "${pantalla.nombre}"
+${pantalla.descripcion ? `Qué muestra y qué permite hacer: ${pantalla.descripcion}\n` : ""}${pantalla.actores?.length ? `Usada por: ${pantalla.actores.join(", ")}\n` : ""}
+Requerimientos que esta pantalla debe cubrir (cada uno debe verse reflejado en la interfaz):
+${rfsPantalla.length ? formatearRequerimientos(rfsPantalla) : formatearRequerimientos(analisis.requerimientos_funcionales)}
+${diagramaEr ? `\nModelo de datos (Mermaid). Los formularios, tablas y detalles deben usar estas entidades y atributos:\n${diagramaEr}\n` : ""}
+Plataforma: ${esMovil
+      ? "APP MÓVIL. Diseña para un teléfono: un contenedor de 390px de ancho y ~844px de alto, centrado en la página sobre un fondo neutro, con barra superior y barra de navegación inferior. Elementos táctiles grandes."
+      : "PANEL WEB de escritorio (~1280px de ancho), con barra lateral de navegación y encabezado con contexto."}
 
-Para cada pantalla, genera código HTML autocontenido (con CSS embebido en una etiqueta <style> dentro del mismo documento, sin dependencias externas).
+Navegación: ${secciones.length > 1
+      ? `el menú debe incluir exactamente estas secciones, con estos mismos nombres, como enlaces <a href="#">: ${secciones.join(", ")}. Marca "${pantalla.nombre}" como la activa.`
+      : "incluye la navegación que corresponda a esta pantalla."}
 
-Formato de respuesta (obligatorio): NO uses JSON ni bloques de código markdown. Escribe cada pantalla precedida por una línea marcador con su nombre, seguida del documento HTML completo tal cual, y termina con ${MARCADOR_FIN}:
+${instruccionesDeEstilo({ esWireframe, color: estilo.color, tema: estilo.tema })}
+${textoImagenes ? `\n${textoImagenes}\n` : ""}${formatearIndicaciones(indicaciones)}
+Genera un único documento HTML autocontenido, con el CSS en una etiqueta <style> y sin dependencias externas (ni fuentes, ni imágenes, ni scripts de otros dominios).
 
-${MARCADOR_PANTALLA} Nombre de la primera pantalla ===
-<!DOCTYPE html>
-<html>...documento completo...</html>
-${MARCADOR_PANTALLA} Nombre de la segunda pantalla ===
-<!DOCTYPE html>
-<html>...documento completo...</html>
-${MARCADOR_FIN}
-
-No escribas ningún otro texto antes, entre ni después de las pantallas.
+Responde ÚNICAMENTE con el documento HTML completo, empezando por <!DOCTYPE html> y terminando en </html>. Sin markdown ni explicaciones.
 `;
 
-    const response = await generarContenido({ usarClaude, contents: instrucciones });
+    const response = await generarContenido({
+      usarClaude,
+      contents: [{ text: instrucciones }, ...imagenes],
+    });
 
-    const pantallas = extraerPantallas(response.text);
-    if (!pantallas.length) {
-      throw new Error("La IA no devolvió las pantallas en el formato esperado. Intenta generarlas de nuevo.");
+    const html = extraerHtml(response.text);
+    if (!html) {
+      throw new Error(`La pantalla "${pantalla.nombre}" llegó incompleta. Intenta regenerarla.`);
     }
 
-    return NextResponse.json({ pantallas, modelo_ia: response.modelVersion, costo_ia: response.costoUsd });
+    return NextResponse.json({
+      html,
+      modelo_ia: response.modelVersion,
+      costo_ia: response.costoUsd,
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

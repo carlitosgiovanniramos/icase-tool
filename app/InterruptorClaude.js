@@ -7,8 +7,8 @@ import {
   useGastoClaude,
 } from "@/lib/preferenciaClaude";
 
-// Interruptor de la barra lateral: con Claude activado, las generaciones usan la API de pago
-// de Claude (pruebas reales); apagado, Gemini y Groq.
+// Interruptor de la barra lateral: con Claude activado, las generaciones usan solo la API de
+// pago de Claude (pruebas reales); apagado, Gemini y Groq.
 export default function InterruptorClaude() {
   const activo = useClaudeActivo();
   const gasto = useGastoClaude();
@@ -36,7 +36,7 @@ export default function InterruptorClaude() {
         </span>
       </button>
       <p className="text-[11px] text-white/60 mt-1.5">
-        {activo ? "Pruebas reales (de pago)" : "Gemini / Groq (gratis)"}
+        {activo ? "Solo Claude (de pago)" : "Gemini / Groq (gratis)"}
       </p>
       {gasto > 0 && (
         <div className="flex items-center justify-between mt-1.5 text-[11px] text-white/60">
