@@ -64,17 +64,49 @@ function Segmento({ activo, onClick, children }) {
   );
 }
 
-// Mismo lienzo para web y móvil: las pantallas móviles ya traen su propio marco de teléfono
-// (390px, centrado), así que envolverlas en otro marco angosto duplicaba bordes y barras.
-// La altura alcanza para un teléfono completo (844px) sin desplazamiento.
-function MarcoPantalla({ html, titulo }) {
-  return (
+const esMovil = (pantalla) => /m[oó]vil/i.test(plataformaDe(pantalla));
+
+// Marco del prototipo: un lienzo gris separa la pantalla del resto de la app. Las pantallas web
+// van dentro de una ventana de navegador simulada; las móviles, dentro de un teléfono dibujado
+// por el visor, con el iframe al ancho real de un celular (390px) para que el HTML se comporte
+// como en un teléfono (así no depende de que la IA dibuje su propio marco).
+// alto: clase de altura del área de la pantalla web.
+function MarcoPantalla({ html, titulo, movil, alto = "h-[860px]" }) {
+  const iframe = (clases) => (
     <iframe
       srcDoc={conNavegacionInterceptada(html)}
-      className="w-full h-[900px] border border-gray-300 bg-white"
+      className={`block bg-white ${clases}`}
       title={titulo}
       sandbox="allow-scripts allow-forms allow-modals allow-popups"
     />
+  );
+
+  return (
+    <div className="bg-slate-200 border border-slate-300 p-4 sm:p-6">
+      {movil ? (
+        <div className="flex justify-center overflow-x-auto">
+          <div className="relative shrink-0 rounded-[48px] bg-slate-900 p-3 shadow-2xl ring-1 ring-slate-700">
+            {/* Muesca de la cámara */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-28 h-6 rounded-b-2xl bg-slate-900 z-10" />
+            <div className="rounded-[36px] overflow-hidden">{iframe("w-[390px] h-[844px]")}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg overflow-hidden shadow-xl ring-1 ring-slate-400 bg-white">
+          <div className="flex items-center gap-3 h-9 px-3 bg-slate-100 border-b border-slate-300">
+            <div className="flex gap-1.5 shrink-0" aria-hidden="true">
+              <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
+              <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
+              <span className="w-3 h-3 rounded-full bg-[#28c840]" />
+            </div>
+            <div className="flex-1 min-w-0 max-w-xl mx-auto h-6 rounded bg-white border border-slate-300 px-3 flex items-center">
+              <span className="text-xs text-slate-500 truncate">{titulo}</span>
+            </div>
+          </div>
+          {iframe(`w-full ${alto}`)}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -114,11 +146,11 @@ function EditorHtml({ pantalla, editable, onGuardar }) {
           onChange={(e) => setBorrador({ base: pantalla.html, texto: e.target.value })}
           readOnly={!editable}
           spellCheck={false}
-          className={`w-full h-[900px] border border-gray-300 p-3 font-mono text-xs leading-relaxed resize-y focus:outline-none focus:border-gray-900 ${
+          className={`w-full h-[944px] border border-gray-300 p-3 font-mono text-xs leading-relaxed resize-y focus:outline-none focus:border-gray-900 ${
             editable ? "bg-white" : "bg-gray-50 text-gray-600"
           }`}
         />
-        <MarcoPantalla html={vistaPrevia} titulo="Vista previa" />
+        <MarcoPantalla html={vistaPrevia} titulo={pantalla.nombre} movil={esMovil(pantalla)} />
       </div>
 
       {editable ? (
@@ -148,21 +180,54 @@ function EditorHtml({ pantalla, editable, onGuardar }) {
   );
 }
 
-function Pestanas({ visibles, activa, onElegir, compactas }) {
+function BotonFlecha({ onClick, disabled, children, etiqueta }) {
   return (
-    <div className="flex gap-2 border-b border-gray-300 overflow-x-auto">
-      {visibles.map(({ p, i }) => (
-        <button
-          key={i}
-          onClick={() => onElegir(i)}
-          style={activa === i ? { borderColor: PALETA.navy, color: PALETA.navy } : undefined}
-          className={`${compactas ? "px-3 py-1.5 text-sm" : "px-4 py-2"} whitespace-nowrap border-b-2 ${
-            activa === i ? "font-semibold" : "text-gray-500 border-transparent"
-          }`}
-        >
-          {p.nombre}
-        </button>
-      ))}
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={etiqueta}
+      style={{ borderColor: PALETA.navy, color: PALETA.navy }}
+      className="w-8 h-9 border bg-white hover:bg-gray-50 disabled:opacity-30 text-lg leading-none"
+    >
+      {children}
+    </button>
+  );
+}
+
+// Selector compacto de pantalla: un desplegable numerado con flechas de anterior/siguiente, en
+// lugar de una fila de pestañas que satura cuando hay muchas pantallas.
+function SelectorPantalla({ visibles, activa, onElegir }) {
+  const posicion = visibles.findIndex(({ i }) => i === activa);
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <BotonFlecha
+        etiqueta="Pantalla anterior"
+        disabled={posicion <= 0}
+        onClick={() => onElegir(visibles[posicion - 1].i)}
+      >
+        ‹
+      </BotonFlecha>
+      <select
+        value={activa}
+        onChange={(e) => onElegir(Number(e.target.value))}
+        className="h-9 min-w-0 max-w-[340px] border border-gray-300 bg-white px-2 text-sm font-semibold text-gray-800 focus:outline-none focus:border-gray-900"
+      >
+        {visibles.map(({ p, i }, n) => (
+          <option key={i} value={i}>
+            {n + 1}. {p.nombre}
+          </option>
+        ))}
+      </select>
+      <BotonFlecha
+        etiqueta="Pantalla siguiente"
+        disabled={posicion >= visibles.length - 1}
+        onClick={() => onElegir(visibles[posicion + 1].i)}
+      >
+        ›
+      </BotonFlecha>
+      <span className="text-xs text-gray-500 whitespace-nowrap ml-1">
+        {posicion + 1}/{visibles.length}
+      </span>
     </div>
   );
 }
@@ -226,55 +291,50 @@ export default function MockupsGenerator({
 
   return (
     <div className="mt-6">
-      {/* --- Plataforma y modo --- */}
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-        <div className="flex items-center gap-1">
-          {plataformas.length > 1 &&
-            plataformas.map((pl) => (
-              <Segmento
-                key={pl}
-                activo={pl === plataforma}
-                onClick={() => setPlataformaElegida(pl)}
-              >
-                {pl} ({lista.filter((p) => plataformaDe(p) === pl).length})
-              </Segmento>
-            ))}
-        </div>
-        <div className="flex items-center gap-1">
-          <Segmento activo={modo === "vista"} onClick={() => setModo("vista")}>
-            Vista
-          </Segmento>
-          <Segmento activo={modo === "codigo"} onClick={() => setModo("codigo")}>
-            Código HTML
-          </Segmento>
-        </div>
-      </div>
-
-      <Pestanas visibles={visibles} activa={activa} onElegir={elegir} />
-
-      {/* --- Pantalla activa --- */}
-      <div className="flex items-center justify-between gap-2 flex-wrap my-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-gray-800">{pantalla.nombre}</span>
+      {/* --- Barra única: plataforma, pantalla, modelo | modo y acciones --- */}
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          {plataformas.length > 1 && (
+            <div className="flex items-center gap-1">
+              {plataformas.map((pl) => (
+                <Segmento
+                  key={pl}
+                  activo={pl === plataforma}
+                  onClick={() => setPlataformaElegida(pl)}
+                >
+                  {pl} ({lista.filter((p) => plataformaDe(p) === pl).length})
+                </Segmento>
+              ))}
+            </div>
+          )}
+          <SelectorPantalla visibles={visibles} activa={activa} onElegir={elegir} />
           <BadgeModelo modelo={pantalla.modelo} />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Segmento activo={modo === "vista"} onClick={() => setModo("vista")}>
+              Vista
+            </Segmento>
+            <Segmento activo={modo === "codigo"} onClick={() => setModo("codigo")}>
+              Código
+            </Segmento>
+          </div>
           {!bloqueado && (
             <>
               <button
                 onClick={() => onRegenerar(activa)}
                 disabled={deshabilitado}
                 style={{ borderColor: PALETA.navy, color: PALETA.navy }}
-                className="border bg-transparent hover:bg-gray-50 px-3 py-2 text-sm disabled:opacity-50"
+                className="border bg-transparent hover:bg-gray-50 px-3 py-1.5 text-sm disabled:opacity-50"
               >
-                {regenerando === activa ? "Regenerando..." : "Regenerar pantalla"}
+                {regenerando === activa ? "Regenerando..." : "Regenerar"}
               </button>
               <button
                 onClick={() => onQuitar(activa)}
                 disabled={deshabilitado}
                 style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
-                className="border bg-transparent hover:bg-red-50 px-3 py-2 text-sm disabled:opacity-50"
+                className="border bg-transparent hover:bg-red-50 px-3 py-1.5 text-sm disabled:opacity-50"
               >
                 Quitar
               </button>
@@ -283,7 +343,7 @@ export default function MockupsGenerator({
           <button
             onClick={() => setExpandido(true)}
             style={{ borderColor: PALETA.navy, color: PALETA.navy }}
-            className="border bg-transparent hover:bg-gray-50 px-3 py-2 text-sm"
+            className="border bg-transparent hover:bg-gray-50 px-3 py-1.5 text-sm"
           >
             Expandir
           </button>
@@ -298,7 +358,7 @@ export default function MockupsGenerator({
           onGuardar={(html) => onGuardarHtml(activa, html)}
         />
       ) : (
-        <MarcoPantalla html={pantalla.html} titulo={pantalla.nombre} />
+        <MarcoPantalla html={pantalla.html} titulo={pantalla.nombre} movil={esMovil(pantalla)} />
       )}
 
       {expandido && (
@@ -321,9 +381,7 @@ export default function MockupsGenerator({
                   ))}
                 </div>
               )}
-              <div className="min-w-0">
-                <Pestanas visibles={visibles} activa={activa} onElegir={elegir} compactas />
-              </div>
+              <SelectorPantalla visibles={visibles} activa={activa} onElegir={elegir} />
             </div>
 
             <button
@@ -335,12 +393,12 @@ export default function MockupsGenerator({
             </button>
           </div>
 
-          <div className="flex-1 p-6 bg-gray-50" onClick={(e) => e.stopPropagation()}>
-            <iframe
-              srcDoc={conNavegacionInterceptada(pantalla.html)}
-              className="w-full h-full border border-gray-300 bg-white"
-              title="Pantalla expandida"
-              sandbox="allow-scripts allow-forms allow-modals allow-popups"
+          <div className="flex-1 overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <MarcoPantalla
+              html={pantalla.html}
+              titulo={pantalla.nombre}
+              movil={esMovil(pantalla)}
+              alto="h-[calc(100vh-150px)]"
             />
           </div>
         </div>
