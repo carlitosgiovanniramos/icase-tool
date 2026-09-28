@@ -109,7 +109,7 @@ Requerimientos que esta pantalla debe cubrir (cada uno debe verse reflejado en l
 ${rfsPantalla.length ? formatearRequerimientos(rfsPantalla) : formatearRequerimientos(analisis.requerimientos_funcionales)}
 ${diagramaEr ? `\nModelo de datos (Mermaid). Los formularios, tablas y detalles deben usar estas entidades y atributos:\n${diagramaEr}\n` : ""}
 Plataforma: ${esMovil
-      ? "APP MÓVIL. Diseña para un teléfono: un contenedor de 390px de ancho y ~844px de alto, centrado en la página sobre un fondo neutro, con barra superior y barra de navegación inferior. Elementos táctiles grandes."
+      ? "APP MÓVIL. La pantalla se mostrará dentro de un marco de teléfono con un viewport de 390x844px: diseña a pantalla completa para ese tamaño (el contenido ocupa el 100% del ancho, sin dibujar un marco de teléfono ni un fondo alrededor, y sin desbordar horizontalmente). Incluye barra superior y barra de navegación inferior fija. Elementos táctiles grandes (mínimo 44px)."
       : "PANEL WEB de escritorio (~1280px de ancho), con barra lateral de navegación y encabezado con contexto."}
 
 Navegación: ${secciones.length > 1

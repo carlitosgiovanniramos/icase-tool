@@ -294,7 +294,15 @@ function BotonDetener({ onClick, deteniendo }) {
   );
 }
 
-function AvisoCascada({ progreso, desactualizados, ocupado, onActualizar, onDetener, deteniendo }) {
+function AvisoCascada({
+  progreso,
+  desactualizados,
+  ocupado,
+  onActualizar,
+  onConservar,
+  onDetener,
+  deteniendo,
+}) {
   if (progreso) {
     const porcentaje = Math.round((progreso.indice / progreso.total) * 100);
     return (
@@ -334,18 +342,27 @@ function AvisoCascada({ progreso, desactualizados, ocupado, onActualizar, onDete
           Desactualizado: {listarNombres(desactualizados)}
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Se generaron con una versión anterior. Se actualizarán automáticamente al aprobar el
-          paso que cambió, o puedes actualizarlos ahora.
+          Se generaron con una versión anterior. Puedes actualizarlos ahora o, si el cambio no
+          les afecta, conservarlos como están.
         </p>
       </div>
-      <button
-        onClick={onActualizar}
-        disabled={ocupado}
-        style={{ backgroundColor: PALETA.carmesi }}
-        className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
-      >
-        Actualizar ahora
-      </button>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={onConservar}
+          disabled={ocupado}
+          className="border border-gray-300 bg-white text-gray-700 px-4 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+        >
+          Conservar como está
+        </button>
+        <button
+          onClick={onActualizar}
+          disabled={ocupado}
+          style={{ backgroundColor: PALETA.carmesi }}
+          className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
+        >
+          Actualizar ahora
+        </button>
+      </div>
     </div>
   );
 }
@@ -415,7 +432,7 @@ function planPrototipo(config, mockups) {
 export default function WorkspaceProyecto() {
   const [supabase] = useState(() => createClient());
   const { id } = useParams();
-  const { mostrarError, mostrarInfo, confirmar } = useAlert();
+  const { mostrarError, mostrarInfo, confirmar, notificar } = useAlert();
   const [proyecto, setProyecto] = useState(null);
   const [artefactos, setArtefactos] = useState(SIN_ARTEFACTOS);
   const [svgs, setSvgs] = useState({});
@@ -437,6 +454,7 @@ export default function WorkspaceProyecto() {
   const artefactosRef = useRef(SIN_ARTEFACTOS);
   const fasesRef = useRef({});
   const detenerRef = useRef(false); // la generación de pantallas lo revisa antes de cada una
+  const enCascadaRef = useRef(false); // durante la cascada no se muestran avisos de cambio
   const contextoRef = useRef({});
   const avisoColumnaContexto = useRef(false);
 
@@ -851,7 +869,9 @@ export default function WorkspaceProyecto() {
   // los siguientes, y los siguientes que ya existían quedan desactualizados.
   // Con clave = null cambió la descripción del proyecto, de la que dependen todos los pasos.
   // modelo: el que generó la nueva versión del paso (undefined si se editó o eliminó a mano).
-  async function marcarCambio(clave, extra = {}, modelo) {
+  // silencioso: no avisar con la notificación de esquina (ej. cuando la cascada sigue enseguida).
+  async function marcarCambio(clave, extra = {}, modelo, { silencioso = false } = {}) {
+    const nuevosDesactualizados = [];
     await guardarFases((f) => {
       Object.assign(f, extra);
       if (clave) {
@@ -859,16 +879,44 @@ export default function WorkspaceProyecto() {
         delete f.pendientes[clave];
         if (modelo) f.modelos[clave] = modelo;
       }
+      // Se recuerda cómo estaban las fases y los pasos antes de marcarlos, para que "Conservar
+      // como está" pueda devolverles la aprobación. Si ya había pasos desactualizados, vale lo
+      // de antes del primer cambio; si no, empieza un registro nuevo.
+      if (!Object.values(f.pendientes).includes("desactualizado")) {
+        delete f.fasesPrevias;
+        delete f.aprobacionesPrevias;
+      }
+      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno };
       // Un cambio en una subfase quita también la aprobación general de su fase. El Diseño
       // depende de todo lo anterior, así que cualquier cambio le quita la aprobación.
       if (!clave || PASO[clave].fase === "analisis") f.analisis = false;
       f.diseno = false;
       for (const p of clave ? pasosDespuesDe(clave) : PASOS) {
+        if (artefactosRef.current[p.clave] && f.pendientes[p.clave] !== "desactualizado") {
+          // Sin valor registrado: en el Análisis cuenta la fase (proyectos anteriores a las
+          // subfases); en el Diseño, un paso nunca aprobado sigue sin aprobar.
+          const aprobado = f[p.aprobacion] ?? (p.fase === "analisis" && f.fasesPrevias.analisis);
+          f.aprobacionesPrevias = { ...f.aprobacionesPrevias, [p.clave]: aprobado };
+          nuevosDesactualizados.push(p);
+        }
         f[p.aprobacion] = false;
         if (artefactosRef.current[p.clave]) f.pendientes[p.clave] = "desactualizado";
       }
       return f;
     });
+
+    // Aviso en la esquina superior derecha, solo si este cambio dejó pasos NUEVOS desactualizados
+    // (no en cada edición repetida) y no durante una cascada, que ya los está actualizando.
+    if (!silencioso && !enCascadaRef.current && nuevosDesactualizados.length) {
+      notificar({
+        titulo: clave ? `Cambió: ${PASO[clave].nombre}` : "Cambió la descripción del proyecto",
+        mensaje: `Quedaron desactualizados: ${listarNombres(nuevosDesactualizados)}.`,
+        acciones: [
+          { texto: "Actualizar ahora", onClick: () => ejecutarCascada(desactualizados()) },
+          { texto: "Conservar como está", onClick: conservarDesactualizados },
+        ],
+      });
+    }
   }
 
   function desactualizados(pasos = PASOS) {
@@ -937,6 +985,7 @@ export default function WorkspaceProyecto() {
   // Regenera en orden los pasos indicados. Si uno falla se detiene: ese y los siguientes
   // siguen marcados como desactualizados y se pueden reintentar con "Actualizar ahora".
   async function ejecutarCascada(pasos) {
+    enCascadaRef.current = true;
     try {
       for (let i = 0; i < pasos.length; i++) {
         const p = pasos[i];
@@ -983,6 +1032,7 @@ export default function WorkspaceProyecto() {
         }
       }
     } finally {
+      enCascadaRef.current = false;
       setProgreso(null);
     }
   }
@@ -1090,7 +1140,9 @@ export default function WorkspaceProyecto() {
       return;
     }
 
-    const cambioDescripcion = prompt !== proyectoRef.current.prompt;
+    // Cambios solo de espacios o saltos de línea no cuentan: no cambian lo que la IA entiende.
+    const sinEspacios = (texto) => (texto || "").replace(/\s+/g, " ").trim();
+    const cambioDescripcion = sinEspacios(prompt) !== sinEspacios(proyectoRef.current.prompt);
     setGuardandoProyecto(true);
     try {
       const { error } = await supabase.from("proyectos").update({ nombre, prompt }).eq("id", id);
@@ -1108,17 +1160,54 @@ export default function WorkspaceProyecto() {
     const afectados = PASOS.filter((p) => artefactosRef.current[p.clave]);
     if (!cambioDescripcion || !afectados.length) return;
 
-    // Todo el análisis se generó a partir de la descripción anterior.
-    await marcarCambio(null);
-    const continuar = await confirmar(
-      `Cambiaste la descripción, así que lo generado a partir de ella quedó desactualizado. ` +
-        `Se actualizarán automáticamente: ${listarNombres(afectados)}.\n\n` +
-        `Los requerimientos se generarán de nuevo, por lo que se perderán los que hayas eliminado a mano. ` +
-        `Cada paso quedará pendiente de tu revisión y aprobación.`,
-      "¿Actualizar en cascada?",
-      "Actualizar"
+    // Todo se generó a partir de la descripción anterior: se pregunta ANTES de marcar nada, para
+    // poder conservar lo actual si el cambio no lo amerita.
+    const actualizar = await confirmar(
+      `Todo lo generado (${listarNombres(afectados)}) se basa en la descripción anterior.\n\n` +
+        `Actualizar todo: se regenera en cascada, empezando por los requerimientos (se perderán los cambios hechos a mano). ` +
+        `Cada paso quedará pendiente de tu revisión y aprobación.\n\n` +
+        `Conservar lo actual: se guarda la nueva descripción sin tocar nada de lo generado.`,
+      "Cambiaste la descripción",
+      "Actualizar todo",
+      "Conservar lo actual"
     );
-    if (continuar) await ejecutarCascada(afectados);
+    if (!actualizar) return;
+
+    await marcarCambio(null, {}, undefined, { silencioso: true });
+    await ejecutarCascada(afectados);
+  }
+
+  // "Conservar como está": quita las marcas de desactualizado sin regenerar nada y devuelve a
+  // esos pasos la aprobación que tenían antes del cambio (si no se registró, se dan por
+  // aprobados: el usuario decide conservarlos tal como están).
+  async function conservarDesactualizados() {
+    const pasos = desactualizados();
+    if (!pasos.length) return;
+    const continuar = await confirmar(
+      `Se conservarán tal como están, sin regenerarlos: ${listarNombres(pasos)}. Recuperarán su aprobación.`,
+      "¿Conservar como está?",
+      "Conservar"
+    );
+    if (!continuar) return;
+
+    await guardarFases((f) => {
+      for (const p of pasos) {
+        delete f.pendientes[p.clave];
+        f[p.aprobacion] = f.aprobacionesPrevias?.[p.clave] ?? true;
+      }
+      // Las fases vuelven a quedar aprobadas si lo estaban y todas sus subfases lo están. En el
+      // Análisis, una aprobación sin registrar cuenta como aprobada (proyectos anteriores a las
+      // subfases); en el Diseño debe ser explícita, o un paso nunca generado lo completaría.
+      const faseCompleta = (fase) =>
+        PASOS.filter((p) => p.fase === fase).every((p) =>
+          fase === "analisis" ? f[p.aprobacion] !== false : f[p.aprobacion] === true
+        );
+      f.analisis = (f.fasesPrevias?.analisis ?? true) && faseCompleta("analisis");
+      f.diseno = (f.fasesPrevias?.diseno ?? true) && faseCompleta("diseno");
+      delete f.aprobacionesPrevias;
+      delete f.fasesPrevias;
+      return f;
+    });
   }
 
   // ---------- Eliminación ----------
@@ -1369,6 +1458,7 @@ export default function WorkspaceProyecto() {
       onDetener={detenerGeneracion}
       deteniendo={deteniendo}
       onActualizar={() => ejecutarCascada(desactualizados())}
+      onConservar={conservarDesactualizados}
     />
   );
 

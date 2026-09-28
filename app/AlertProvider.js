@@ -28,11 +28,29 @@ export default function AlertProvider({ children }) {
 
   // Reemplazo de window.confirm: devuelve una promesa que se resuelve en true/false.
   const confirmar = useCallback(
-    (mensaje, titulo = "¿Estás seguro?", textoConfirmar = "Eliminar") =>
+    (mensaje, titulo = "¿Estás seguro?", textoConfirmar = "Eliminar", textoCancelar = "Cancelar") =>
       new Promise((resolver) => {
-        setEstado({ titulo, mensaje, tipo: "confirmar", textoConfirmar, resolver });
+        setEstado({ titulo, mensaje, tipo: "confirmar", textoConfirmar, textoCancelar, resolver });
       }),
     []
+  );
+
+  // Notificaciones rojas en la esquina superior derecha: no bloquean la pantalla, se cierran
+  // solas tras unos segundos y pueden traer acciones ({ texto, onClick }).
+  const [notificaciones, setNotificaciones] = useState([]);
+
+  const cerrarNotificacion = useCallback((id) => {
+    setNotificaciones((lista) => lista.filter((n) => n.id !== id));
+  }, []);
+
+  const notificar = useCallback(
+    ({ titulo, mensaje, acciones = [], duracion = 10000 }) => {
+      const id = crypto.randomUUID();
+      setNotificaciones((lista) => [...lista.slice(-2), { id, titulo, mensaje, acciones }]);
+      setTimeout(() => cerrarNotificacion(id), duracion);
+      return id;
+    },
+    [cerrarNotificacion]
   );
 
   const cerrar = useCallback((respuesta = false) => {
@@ -55,8 +73,49 @@ export default function AlertProvider({ children }) {
   const esConfirmacion = estado?.tipo === "confirmar";
 
   return (
-    <AlertContext.Provider value={{ mostrarError, mostrarInfo, confirmar }}>
+    <AlertContext.Provider value={{ mostrarError, mostrarInfo, confirmar, notificar }}>
       {children}
+
+      {notificaciones.length > 0 && (
+        <div className="fixed top-4 right-4 z-[90] w-[360px] max-w-[calc(100vw-2rem)] flex flex-col gap-2">
+          {notificaciones.map((n) => (
+            <div
+              key={n.id}
+              role="alert"
+              className="text-white shadow-2xl p-4 animate-[scale-in_150ms_ease-out]"
+              style={{ backgroundColor: PALETA.carmesi }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-bold">{n.titulo}</p>
+                <button
+                  onClick={() => cerrarNotificacion(n.id)}
+                  aria-label="Cerrar notificación"
+                  className="shrink-0 text-white/70 hover:text-white text-sm leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              {n.mensaje && <p className="text-xs text-white/90 mt-1 leading-relaxed">{n.mensaje}</p>}
+              {n.acciones.length > 0 && (
+                <div className="flex gap-2 mt-3">
+                  {n.acciones.map((accion) => (
+                    <button
+                      key={accion.texto}
+                      onClick={() => {
+                        cerrarNotificacion(n.id);
+                        accion.onClick();
+                      }}
+                      className="border border-white/70 px-3 py-1 text-xs font-semibold hover:bg-white/15"
+                    >
+                      {accion.texto}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {estado && (
         <div
@@ -88,7 +147,7 @@ export default function AlertProvider({ children }) {
                   onClick={() => cerrar(false)}
                   className="border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
                 >
-                  Cancelar
+                  {estado.textoCancelar}
                 </button>
               )}
               <button
