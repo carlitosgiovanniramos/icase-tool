@@ -3,7 +3,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { pedirIA } from "@/lib/preferenciaClaude";
+import {
+  pedirIA,
+  claudeActivo,
+  costoEstimadoPantalla,
+  registrarCostoPantalla,
+} from "@/lib/preferenciaClaude";
 import { subirArchivoProyecto } from "@/lib/archivos";
 import { limpiarMermaid } from "@/lib/mermaid";
 import mermaid from "mermaid";
@@ -55,13 +60,29 @@ function BotonRechazar({ etiqueta, onClick, disabled }) {
   );
 }
 
-function BotonGenerar({ onClick, disabled, cargando, color, textoCargando = "Generando...", children }) {
+// secundario: el paso ya está generado, así que el botón (ahora "Regenerar") se muestra solo
+// con borde para no invitar a reemplazar lo que ya existe.
+function BotonGenerar({
+  onClick,
+  disabled,
+  cargando,
+  color,
+  secundario,
+  textoCargando = "Generando...",
+  children,
+}) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      style={{ backgroundColor: color }}
-      className="text-white px-4 py-2 disabled:opacity-50 hover:brightness-125"
+      style={
+        secundario && !cargando
+          ? { borderColor: color, color }
+          : { backgroundColor: color, borderColor: color }
+      }
+      className={`border px-4 py-2 disabled:opacity-50 ${
+        secundario && !cargando ? "bg-white hover:bg-gray-50" : "text-white hover:brightness-125"
+      }`}
     >
       {cargando ? textoCargando : children}
     </button>
@@ -87,7 +108,25 @@ const CLASE_INPUT =
 
 // Ajustes opcionales de organización o presentación para un paso (ej. "agrupa por módulo").
 // Se guardan en proyectos.contexto.indicaciones y se reutilizan al regenerar en cascada.
+// Plegado por defecto ("+ Agregar indicaciones") para no llenar la pantalla de campos; si ya
+// tiene texto se muestra abierto.
 function CampoIndicaciones({ clave, valor, onChange, deshabilitado, ejemplo }) {
+  const [abierto, setAbierto] = useState(false);
+
+  if (!abierto && !valor) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        disabled={deshabilitado}
+        className="block mb-3 text-xs font-semibold hover:underline disabled:opacity-50"
+        style={{ color: PALETA.navy }}
+      >
+        + Agregar indicaciones
+      </button>
+    );
+  }
+
   return (
     <label className="block mb-3">
       <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
@@ -98,6 +137,7 @@ function CampoIndicaciones({ clave, valor, onChange, deshabilitado, ejemplo }) {
         onChange={(e) => onChange(clave, e.target.value)}
         placeholder={ejemplo}
         disabled={deshabilitado}
+        autoFocus={abierto && !valor}
         className={`${CLASE_INPUT} h-14 resize-y`}
       />
     </label>
@@ -241,7 +281,20 @@ function TituloPaso({ color, estado, modelo, separador = true, children }) {
   );
 }
 
-function AvisoCascada({ progreso, desactualizados, ocupado, onActualizar }) {
+function BotonDetener({ onClick, deteniendo }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={deteniendo}
+      style={{ borderColor: PALETA.carmesi, color: PALETA.carmesi }}
+      className="border bg-white hover:bg-red-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+    >
+      {deteniendo ? "Deteniendo tras esta pantalla..." : "Detener"}
+    </button>
+  );
+}
+
+function AvisoCascada({ progreso, desactualizados, ocupado, onActualizar, onDetener, deteniendo }) {
   if (progreso) {
     const porcentaje = Math.round((progreso.indice / progreso.total) * 100);
     return (
@@ -249,11 +302,15 @@ function AvisoCascada({ progreso, desactualizados, ocupado, onActualizar }) {
         className="mb-6 bg-white border border-gray-300 p-4"
         style={{ borderLeft: `4px solid ${PALETA.naranjaOscuro}` }}
       >
-        <p className="text-sm font-semibold text-gray-800">
-          Actualizando en cascada ({progreso.indice + 1}/{progreso.total}): {progreso.nombre}...
-        </p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <p className="text-sm font-semibold text-gray-800">
+            Actualizando en cascada ({progreso.indice + 1}/{progreso.total}): {progreso.nombre}...
+          </p>
+          {progreso.detenible && <BotonDetener onClick={onDetener} deteniendo={deteniendo} />}
+        </div>
         <p className="text-xs text-gray-500 mt-1">
-          Cada paso puede tardar un par de minutos. No cierres esta página.
+          Cada paso puede tardar un par de minutos. Las pantallas del prototipo se guardan a medida
+          que se generan.
         </p>
         <div className="h-1 bg-gray-200 mt-3">
           <div
@@ -370,6 +427,7 @@ export default function WorkspaceProyecto() {
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
   const [desbloqueados, setDesbloqueados] = useState([]); // pasos aprobados abiertos para editar
+  const [deteniendo, setDeteniendo] = useState(false); // se pidió detener la generación de pantallas
   const [contexto, setContexto] = useState({}); // contexto de elicitación (proyectos.contexto)
   const [estadoContexto, setEstadoContexto] = useState(null); // pendiente | guardando | guardado | error
 
@@ -378,6 +436,7 @@ export default function WorkspaceProyecto() {
   const proyectoRef = useRef(null);
   const artefactosRef = useRef(SIN_ARTEFACTOS);
   const fasesRef = useRef({});
+  const detenerRef = useRef(false); // la generación de pantallas lo revisa antes de cada una
   const contextoRef = useRef({});
   const avisoColumnaContexto = useRef(false);
 
@@ -487,9 +546,19 @@ export default function WorkspaceProyecto() {
     if (clave === "prototipo") {
       const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
       if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
-      const { generadas, fallidas } = await generarPantallas(plan, opciones.onProgreso);
-      if (!generadas.length) throw new Error(fallidas.join("\n"));
-      return { valor: generadas, modelo: generadas.at(-1).modelo, fallidas };
+      // Cada pantalla se guarda apenas se genera (ver generarPantallas), así detener o cerrar
+      // la pestaña no pierde lo que ya se pagó.
+      const { generadas, fallidas, detenido } = await generarPantallas(plan, opciones.onProgreso);
+      if (!generadas.length) {
+        throw new Error(detenido ? "Generación detenida." : fallidas.join("\n"));
+      }
+      // Completo: queda en el orden del plan y sin las pantallas que ya no están en él (si una
+      // falló, se conserva su versión anterior). Detenido: queda como se guardó.
+      const guardadas = artefactosRef.current.prototipo || [];
+      const valor = detenido
+        ? guardadas
+        : plan.map((p) => guardadas.find((g) => g.nombre === p.nombre)).filter(Boolean);
+      return { valor, modelo: generadas.at(-1).modelo, fallidas, detenido };
     }
 
     const a = artefactosRef.current;
@@ -508,7 +577,19 @@ export default function WorkspaceProyecto() {
       er: { analisis: a.analisis, casosUso: a.casos_uso },
       arbol: {
         analisis: a.analisis,
-        pantallas: (a.prototipo || []).map((p) => p.nombre),
+        // Las pantallas generadas, con la plataforma, actores y RF de su plan (el plan tiene los
+        // actores; la pantalla guardada, la plataforma y los RF con que se generó).
+        pantallas: (a.prototipo || []).map((p) => {
+          const delPlan = planPrototipo(contextoRef.current.prototipo, a.prototipo).find(
+            (x) => x.nombre === p.nombre
+          );
+          return {
+            nombre: p.nombre,
+            plataforma: p.plataforma || delPlan?.plataforma || "Web",
+            rfs: p.rfs?.length ? p.rfs : delPlan?.rfs || [],
+            actores: delPlan?.actores || [],
+          };
+        }),
       },
       arquitectura: {
         analisis: a.analisis,
@@ -536,9 +617,24 @@ export default function WorkspaceProyecto() {
     return { valor: limpiarMermaid(resto.diagrama_mermaid), modelo };
   }
 
+  // Inserta o reemplaza (por nombre) una pantalla en el prototipo guardado. La primera pantalla
+  // de una generación marca el cambio del paso (pierde la aprobación, cascada, etc.).
+  async function guardarPantalla(nueva, esPrimera) {
+    const actuales = artefactosRef.current.prototipo || [];
+    const indice = actuales.findIndex((p) => p.nombre === nueva.nombre);
+    await guardarArtefacto(
+      "prototipo",
+      indice === -1 ? [...actuales, nueva] : actuales.map((p, i) => (i === indice ? nueva : p))
+    );
+    if (esPrimera) await marcarCambio("prototipo", {}, nueva.modelo);
+  }
+
   // Genera las pantallas indicadas, una petición por pantalla, con el mismo estilo para todas.
-  // Las que fallan no detienen a las demás: se devuelven en "fallidas" para reintentarlas.
+  // Cada una se guarda apenas termina. Las que fallan no detienen a las demás: se devuelven en
+  // "fallidas" para reintentarlas. "Detener" corta antes de empezar la siguiente pantalla (la
+  // que está en curso termina: su costo ya se está pagando).
   async function generarPantallas(lista, onProgreso) {
+    detenerRef.current = false;
     const a = artefactosRef.current;
     const config = contextoRef.current.prototipo || {};
     const estilo = {
@@ -547,39 +643,80 @@ export default function WorkspaceProyecto() {
       tema: config.tema || "claro",
       logoUrl: config.logoUrl,
       referencias: config.referencias || [],
+      detalle: config.detalle || "economico",
     };
     const todas = planPrototipo(config, a.prototipo);
 
     const generadas = [];
     const fallidas = [];
-    for (const [i, pantalla] of lista.entries()) {
-      onProgreso?.(i, lista.length, pantalla.nombre);
-      try {
-        const data = await pedirIA("/api/generar-mockups", {
-          analisis: a.analisis,
-          diagramaEr: a.er,
-          pantalla,
-          pantallas: todas,
-          estilo,
-          indicaciones: contextoRef.current.indicaciones?.prototipo,
-        });
-        if (data.error) throw new Error(data.error);
-        generadas.push({
-          nombre: pantalla.nombre,
-          html: data.html,
-          plataforma: pantalla.plataforma || "Web",
-          rfs: pantalla.rfs || [],
-          modelo: data.modelo_ia,
-        });
-      } catch (err) {
-        fallidas.push(`${pantalla.nombre}: ${err.message}`);
+    let detenido = false;
+    try {
+      for (const [i, pantalla] of lista.entries()) {
+        if (detenerRef.current) {
+          detenido = true;
+          break;
+        }
+        onProgreso?.(i, lista.length, pantalla.nombre);
+        try {
+          const data = await pedirIA(
+            "/api/generar-mockups",
+            {
+              analisis: a.analisis,
+              diagramaEr: a.er,
+              pantalla,
+              pantallas: todas,
+              estilo,
+              indicaciones: contextoRef.current.indicaciones?.prototipo,
+            },
+            { alCosto: (costo) => registrarCostoPantalla(costo, estilo.detalle) }
+          );
+          if (data.error) throw new Error(data.error);
+          const nueva = {
+            nombre: pantalla.nombre,
+            html: data.html,
+            plataforma: pantalla.plataforma || "Web",
+            rfs: pantalla.rfs || [],
+            modelo: data.modelo_ia,
+          };
+          await guardarPantalla(nueva, generadas.length === 0);
+          generadas.push(nueva);
+        } catch (err) {
+          fallidas.push(`${pantalla.nombre}: ${err.message}`);
+        }
       }
+    } finally {
+      detenerRef.current = false;
+      setDeteniendo(false);
     }
-    return { generadas, fallidas };
+    return { generadas, fallidas, detenido };
   }
 
+  function detenerGeneracion() {
+    detenerRef.current = true;
+    setDeteniendo(true);
+  }
+
+  // Con Claude activado, confirma el costo estimado antes de generar varias pantallas.
+  async function confirmarCostoPantallas(cantidad) {
+    if (!claudeActivo() || cantidad < 2) return true;
+    const porPantalla = costoEstimadoPantalla(contextoRef.current.prototipo?.detalle);
+    return confirmar(
+      `Vas a generar ${cantidad} pantallas con Claude. Costo estimado: ~$${(cantidad * porPantalla).toFixed(2)} ` +
+        `(~$${porPantalla.toFixed(2)} por pantalla).\n\n` +
+        `Puedes detener la generación en cualquier momento: las pantallas ya generadas se guardan.`,
+      "¿Generar con Claude?",
+      "Generar"
+    );
+  }
+
+  // lote: generación de varias pantallas (muestra el botón "Detener").
   const progresoPantallas = (clave, extra) => (i, total, nombre) =>
-    setCargando({ paso: clave, ...extra, detalle: `Generando ${i + 1}/${total}: ${nombre}...` });
+    setCargando({
+      paso: clave,
+      lote: true,
+      ...extra,
+      detalle: `Generando ${i + 1}/${total}: ${nombre}...`,
+    });
 
   async function proponerPantallas() {
     setCargando({ paso: "proponer" });
@@ -624,14 +761,12 @@ export default function WorkspaceProyecto() {
       (p) => !existentes.has(p.nombre)
     );
     if (!faltan.length) return;
+    if (!(await confirmarCostoPantallas(faltan.length))) return;
 
-    setCargando({ paso: "prototipo" });
+    setCargando({ paso: "prototipo", lote: true });
     try {
-      const { generadas, fallidas } = await generarPantallas(faltan, progresoPantallas("prototipo"));
-      if (generadas.length) {
-        await guardarArtefacto("prototipo", [...actuales, ...generadas]);
-        await marcarCambio("prototipo", {}, generadas.at(-1).modelo);
-      }
+      // Cada pantalla se guarda apenas se genera (dentro de generarPantallas).
+      const { fallidas } = await generarPantallas(faltan, progresoPantallas("prototipo"));
       if (fallidas.length) {
         mostrarError(fallidas.join("\n"), "No se pudieron generar algunas pantallas");
       }
@@ -657,13 +792,9 @@ export default function WorkspaceProyecto() {
 
     setCargando({ paso: "prototipo", indice, detalle: `Regenerando: ${actual.nombre}...` });
     try {
+      // Se guarda en su lugar (por nombre) dentro de generarPantallas.
       const { generadas, fallidas } = await generarPantallas([especificacion]);
       if (!generadas.length) throw new Error(fallidas.join("\n"));
-      await guardarArtefacto(
-        "prototipo",
-        actuales.map((p, i) => (i === indice ? generadas[0] : p))
-      );
-      await marcarCambio("prototipo", {}, generadas[0].modelo);
     } catch (err) {
       mostrarError(err.message, "No se pudo regenerar la pantalla");
     } finally {
@@ -748,15 +879,49 @@ export default function WorkspaceProyecto() {
     );
   }
 
-  async function generarPaso(clave) {
+  // Si el paso ya está generado, regenerarlo reemplaza su versión actual (con los cambios hechos a
+  // mano): se pide confirmación, con los pasos que quedarán desactualizados y, si es el prototipo
+  // con Claude, el costo estimado.
+  async function regenerarPaso(clave) {
+    if (!artefactosRef.current[clave]) return generarPaso(clave);
+
+    const nombre = PASO[clave].nombre.toLowerCase();
+    const afectados = pasosDespuesDe(clave).filter((p) => artefactosRef.current[p.clave]);
+    const partes = [`Se reemplazará la versión actual (${nombre}), incluidos los cambios hechos a mano.`];
+    if (afectados.length) partes.push(`Quedarán desactualizados: ${listarNombres(afectados)}.`);
+    if (clave === "prototipo" && claudeActivo()) {
+      const cantidad = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo)
+        .length;
+      const porPantalla = costoEstimadoPantalla(contextoRef.current.prototipo?.detalle);
+      partes.push(
+        `\n\nCosto estimado con Claude: ~$${(cantidad * porPantalla).toFixed(2)} (${cantidad} pantallas).`
+      );
+    }
+
+    if (!(await confirmar(partes.join(" "), `¿Regenerar ${nombre}?`, "Regenerar"))) return;
+    return generarPaso(clave, { costoConfirmado: true });
+  }
+
+  async function generarPaso(clave, { costoConfirmado } = {}) {
+    if (clave === "prototipo" && !costoConfirmado) {
+      const cantidad = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo)
+        .length;
+      if (!(await confirmarCostoPantallas(cantidad))) return;
+    }
+
     setCargando({ paso: clave });
     try {
-      const { valor, modelo, fallidas } = await pedirPaso(clave, {
+      const { valor, modelo, fallidas, detenido } = await pedirPaso(clave, {
         onProgreso: progresoPantallas(clave),
       });
       await guardarArtefacto(clave, valor);
       await marcarCambio(clave, {}, modelo);
-      if (fallidas?.length) {
+      if (detenido) {
+        mostrarInfo(
+          `Se guardaron las pantallas generadas hasta ese momento. Puedes completar el resto con "Agregar faltantes".`,
+          "Generación detenida"
+        );
+      } else if (fallidas?.length) {
         mostrarInfo(
           `No se pudieron generar:\n${fallidas.join("\n")}\n\nPuedes generarlas con "Agregar faltantes".`,
           "Prototipo generado con errores"
@@ -777,12 +942,13 @@ export default function WorkspaceProyecto() {
         const p = pasos[i];
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
-          const { valor, modelo } = await pedirPaso(p.clave, {
+          const { valor, modelo, detenido } = await pedirPaso(p.clave, {
             onProgreso: (j, total, pantalla) =>
               setProgreso({
                 indice: i,
                 total: pasos.length,
                 nombre: `${p.nombre} (pantalla ${j + 1}/${total}: ${pantalla})`,
+                detenible: true,
               }),
           });
           await guardarArtefacto(p.clave, valor);
@@ -794,6 +960,19 @@ export default function WorkspaceProyecto() {
             if (modelo) f.modelos[p.clave] = modelo;
             return f;
           });
+          // Detener el prototipo corta también la cascada: los pasos siguientes siguen
+          // desactualizados y se retoman con "Actualizar ahora".
+          if (detenido) {
+            const restantes = pasos.slice(i + 1);
+            mostrarInfo(
+              `Se guardaron las pantallas ya generadas; completa el resto con "Agregar faltantes".` +
+                (restantes.length
+                  ? `\n\nQuedan desactualizados: ${listarNombres(restantes)}. Puedes retomarlos con "Actualizar ahora".`
+                  : ""),
+              "Generación detenida"
+            );
+            return;
+          }
         } catch (err) {
           mostrarError(
             `${err.message}\n\nQuedan desactualizados: ${listarNombres(pasos.slice(i))}. ` +
@@ -862,9 +1041,21 @@ export default function WorkspaceProyecto() {
     const aActualizar = desactualizados(pasos);
     if (!aActualizar.length) return;
 
+    // Regenerar el prototipo con Claude es lo más caro de la cascada: se avisa el costo.
+    const pantallas = aActualizar.some((p) => p.clave === "prototipo")
+      ? planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo).length
+      : 0;
+    const avisoCosto =
+      claudeActivo() && pantallas
+        ? `\n\nIncluye ${pantallas} pantallas del prototipo con Claude: ~$${(
+            pantallas * costoEstimadoPantalla(contextoRef.current.prototipo?.detalle)
+          ).toFixed(2)}.`
+        : "";
+
     const continuar = await confirmar(
       `Este cambio afecta a pasos que ya habías generado. Se actualizarán automáticamente: ` +
-        `${listarNombres(aActualizar)}.\n\nCada uno quedará pendiente de tu revisión y aprobación.`,
+        `${listarNombres(aActualizar)}.\n\nCada uno quedará pendiente de tu revisión y aprobación.` +
+        avisoCosto,
       "¿Actualizar en cascada?",
       "Actualizar"
     );
@@ -1175,6 +1366,8 @@ export default function WorkspaceProyecto() {
         (p) => pendientes[p.clave] === "desactualizado" && artefactos[p.clave]
       )}
       ocupado={ocupado}
+      onDetener={detenerGeneracion}
+      deteniendo={deteniendo}
       onActualizar={() => ejecutarCascada(desactualizados())}
     />
   );
@@ -1345,12 +1538,13 @@ export default function WorkspaceProyecto() {
           onCancelarEdicion={cancelarEdicion}
         >
           <BotonGenerar
-            onClick={() => generarPaso("analisis")}
+            onClick={() => regenerarPaso("analisis")}
+            secundario={!!artefactos.analisis}
             disabled={ocupado}
             cargando={generando("analisis")}
             color={PALETA.navy}
           >
-            Generar actores y requerimientos
+            {resultado ? "Regenerar" : "Generar"} actores y requerimientos
           </BotonGenerar>
 
           {resultado && (
@@ -1432,13 +1626,14 @@ export default function WorkspaceProyecto() {
               onCancelarEdicion={cancelarEdicion}
             >
               <BotonGenerar
-                onClick={() => generarPaso("casos_uso")}
+                onClick={() => regenerarPaso("casos_uso")}
+                secundario={!!artefactos.casos_uso}
                 disabled={ocupado}
                 cargando={generando("casos_uso")}
                 color={PALETA.negro}
                 textoCargando="Generando diagrama..."
               >
-                Generar diagrama de casos de uso
+                {artefactos.casos_uso ? "Regenerar" : "Generar"} diagrama de casos de uso
               </BotonGenerar>
 
               {svgs.casos_uso && (
@@ -1566,12 +1761,13 @@ export default function WorkspaceProyecto() {
               onCancelarEdicion={cancelarEdicion}
             >
               <BotonGenerar
-                onClick={() => generarPaso("er")}
+                onClick={() => regenerarPaso("er")}
+                secundario={!!artefactos.er}
                 disabled={ocupado}
                 cargando={generando("er")}
                 color={PALETA.naranjaOscuro}
               >
-                Generar diagrama entidad-relación
+                {artefactos.er ? "Regenerar" : "Generar"} diagrama entidad-relación
               </BotonGenerar>
 
               {svgs.er && (
@@ -1649,7 +1845,8 @@ export default function WorkspaceProyecto() {
                   onCancelarEdicion={cancelarEdicion}
                 >
                   <BotonGenerar
-                    onClick={() => generarPaso("prototipo")}
+                    onClick={() => regenerarPaso("prototipo")}
+                    secundario={!!artefactos.prototipo}
                     disabled={ocupado || !planActual.length}
                     cargando={generando("prototipo")}
                     textoCargando={cargando?.detalle || "Generando..."}
@@ -1659,7 +1856,11 @@ export default function WorkspaceProyecto() {
                     {planActual.length} {planActual.length === 1 ? "pantalla" : "pantallas"})
                   </BotonGenerar>
 
-                  {artefactos.prototipo && faltantes.length > 0 && (
+                  {generando("prototipo") && cargando.lote && (
+                    <BotonDetener onClick={detenerGeneracion} deteniendo={deteniendo} />
+                  )}
+
+                  {!ocupado && artefactos.prototipo && faltantes.length > 0 && (
                     <button
                       onClick={agregarPantallasFaltantes}
                       disabled={ocupado}
@@ -1735,12 +1936,13 @@ export default function WorkspaceProyecto() {
                   onCancelarEdicion={cancelarEdicion}
                 >
                   <BotonGenerar
-                    onClick={() => generarPaso("arbol")}
+                    onClick={() => regenerarPaso("arbol")}
+                    secundario={!!artefactos.arbol}
                     disabled={ocupado}
                     cargando={generando("arbol")}
                     color={PALETA.naranjaOscuro}
                   >
-                    Generar árbol de navegación
+                    {artefactos.arbol ? "Regenerar" : "Generar"} árbol de navegación
                   </BotonGenerar>
 
                   {svgs.arbol && (
@@ -1824,12 +2026,13 @@ export default function WorkspaceProyecto() {
                   onCancelarEdicion={cancelarEdicion}
                 >
                   <BotonGenerar
-                    onClick={() => generarPaso("arquitectura")}
+                    onClick={() => regenerarPaso("arquitectura")}
+                    secundario={!!artefactos.arquitectura}
                     disabled={ocupado}
                     cargando={generando("arquitectura")}
                     color={PALETA.naranjaOscuro}
                   >
-                    Generar diagrama de arquitectura
+                    {artefactos.arquitectura ? "Regenerar" : "Generar"} diagrama de arquitectura
                   </BotonGenerar>
 
                   {svgs.arquitectura && (
@@ -1940,12 +2143,13 @@ export default function WorkspaceProyecto() {
                   onCancelarEdicion={cancelarEdicion}
                 >
                   <BotonGenerar
-                    onClick={() => generarPaso("sistema")}
+                    onClick={() => regenerarPaso("sistema")}
+                    secundario={!!artefactos.sistema}
                     disabled={ocupado}
                     cargando={generando("sistema")}
                     color={PALETA.naranjaOscuro}
                   >
-                    Generar diagrama del sistema
+                    {artefactos.sistema ? "Regenerar" : "Generar"} diagrama del sistema
                   </BotonGenerar>
 
                   {svgs.sistema && (

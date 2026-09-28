@@ -125,6 +125,10 @@ Responde ÚNICAMENTE con el documento HTML completo, empezando por <!DOCTYPE htm
 
     const response = await generarContenido({
       usarClaude,
+      // Detalle "economico" (por defecto): Claude razona poco antes de escribir el HTML, lo que
+      // cuesta ~la mitad por pantalla a cambio de pantallas algo más sencillas. "detallado" usa
+      // el razonamiento normal del modelo.
+      esfuerzoClaude: estilo.detalle === "detallado" ? undefined : "low",
       contents: [{ text: instrucciones }, ...imagenes],
     });
 

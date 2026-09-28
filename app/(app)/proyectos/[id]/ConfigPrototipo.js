@@ -175,6 +175,31 @@ export default function ConfigPrototipo({
         </div>
 
         <div>
+          <Titulo>Detalle con Claude</Titulo>
+          <div className="flex gap-2">
+            <Opcion
+              activa={(valor.detalle || "economico") === "economico"}
+              onClick={() => cambiar("detalle", "economico")}
+              deshabilitado={bloqueado}
+            >
+              Económico
+            </Opcion>
+            <Opcion
+              activa={valor.detalle === "detallado"}
+              onClick={() => cambiar("detalle", "detallado")}
+              deshabilitado={bloqueado}
+            >
+              Detallado
+            </Opcion>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {valor.detalle === "detallado"
+              ? "Pantallas más elaboradas; cuesta cerca del doble."
+              : "Cerca de la mitad del costo; pantallas algo más sencillas."}
+          </p>
+        </div>
+
+        <div>
           <Titulo>Plataformas</Titulo>
           <div className="flex gap-2">
             {PLATAFORMAS.map((p) => (
