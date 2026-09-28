@@ -4,7 +4,11 @@ import { PALETA } from "../../../estilos";
 
 export default function FaseIndice({ fasesAprobadas, onNavegar }) {
   const analisisAprobado = !!fasesAprobadas?.analisis;
-  const disenoAprobado = !!fasesAprobadas?.diseno_arquitectura;
+  // Proyectos anteriores a la aprobación general del Diseño: contaba la arquitectura.
+  const disenoAprobado =
+    fasesAprobadas?.diseno === undefined
+      ? !!fasesAprobadas?.diseno_arquitectura
+      : !!fasesAprobadas.diseno;
 
   const fases = [
     {
@@ -19,7 +23,7 @@ export default function FaseIndice({ fasesAprobadas, onNavegar }) {
       clave: "diseno",
       numero: "02",
       nombre: "Diseño",
-      descripcion: "Entidad-relación, prototipo, árbol de navegación y arquitectura",
+      descripcion: "Entidad-relación, prototipo, árbol de navegación, arquitectura y diagrama del sistema",
       completado: disenoAprobado,
       bloqueado: !analisisAprobado,
     },

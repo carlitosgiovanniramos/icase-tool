@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { pedirJson } from "@/lib/pedirJson";
+import { subirArchivoProyecto } from "@/lib/archivos";
 import { useAlert } from "../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../estilos";
 
@@ -38,33 +39,13 @@ export default function CrearProyecto() {
   const router = useRouter();
   const { mostrarError } = useAlert();
 
-  async function subirArchivo(file, carpeta, userId) {
-    // Sin espacios ni símbolos en la ruta: evitan problemas en la URL pública del archivo.
-    const nombreSeguro = file.name
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^\w.-]+/g, "-");
-    const nombreArchivo = `${userId}/${carpeta}/${Date.now()}-${nombreSeguro}`;
-
-    const { error } = await supabase.storage
-      .from("archivos-proyecto")
-      .upload(nombreArchivo, file);
-
-    if (error) {
+  async function subirArchivo(file, carpeta) {
+    try {
+      return await subirArchivoProyecto(supabase, file, carpeta);
+    } catch (err) {
       const tipo = carpeta === "imagenes" ? "la imagen" : "el documento";
-      throw new Error(
-        /row-level security/i.test(error.message)
-          ? `No se pudo subir ${tipo}: Supabase Storage no tiene permiso para guardar archivos. ` +
-            `Ejecuta supabase/rls_storage.sql en el SQL Editor de Supabase.`
-          : `No se pudo subir ${tipo}: ${error.message}`
-      );
+      throw new Error(`No se pudo subir ${tipo}: ${err.message}`);
     }
-
-    const { data } = supabase.storage
-      .from("archivos-proyecto")
-      .getPublicUrl(nombreArchivo);
-
-    return data.publicUrl;
   }
 
   async function handleSubmit(e) {
@@ -72,16 +53,12 @@ export default function CrearProyecto() {
     setCargando(true);
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
       let documentoUrl = null;
       let documentoTexto = null;
       let imagenUrl = null;
 
       if (documento) {
-        documentoUrl = await subirArchivo(documento, "documentos", user.id);
+        documentoUrl = await subirArchivo(documento, "documentos");
 
         const data = await pedirJson("/api/procesar-documento", {
           method: "POST",
@@ -93,7 +70,7 @@ export default function CrearProyecto() {
       }
 
       if (imagen) {
-        imagenUrl = await subirArchivo(imagen, "imagenes", user.id);
+        imagenUrl = await subirArchivo(imagen, "imagenes");
       }
 
       const { error } = await supabase.from("proyectos").insert([
