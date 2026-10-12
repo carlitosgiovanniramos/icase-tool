@@ -41,11 +41,19 @@ export default function FaseStepper({ fasesAprobadas, hayDiseno, vista, onNavega
       // Con Diseño ya generado se puede entrar a verlo aunque el Análisis se esté editando.
       bloqueado: !analisisAprobado && !hayDiseno,
     },
+    {
+      // No se aprueba: es el documento con las dos fases, disponible cuando ambas lo están.
+      clave: "informe",
+      numero: "3",
+      nombre: "Informe",
+      completado: false,
+      bloqueado: !(analisisAprobado && disenoAprobado),
+    },
   ];
 
   return (
     <div
-      className="mb-8 flex items-start sticky top-0 z-20 bg-white py-3 transition-transform duration-300 ease-out"
+      className="mb-8 flex items-start sticky top-0 z-20 bg-white py-3 transition-transform duration-300 ease-out print:hidden"
       style={{ transform: oculto ? "translateY(-120%)" : "translateY(0)" }}
     >
       {pasos.map((paso, i) => {

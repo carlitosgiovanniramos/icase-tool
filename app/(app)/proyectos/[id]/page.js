@@ -28,6 +28,7 @@ import BadgeModelo from "./BadgeModelo";
 import ContextoAnalisis from "./ContextoAnalisis";
 import DiagramaBox from "./DiagramaBox";
 import ArbolNavegacion from "./ArbolNavegacion";
+import InformeProyecto from "./InformeProyecto";
 import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
@@ -562,7 +563,7 @@ export default function WorkspaceProyecto() {
   const [fasesAprobadas, setFasesAprobadas] = useState({});
   const [cargando, setCargando] = useState(null); // { paso, modo } generación manual en curso
   const [progreso, setProgreso] = useState(null); // { indice, total, nombre } cascada en curso
-  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno"
+  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "informe"
 
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
@@ -1997,7 +1998,24 @@ export default function WorkspaceProyecto() {
         />
       )}
 
-      {aviso}
+      <div className="print:hidden">{aviso}</div>
+
+      {/* ===================== INFORME ===================== */}
+      {vista === "informe" &&
+        (fasesAprobadas.analisis && disenoAprobado ? (
+          <InformeProyecto
+            proyecto={proyecto}
+            contexto={contexto}
+            artefactos={artefactos}
+            svgs={svgs}
+            renderizar={renderizar}
+            onVolver={() => setVista("resumen")}
+          />
+        ) : (
+          <p className="text-sm text-gray-600">
+            El informe se habilita cuando las fases de Análisis y Diseño están aprobadas.
+          </p>
+        ))}
 
       {vista === "resumen" && (
         <div>
@@ -2268,12 +2286,22 @@ export default function WorkspaceProyecto() {
               </span>
               <h2 className="text-2xl font-bold text-white">Diseño</h2>
             </div>
-            <button
-              onClick={() => setVista("resumen")}
-              className="text-white/70 hover:text-white text-sm font-semibold"
-            >
-              ← Volver
-            </button>
+            <div className="flex items-center gap-4">
+              {fasesAprobadas.analisis && disenoAprobado && (
+                <button
+                  onClick={() => setVista("informe")}
+                  className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
+                >
+                  Continuar al Informe →
+                </button>
+              )}
+              <button
+                onClick={() => setVista("resumen")}
+                className="text-white/70 hover:text-white text-sm font-semibold"
+              >
+                ← Volver
+              </button>
+            </div>
           </div>
 
           <div className="p-6">
@@ -2770,9 +2798,13 @@ export default function WorkspaceProyecto() {
                     </p>
                   </div>
                   {disenoAprobado ? (
-                    <span className="text-sm font-semibold" style={{ color: PALETA.oliva }}>
-                      ✓ Proyecto completado
-                    </span>
+                    <button
+                      onClick={() => setVista("informe")}
+                      style={{ backgroundColor: PALETA.navy }}
+                      className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+                    >
+                      Continuar al Informe →
+                    </button>
                   ) : (
                     <button
                       onClick={aprobarFaseDiseno}

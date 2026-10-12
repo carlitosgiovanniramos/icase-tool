@@ -15,7 +15,7 @@ export default async function AppLayout({ children }) {
     <AlertProvider>
       <div className="flex min-h-screen">
         <aside
-          className={`w-64 shrink-0 ${DEGRADADO_AUTH} text-white p-6 flex flex-col`}
+          className={`w-64 shrink-0 ${DEGRADADO_AUTH} text-white p-6 flex flex-col print:hidden`}
         >
           <div className="flex items-center gap-2 mb-8">
             <span className="w-2 h-2 bg-white shrink-0" />
@@ -74,7 +74,7 @@ export default async function AppLayout({ children }) {
           </div>
         </aside>
 
-        <main className="flex-1 min-w-0 bg-white text-gray-900 p-8">
+        <main className="flex-1 min-w-0 bg-white text-gray-900 p-8 print:p-0">
           {children}
         </main>
       </div>

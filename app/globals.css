@@ -33,6 +33,45 @@ select {
   color: #111827;
 }
 
+/* --- Informe del proyecto: vista previa y exportación a PDF (InformeProyecto.js) --- */
+/* Hoja vertical para el texto y las fichas; cada diagrama va en su propia hoja horizontal,
+   porque en vertical queda demasiado pequeño para leerse. */
+@page {
+  size: A4;
+  margin: 18mm 16mm;
+}
+
+@page informe-horizontal {
+  size: A4 landscape;
+  margin: 14mm;
+}
+
+.informe {
+  /* Que el sombreado de las tablas salga en el PDF aunque no se marque "gráficos de fondo". */
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* El diagrama ocupa el ancho de la hoja sin deformarse (los SVG traen su propio tamaño fijo). */
+.informe-diagrama svg {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100% !important;
+  margin: 0 auto;
+}
+
+@media print {
+  .informe-horizontal {
+    page: informe-horizontal;
+  }
+
+  /* Alto que deja lugar al título, la introducción y el pie en la misma hoja horizontal. */
+  .informe-diagrama svg {
+    max-height: 122mm;
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
