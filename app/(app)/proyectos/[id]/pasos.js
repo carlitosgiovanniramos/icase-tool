@@ -24,6 +24,16 @@ export const PASOS = [
     ruta: "/api/generar-casos-uso",
     diagrama: true,
   },
+  // Primero el dominio (clases) y luego cómo se guarda (entidad-relación, que se deriva de ellas).
+  {
+    clave: "clases",
+    fase: "diseno",
+    nombre: "Diagrama de clases",
+    aprobacion: "diseno_clases",
+    columna: "diagrama_clases",
+    ruta: "/api/generar-diagrama-clases",
+    diagrama: true,
+  },
   {
     clave: "er",
     fase: "diseno",

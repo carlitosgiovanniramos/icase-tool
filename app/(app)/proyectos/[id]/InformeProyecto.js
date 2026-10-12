@@ -19,12 +19,15 @@ const MOVIL = { ancho: 390, alto: 844, escala: 0.45 };
 
 // Resumen que abre la fase de Diseño: sus diagramas van cada uno en una hoja horizontal, así
 // que la hoja de introducción lleva esta tabla en vez de quedar casi vacía.
+// Los apartados se numeran según los que el proyecto tiene: el diagrama de clases se agregó
+// después que los demás pasos y los proyectos anteriores pueden no traerlo.
 const APARTADOS_DISENO = [
-  ["5.1 Diagrama entidad-relación", "Los datos que el sistema guarda y cómo se relacionan."],
-  ["5.2 Prototipo de pantallas", "La interfaz con la que cada actor usa el sistema."],
-  ["5.3 Árbol de navegación", "Cómo se llega a cada pantalla desde el menú."],
-  ["5.4 Diagrama de arquitectura", "Las capas, las tecnologías y cómo se comunican."],
-  ["5.5 Diagrama de sistemas", "Los subsistemas, sus componentes y los requerimientos que cumple cada uno."],
+  { clave: "clases", titulo: "Diagrama de clases", define: "Las clases del dominio, con sus atributos, operaciones y relaciones." },
+  { clave: "er", titulo: "Diagrama entidad-relación", define: "Los datos que el sistema guarda y cómo se relacionan." },
+  { clave: "prototipo", titulo: "Prototipo de pantallas", define: "La interfaz con la que cada actor usa el sistema." },
+  { clave: "arbol", titulo: "Árbol de navegación", define: "Cómo se llega a cada pantalla desde el menú." },
+  { clave: "arquitectura", titulo: "Diagrama de arquitectura", define: "Las capas, las tecnologías y cómo se comunican." },
+  { clave: "sistema", titulo: "Diagrama de sistemas", define: "Los subsistemas, sus componentes y los requerimientos que cumple cada uno." },
 ];
 
 const esMovil = (pantalla) => /m[oó]vil/i.test(pantalla?.plataforma || "");
@@ -230,6 +233,8 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
   const moviles = prototipo.filter(esMovil);
   const ramas = useRamasDelArbol(artefactos.arbol, renderizar);
   const propuesta = datosDePropuesta(contexto, analisis, prototipo);
+  const apartados = APARTADOS_DISENO.filter((a) => artefactos[a.clave]);
+  const numero = (clave) => `5.${apartados.findIndex((a) => a.clave === clave) + 1}`;
   const [fecha] = useState(() =>
     new Date().toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })
   );
@@ -279,10 +284,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
               <li>2. Problema actual</li>
               <li>3. Propuesta de solución</li>
               <li>4. Fase de análisis: actores, requerimientos y casos de uso</li>
-              <li>
-                5. Fase de diseño: entidad-relación, prototipo, árbol de navegación, arquitectura y
-                diagrama de sistemas
-              </li>
+              <li>5. Fase de diseño: {apartados.map((a) => a.titulo.toLowerCase()).join(", ")}</li>
             </ol>
           </div>
         </header>
@@ -372,9 +374,9 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
         <Seccion numero="5" titulo="Fase de diseño" nuevaHoja>
           <Parrafo>
             En esta fase se define cómo se construirá el sistema para cumplir los requerimientos del
-            análisis: el modelo de datos, el prototipo de las pantallas, la navegación entre ellas, la
+            análisis: las clases del dominio, el modelo de datos, el prototipo de las pantallas, la navegación entre ellas, la
             arquitectura técnica y la composición del sistema en subsistemas. Cada apartado parte de
-            los anteriores, de modo que los cinco describen la misma solución desde distintos ángulos.
+            los anteriores, de modo que todos describen la misma solución desde distintos ángulos.
           </Parrafo>
           <table className="w-full border-collapse mb-4">
             <thead>
@@ -384,17 +386,29 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
               </tr>
             </thead>
             <tbody>
-              {APARTADOS_DISENO.map(([apartado, define]) => (
-                <tr key={apartado} className="break-inside-avoid">
-                  <td className={`${CELDA} font-semibold`}>{apartado}</td>
-                  <td className={CELDA}>{define}</td>
+              {apartados.map((a) => (
+                <tr key={a.clave} className="break-inside-avoid">
+                  <td className={`${CELDA} font-semibold`}>
+                    {numero(a.clave)} {a.titulo}
+                  </td>
+                  <td className={CELDA}>{a.define}</td>
                 </tr>
               ))}
             </tbody>
           </table>
 
+          {artefactos.clases && (
+            <Figura
+              numero={numero("clases")}
+              titulo="Diagrama de clases"
+              intro="Muestra las clases del dominio con sus atributos y operaciones, y cómo se relacionan entre sí. De él se deriva el modelo de datos."
+              svg={svgs.clases}
+              explicacion={extraerExplicacion(artefactos.clases)}
+            />
+          )}
+
           <Figura
-            numero="5.1"
+            numero={numero("er")}
             titulo="Diagrama entidad-relación"
             intro="Muestra los datos que el sistema guarda: las entidades, sus atributos y cómo se relacionan entre sí."
             svg={svgs.er}
@@ -403,7 +417,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
 
           <div className="break-before-page">
             <Apartado
-              numero="5.2"
+              numero={numero("prototipo")}
               titulo="Prototipo de pantallas"
               intro={`Vista inicial de las ${prototipo.length} pantallas del sistema. Bajo cada una se indican los requerimientos funcionales que cubre.`}
             />
@@ -431,7 +445,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
             ramas.map((rama, i) => (
               <Figura
                 key={rama.id}
-                numero={i === 0 ? "5.3" : ""}
+                numero={i === 0 ? numero("arbol") : ""}
                 titulo={i === 0 ? "Árbol de navegación" : ""}
                 intro={
                   i === 0
@@ -445,7 +459,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
             ))
           ) : (
             <Figura
-              numero="5.3"
+              numero={numero("arbol")}
               titulo="Árbol de navegación"
               intro="Muestra cómo se llega a cada pantalla desde el menú. Bajo cada pantalla aparecen los requerimientos que cubre."
               svg={svgs.arbol}
@@ -454,7 +468,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
           )}
 
           <Figura
-            numero="5.4"
+            numero={numero("arquitectura")}
             titulo="Diagrama de arquitectura"
             intro="Muestra las capas del sistema, la tecnología de cada componente y los protocolos con que se comunican."
             svg={svgs.arquitectura}
@@ -462,7 +476,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
           />
 
           <Figura
-            numero="5.5"
+            numero={numero("sistema")}
             titulo="Diagrama de sistemas"
             intro="Organiza los componentes en subsistemas e indica, para cada uno, su tecnología y los requerimientos que cumple."
             svg={svgs.sistema}

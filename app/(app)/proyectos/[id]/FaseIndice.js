@@ -23,7 +23,7 @@ export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
       clave: "diseno",
       numero: "02",
       nombre: "Diseño",
-      descripcion: "Entidad-relación, prototipo, árbol de navegación, arquitectura y diagrama de sistemas",
+      descripcion: "Clases, entidad-relación, prototipo, árbol de navegación, arquitectura y diagrama de sistemas",
       completado: disenoAprobado,
       // Con Diseño ya generado se puede entrar a verlo aunque el Análisis se esté editando.
       bloqueado: !analisisAprobado && !hayDiseno,
