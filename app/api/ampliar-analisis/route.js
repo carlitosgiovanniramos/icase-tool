@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generarContenido } from "@/lib/gemini";
 import { formatearContexto } from "@/lib/contexto";
+import { INSTRUCCION_25010, normalizarRNF, textoCategoria } from "@/lib/iso25010";
 
 export const maxDuration = 300;
 
@@ -10,8 +11,9 @@ function ultimoNumero(lista = []) {
 
 const conCeros = (n) => String(n).padStart(2, "0");
 
-// Amplía un análisis existente: la IA devuelve SOLO actores y requerimientos nuevos, que se
-// agregan a los actuales sin modificarlos.
+// Amplía o corrige un análisis existente: la IA devuelve SOLO los actores y requerimientos
+// nuevos, que se agregan a los actuales, y los existentes que el usuario pidió cambiar (con su
+// mismo código). El resto no se toca.
 export async function POST(request) {
   try {
     const { prompt, documentoTexto, contexto, analisis, instruccion, usarClaude } = await request.json();
@@ -26,28 +28,31 @@ export async function POST(request) {
       "Requerimientos funcionales:",
       ...rf.map((r) => `${r.codigo} - ${r.nombre}: ${r.descripcion}`),
       "Requerimientos no funcionales:",
-      ...rnf.map((r) => `${r.codigo} (${r.categoria}) - ${r.nombre}: ${r.descripcion}`),
+      ...rnf.map((r) => `${r.codigo} (${textoCategoria(r)}) - ${r.nombre}: ${r.descripcion}`),
     ].join("\n");
 
     const elicitacion = formatearContexto(contexto);
 
     const instrucciones = `
-Eres un analista de requisitos certificado, experto en la norma ISO/IEC/IEEE 29148:2018. Ya existe un análisis de requerimientos para este sistema y el cliente pide ampliarlo.
+Eres un analista de requisitos certificado, experto en la norma ISO/IEC/IEEE 29148:2018. Ya existe un análisis de requerimientos para este sistema y el cliente pide ampliarlo o corregirlo.
 
 Descripción del sistema:
 ${prompt}
 ${elicitacion ? `\nInformación de elicitación del cliente:\n${elicitacion}\n` : ""}${documentoTexto ? `\nContexto de un documento adjunto:\n${documentoTexto}\n` : ""}
-Análisis actual (NO lo repitas, NO lo reformules, NO lo modifiques):
+Análisis actual (NO lo repitas ni lo reformules; modifica un requerimiento existente SOLO si el cliente lo pide):
 ${existentes}
 
-Lo que el cliente pide agregar:
+Lo que el cliente pide agregar o cambiar:
 ${instruccion}
 
 Genera SOLO los requerimientos NUEVOS necesarios para cubrir lo que pide el cliente, ni más ni menos. Si algo de lo que pide ya está cubierto por un requerimiento existente, no lo dupliques.
+Si el cliente pide cambiar requerimientos existentes, devuélvelos completos en "modificados", con su MISMO código y todos sus campos ya corregidos. No incluyas ahí los que no pidió cambiar.
 - Los funcionales nuevos continúan la numeración desde RF${conCeros(ultimoRF + 1)}; los no funcionales desde RNF${conCeros(ultimoRNF + 1)}.
 - Cada requerimiento debe ser necesario, singular, no ambiguo, verificable, factible y libre de implementación, redactado como "El sistema debe/deberá...".
 - En "actores" usa nombres de actores existentes. Solo si hace falta un actor que no existe, agrégalo en "actores_nuevos".
 - En "dependencias" puedes referenciar códigos existentes o nuevos.
+
+${INSTRUCCION_25010}
 
 Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adicional:
 {
@@ -69,7 +74,8 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adiciona
     {
       "codigo": "RNF${conCeros(ultimoRNF + 1)}",
       "nombre": "string (3-6 palabras)",
-      "categoria": "string",
+      "categoria": "string (característica ISO/IEC 25010)",
+      "subcategoria": "string (subcaracterística ISO/IEC 25010 de esa característica)",
       "descripcion": "string",
       "dependencias": [],
       "prioridad": "alta | media | baja",
@@ -78,9 +84,12 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adiciona
       "postcondiciones": "string",
       "metodo_verificacion": "Inspección | Análisis | Demostración | Prueba"
     }
+  ],
+  "modificados": [
+    { "codigo": "código existente (RFxx o RNFxx)", "...": "los mismos campos que arriba, ya corregidos" }
   ]
 }
-Usa [] en cualquier lista que no necesite elementos nuevos.
+Usa [] en cualquier lista que no necesite elementos.
 `;
 
     const response = await generarContenido({
@@ -113,10 +122,19 @@ Usa [] en cualquier lista que no necesite elementos nuevos.
       (a) => a.nombre && !nombresActuales.has(a.nombre.toLowerCase())
     );
 
+    // Solo cuentan como modificados los que existen; se separan por tipo según su código.
+    const existentesPorCodigo = new Set([...rf, ...rnf].map((r) => r.codigo));
+    const modificados = (resultado.modificados || []).filter((r) =>
+      existentesPorCodigo.has(r.codigo)
+    );
+    const esRNF = (r) => rnf.some((x) => x.codigo === r.codigo);
+
     return NextResponse.json({
       actores_nuevos: actoresNuevos,
       requerimientos_funcionales: nuevosRF.map(ajustarDependencias),
-      requerimientos_no_funcionales: nuevosRNF.map(ajustarDependencias),
+      requerimientos_no_funcionales: normalizarRNF(nuevosRNF.map(ajustarDependencias)),
+      modificados_funcionales: modificados.filter((r) => !esRNF(r)).map(ajustarDependencias),
+      modificados_no_funcionales: normalizarRNF(modificados.filter(esRNF).map(ajustarDependencias)),
       modelo_ia: response.modelVersion,
       costo_ia: response.costoUsd,
     });

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PALETA } from "../../../estilos";
 
-export default function FaseStepper({ fasesAprobadas, vista, onNavegar }) {
+export default function FaseStepper({ fasesAprobadas, hayDiseno, vista, onNavegar }) {
   const [oculto, setOculto] = useState(false);
   const ultimoScroll = useRef(0);
 
@@ -38,7 +38,8 @@ export default function FaseStepper({ fasesAprobadas, vista, onNavegar }) {
       numero: "2",
       nombre: "Diseño",
       completado: disenoAprobado,
-      bloqueado: !analisisAprobado,
+      // Con Diseño ya generado se puede entrar a verlo aunque el Análisis se esté editando.
+      bloqueado: !analisisAprobado && !hayDiseno,
     },
   ];
 

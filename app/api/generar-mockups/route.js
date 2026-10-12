@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { generarContenido } from "@/lib/gemini";
 import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
+import { extraerHtml } from "@/lib/html";
+import { describirNavegacion } from "@/lib/navegacion";
 
 export const maxDuration = 300;
 
@@ -21,14 +23,6 @@ async function aParteImagen(url) {
   } catch {
     return null; // una referencia que no carga no debe impedir generar la pantalla
   }
-}
-
-// El modelo responde con el documento HTML; se quita cualquier texto o markdown alrededor.
-function extraerHtml(texto) {
-  const inicio = texto.search(/<!doctype html|<html/i);
-  const fin = texto.toLowerCase().lastIndexOf("</html>");
-  if (inicio === -1 || fin === -1) return null;
-  return texto.slice(inicio, fin + "</html>".length);
 }
 
 function instruccionesDeEstilo({ esWireframe, color, tema }) {
@@ -61,6 +55,7 @@ Prohibido: look de plantilla Bootstrap por defecto, formularios centrados sin co
 export async function POST(request) {
   try {
     const {
+      nombre,
       analisis,
       diagramaEr,
       pantalla,
@@ -73,13 +68,18 @@ export async function POST(request) {
     const esWireframe = estilo.modo === "wireframe";
     const esMovil = /m[oó]vil/i.test(pantalla.plataforma || "");
 
-    // Secciones de la misma plataforma: forman el menú de navegación de esta pantalla.
-    const secciones = pantallas
-      .filter((p) => (p.plataforma || "Web") === (pantalla.plataforma || "Web"))
-      .map((p) => p.nombre);
-
     const rfsDePantalla = new Set(pantalla.rfs || []);
     const rfsPantalla = analisis.requerimientos_funcionales.filter((r) => rfsDePantalla.has(r.codigo));
+
+    // Cada pantalla se genera por separado: sin el resto de los requerimientos no conoce los
+    // estados, roles y términos que definen, y los inventa distintos en cada una. Van resumidos
+    // (sin actores ni dependencias) porque solo sirven de vocabulario.
+    const otrosRF = rfsPantalla.length
+      ? analisis.requerimientos_funcionales
+          .filter((r) => !rfsDePantalla.has(r.codigo))
+          .map((r) => `${r.codigo}${r.nombre ? ` - ${r.nombre}` : ""}: ${r.descripcion}`)
+          .join("\n")
+      : "";
 
     const [logo, ...referencias] = await Promise.all([
       estilo.logoUrl ? aParteImagen(estilo.logoUrl) : null,
@@ -105,16 +105,22 @@ ${formatearActores(analisis)}
 
 PANTALLA A DISEÑAR: "${pantalla.nombre}"
 ${pantalla.descripcion ? `Qué muestra y qué permite hacer: ${pantalla.descripcion}\n` : ""}${pantalla.actores?.length ? `Usada por: ${pantalla.actores.join(", ")}\n` : ""}
-Requerimientos que esta pantalla debe cubrir (cada uno debe verse reflejado en la interfaz):
-${rfsPantalla.length ? formatearRequerimientos(rfsPantalla) : formatearRequerimientos(analisis.requerimientos_funcionales)}
-${diagramaEr ? `\nModelo de datos (Mermaid). Los formularios, tablas y detalles deben usar estas entidades y atributos:\n${diagramaEr}\n` : ""}
+${rfsPantalla.length
+      ? `Requerimientos que esta pantalla debe cubrir (cada uno debe verse reflejado en la interfaz):\n${formatearRequerimientos(rfsPantalla)}`
+      : pantalla.descripcion
+      ? `Requerimientos del sistema (referencia: refleja solo los que correspondan a esta pantalla):\n${formatearRequerimientos(analisis.requerimientos_funcionales)}`
+      : `Requerimientos que esta pantalla debe cubrir (cada uno debe verse reflejado en la interfaz):\n${formatearRequerimientos(analisis.requerimientos_funcionales)}`}
+${otrosRF ? `\nResto de los requerimientos del sistema. NO los implementes en esta pantalla: son solo el vocabulario común del prototipo.\n${otrosRF}\n` : ""}${diagramaEr ? `\nModelo de datos (Mermaid). Los formularios, tablas y detalles deben usar estas entidades y atributos:\n${diagramaEr}\n` : ""}
+Coherencia con el resto del prototipo (las demás pantallas se generan por separado con estas mismas reglas):
+${nombre?.trim() ? `- El sistema se llama "${nombre.trim()}": usa ese nombre, tal cual, como nombre del producto (encabezado, título de la página). No inventes otra marca.\n` : ""}- Usa EXACTAMENTE los estados, roles, tipos y términos que definen los requerimientos (ej. si una orden puede estar "abierta" o "cerrada", no la muestres como "pendiente" o "pagada"). No inventes estados ni categorías.
+- No agregues enlaces, botones ni avisos de funciones que ningún requerimiento pide (ej. recuperar contraseña, auditoría, exportaciones).
+- A la persona en sesión identifícala por su rol, uno de los actores del sistema.
+
 Plataforma: ${esMovil
       ? "APP MÓVIL. La pantalla se mostrará dentro de un marco de teléfono con un viewport de 390x844px: diseña a pantalla completa para ese tamaño (el contenido ocupa el 100% del ancho, sin dibujar un marco de teléfono ni un fondo alrededor, y sin desbordar horizontalmente). Incluye barra superior y barra de navegación inferior fija. Elementos táctiles grandes (mínimo 44px)."
       : "PANEL WEB de escritorio (~1280px de ancho), con barra lateral de navegación y encabezado con contexto."}
 
-Navegación: ${secciones.length > 1
-      ? `el menú debe incluir exactamente estas secciones, con estos mismos nombres, como enlaces <a href="#">: ${secciones.join(", ")}. Marca "${pantalla.nombre}" como la activa.`
-      : "incluye la navegación que corresponda a esta pantalla."}
+Navegación: ${describirNavegacion(pantalla, pantallas)}
 
 ${instruccionesDeEstilo({ esWireframe, color: estilo.color, tema: estilo.tema })}
 ${textoImagenes ? `\n${textoImagenes}\n` : ""}${formatearIndicaciones(indicaciones)}

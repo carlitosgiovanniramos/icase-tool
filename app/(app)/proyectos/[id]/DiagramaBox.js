@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PALETA } from "../../../estilos";
+import { extraerExplicacion } from "@/lib/diagramas";
 
 function extraerDimensiones(svgString) {
   const match = svgString?.match(
@@ -42,7 +43,7 @@ function BotonAccion({ onClick, children, invertido }) {
   );
 }
 
-function Pestana({ activa, onClick, children }) {
+export function Pestana({ activa, onClick, children }) {
   return (
     <button
       onClick={onClick}
@@ -56,7 +57,7 @@ function Pestana({ activa, onClick, children }) {
   );
 }
 
-// Vista de código Mermaid con vista previa en vivo. Si el paso no es editable (aprobado o con
+// Vista de código (Mermaid o PlantUML) con vista previa en vivo. Si el paso no es editable (aprobado o con
 // una generación en curso), el código se puede ver pero no modificar.
 function EditorCodigo({ codigo, editable, renderizar, onGuardar }) {
   // El borrador guarda contra qué código se empezó a editar: si el diagrama se regenera
@@ -161,7 +162,9 @@ const ZOOM_PASO = 0.25;
 const MARGEN_CONTENEDOR = 48; // padding p-6 (24px) en cada lado
 
 // codigo / renderizar / onGuardarCodigo / editable son opcionales: con ellos aparece la
-// pestaña "Código" para ver y modificar el Mermaid del diagrama.
+// pestaña "Código" para ver y modificar el código (Mermaid o PlantUML) del diagrama.
+// controles: botones propios del paso que se muestran junto a las pestañas mientras se ve el
+// diagrama (ej. las vistas por plataforma del árbol de navegación).
 export default function DiagramaBox({
   svg,
   titulo,
@@ -170,9 +173,11 @@ export default function DiagramaBox({
   renderizar,
   onGuardarCodigo,
   editable,
+  controles,
 }) {
   const [modo, setModo] = useState("diagrama"); // "diagrama" | "codigo"
   const [expandido, setExpandido] = useState(false);
+  const [verExplicacion, setVerExplicacion] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [dimAjuste, setDimAjuste] = useState(null); // {width, height} en px, ya ajustado al contenedor
   const contenedorRef = useRef(null);
@@ -214,12 +219,13 @@ export default function DiagramaBox({
   }, [expandido]);
 
   if (!svg) return null;
+  const explicacion = extraerExplicacion(codigo);
 
   return (
     <>
       <div className="mt-6">
         <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             {codigo && renderizar && (
               <>
                 <Pestana activa={modo === "diagrama"} onClick={() => setModo("diagrama")}>
@@ -230,6 +236,7 @@ export default function DiagramaBox({
                 </Pestana>
               </>
             )}
+            {modo === "diagrama" && controles}
           </div>
           <div className="flex items-center gap-2">
             <BotonAccion onClick={() => setExpandido(true)}>Expandir</BotonAccion>
@@ -252,6 +259,27 @@ export default function DiagramaBox({
             className="border border-gray-300 p-4 overflow-auto flex justify-center [&_svg]:max-w-none bg-white cursor-zoom-in"
             dangerouslySetInnerHTML={{ __html: svg }}
           />
+        )}
+
+        {/* La explicación que acompaña al diagrama (comentarios al inicio de su código), plegada
+            para no llenar la pantalla de texto. */}
+        {modo === "diagrama" && explicacion && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setVerExplicacion((v) => !v)}
+              aria-expanded={verExplicacion}
+              className="text-xs font-semibold hover:underline"
+              style={{ color: PALETA.navy }}
+            >
+              {verExplicacion ? "Ocultar explicación" : "Ver explicación"}
+            </button>
+            {verExplicacion && (
+              <p className="mt-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+                {explicacion}
+              </p>
+            )}
+          </div>
         )}
       </div>
 

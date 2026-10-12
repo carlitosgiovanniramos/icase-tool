@@ -1,136 +1,250 @@
 import { NextResponse } from "next/server";
 import { generarContenido } from "@/lib/gemini";
 import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
+import { armarArbol, menuPrincipal } from "@/lib/arbol";
 
 export const maxDuration = 300;
 
-const ESTILOS = `classDef raiz fill:#1e293b,stroke:#1e293b,color:#ffffff,stroke-width:2px;
-    classDef plataforma fill:#475569,stroke:#1e293b,color:#ffffff,stroke-width:1px;
-    classDef seccion fill:#eef2f6,stroke:#1e293b,color:#1e293b,stroke-width:1px;
-    classDef pantalla fill:#ffffff,stroke:#94a3b8,color:#334155,stroke-width:1px;`;
+// Árbol de navegación: cómo se llega a cada pantalla del prototipo (raíz → [plataforma] → entrada
+// del menú → pantalla → pantallas que se abren desde ella).
+//
+// Se arma con la navegación REAL del prototipo: el navegador envía, de cada pantalla, las opciones
+// de sus menús y sus botones (ver resumirNavegacion en lib/html.js). Sin eso la IA solo conoce los
+// nombres de las pantallas y agrupa por intuición, con secciones que no existen en ningún menú.
+//
+// La IA NO escribe Mermaid: devuelve la estructura como JSON y la aplicación genera el código
+// (ver lib/arbol.js). Si alguna pantalla quedó sin ubicar se pide una corrección (un solo
+// reintento); lo que siga pendiente se devuelve en "advertencias".
 
-// Una rama por plataforma (web y app móvil comparten backend, pero cada una tiene su propia
-// navegación). Cada pantalla muestra los RF que cubre y cada sección el rol que la usa.
-const EJEMPLO_VARIAS_PLATAFORMAS = `flowchart TD
-    RAIZ(["Sistema de Bomberos"])
-    WEB["Panel Web"]
-    MOV["App Móvil"]
-    RAIZ --> WEB
-    RAIZ --> MOV
+const EJEMPLO = `{
+  "plataformas": [
+    {
+      "plataforma": "Web",
+      "nodos": [
+        { "tipo": "pantalla", "nombre": "Inicio de sesión" },
+        {
+          "tipo": "seccion",
+          "nombre": "Reservas",
+          "roles": ["Administrador"],
+          "hijos": [
+            {
+              "tipo": "pantalla",
+              "nombre": "Lista de reservas",
+              "hijos": [{ "tipo": "pantalla", "nombre": "Nueva reserva" }]
+            },
+            { "tipo": "pantalla", "nombre": "Calendario de canchas" }
+          ]
+        }
+      ]
+    }
+  ],
+  "explicacion": "línea 1\\nlínea 2\\nlínea 3"
+}`;
 
-    WEB_1["Monitoreo<br/>Comandante"]
-    WEB_1_1["Dashboard de métricas<br/>RF08, RF09"]
-    WEB_1_2["Historial de partes<br/>RF10"]
-    WEB_2["Catálogos<br/>Administrador"]
-    WEB_2_1["Vehículos<br/>RF12"]
-    WEB --> WEB_1
-    WEB_1 --> WEB_1_1
-    WEB_1 --> WEB_1_2
-    WEB --> WEB_2
-    WEB_2 --> WEB_2_1
+const normalizarCodigo = (c) => String(c).replace(/[-\s]/g, "").toUpperCase();
+const sumar = (a, b) => (typeof a === "number" || typeof b === "number" ? (a || 0) + (b || 0) : a);
 
-    MOV_1["Partes<br/>Bombero"]
-    MOV_1_1["Registro de emergencia<br/>RF02, RF03"]
-    MOV_1_2["Firma del parte<br/>RF06"]
-    MOV --> MOV_1
-    MOV_1 --> MOV_1_1
-    MOV_1 --> MOV_1_2
+// Extrae el primer objeto JSON completo de la respuesta e ignora cualquier texto antes o después.
+function limpiarJson(texto) {
+  const s = String(texto || "").trim();
+  const inicio = s.indexOf("{");
+  if (inicio === -1) throw new Error("La IA no devolvió un JSON.");
 
-    ${ESTILOS}
-    class RAIZ raiz
-    class WEB,MOV plataforma
-    class WEB_1,WEB_2,MOV_1 seccion
-    class WEB_1_1,WEB_1_2,WEB_2_1,MOV_1_1,MOV_1_2 pantalla`;
+  let profundidad = 0;
+  let enCadena = false;
+  let escapado = false;
 
-const EJEMPLO_UNA_PLATAFORMA = `flowchart TD
-    RAIZ(["Sistema de Biblioteca"])
-    SEC1["Catálogo<br/>Lector"]
-    SEC1_1["Buscar libro<br/>RF01"]
-    SEC1_2["Detalle de libro<br/>RF02"]
-    SEC2["Préstamos<br/>Bibliotecario"]
-    SEC2_1["Registrar préstamo<br/>RF03, RF04"]
-    RAIZ --> SEC1
-    SEC1 --> SEC1_1
-    SEC1 --> SEC1_2
-    RAIZ --> SEC2
-    SEC2 --> SEC2_1
+  for (let i = inicio; i < s.length; i++) {
+    const c = s[i];
+    if (enCadena) {
+      if (escapado) escapado = false;
+      else if (c === "\\") escapado = true;
+      else if (c === '"') enCadena = false;
+      continue;
+    }
+    if (c === '"') enCadena = true;
+    else if (c === "{") profundidad++;
+    else if (c === "}") {
+      profundidad--;
+      if (profundidad === 0) return s.slice(inicio, i + 1);
+    }
+  }
+  throw new Error("El JSON de la IA llegó incompleto.");
+}
 
-    ${ESTILOS}
-    class RAIZ raiz
-    class SEC1,SEC2 seccion
-    class SEC1_1,SEC1_2,SEC2_1 pantalla`;
-
-// Acepta la lista de pantallas como objetos { nombre, plataforma, rfs, actores } o, en proyectos
-// antiguos, como nombres sueltos.
+// Acepta la lista de pantallas como objetos { nombre, plataforma, rfs, actores, navegacion } o,
+// en proyectos antiguos, como nombres sueltos.
 function normalizarPantallas(pantallas = []) {
-  return pantallas.map((p) => (typeof p === "string" ? { nombre: p } : p));
+  return pantallas.map((p) => (typeof p === "string" ? { nombre: p } : p)).filter((p) => p && p.nombre);
+}
+
+// Lo que el prototipo muestra en cada pantalla, agrupado por plataforma. El menú principal (el
+// que comparten sus pantallas) se escribe una sola vez y no se repite en cada pantalla.
+function describirPantallas(lista, plataformas) {
+  const grupos = plataformas.length ? plataformas : [""];
+  return grupos
+    .map((plataforma) => {
+      const suyas = lista.filter((p) => !plataforma || (p.plataforma || plataformas[0]) === plataforma);
+      if (!suyas.length) return "";
+      const principal = menuPrincipal(suyas);
+      const clavePrincipal = principal?.join(" · ");
+
+      const pantallas = suyas.map((p) => {
+        const datos = [
+          `  - ${p.nombre}`,
+          p.actores?.length && `usada por: ${p.actores.join(", ")}`,
+          p.rfs?.length && `cubre: ${p.rfs.join(", ")}`,
+        ].filter(Boolean);
+        const lineas = [datos.join(" | ")];
+
+        const menus = (p.navegacion?.menus || []).map((m) => m.join(" · "));
+        if (clavePrincipal) lineas.push(`      menú principal: ${menus.includes(clavePrincipal) ? "sí" : "no lo muestra"}`);
+        const otros = menus.filter((m) => m !== clavePrincipal);
+        if (otros.length) lineas.push(`      otros menús: ${otros.map((m) => `[${m}]`).join(" ")}`);
+        if (p.navegacion?.acciones?.length) lineas.push(`      botones y enlaces: ${p.navegacion.acciones.join(" · ")}`);
+        return lineas.join("\n");
+      });
+
+      return [
+        plataforma && `Plataforma ${plataforma}`,
+        principal
+          ? `  Menú principal: ${principal.join(" · ")}`
+          : "  Menú principal: no se detectó; dedúcelo de los menús y botones de sus pantallas.",
+        ...pantallas,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function generar(contents, usarClaude) {
+  const response = await generarContenido({
+    usarClaude,
+    contents,
+    config: { responseMimeType: "application/json" },
+  });
+  return { response, resultado: JSON.parse(limpiarJson(response.text)) };
 }
 
 export async function POST(request) {
   try {
-    const { analisis, pantallas, indicaciones, usarClaude } = await request.json();
+    const {
+      nombre,
+      descripcion,
+      analisis,
+      pantallas,
+      plataformas: plataformasProyecto,
+      indicaciones,
+      usarClaude,
+    } = await request.json();
 
+    const a = analisis || {};
     const lista = normalizarPantallas(pantallas);
-    const plataformas = [...new Set(lista.map((p) => p.plataforma).filter(Boolean))];
-    const variasPlataformas = plataformas.length > 1;
+    const plataformasPantallas = [...new Set(lista.map((p) => p.plataforma).filter(Boolean))];
+    const plataformas = plataformasPantallas.length ? plataformasPantallas : plataformasProyecto || [];
+    const nombreSistema = nombre?.trim() || "Sistema";
+
+    const textoRF = formatearRequerimientos(a.requerimientos_funcionales);
+    const codigosRF = new Set((String(textoRF).match(/\bRF-?\s?\d+\b/gi) || []).map(normalizarCodigo));
 
     const contextoPantallas = lista.length
-      ? `
-Pantallas del prototipo aprobado. El árbol debe incluirlas TODAS, con estos mismos nombres y en la plataforma indicada:
-${lista
-  .map((p) =>
-    [
-      `- ${p.nombre}`,
-      p.plataforma && `plataforma: ${p.plataforma}`,
-      p.actores?.length && `usada por: ${p.actores.join(", ")}`,
-      p.rfs?.length && `cubre: ${p.rfs.join(", ")}`,
-    ]
-      .filter(Boolean)
-      .join(" | ")
-  )
-  .join("\n")}
+      ? `- Pantallas del prototipo aprobado, con la navegación que cada una muestra (opciones de sus menús, botones y enlaces):
+${describirPantallas(lista, plataformas)}
 `
-      : "";
-
-    const instrucciones = `
-Eres un arquitecto de información experto. Con base en este análisis aprobado, diseña el árbol de navegación del sistema: qué pantallas existen y cómo se organizan jerárquicamente.
-
-Actores:
-${formatearActores(analisis)}
-
-Requerimientos funcionales (con los actores que usan cada función):
-${formatearRequerimientos(analisis.requerimientos_funcionales)}
-${contextoPantallas}${formatearIndicaciones(indicaciones)}
-Genera el árbol con la sintaxis "flowchart TD" de Mermaid (cajas y líneas de diagrama técnico, NO un mindmap):
-- Un único nodo raíz con forma de estadio: RAIZ(["Nombre del sistema"])
-${variasPlataformas
-  ? `- El sistema tiene VARIAS aplicaciones (${plataformas.join(", ")}) que comparten el backend pero tienen navegación propia: los hijos directos de la raíz son un nodo por plataforma (ej. WEB["Panel Web"], MOV["App Móvil"]), y cada pantalla va SOLO bajo la rama de su plataforma.
-- Bajo cada plataforma, las secciones de navegación y dentro de ellas sus pantallas. Ids con el prefijo de su plataforma (WEB_1, WEB_1_1, MOV_1...).`
-  : "- Los hijos directos de la raíz son las secciones principales de navegación, y dentro de cada sección sus pantallas."}
-- Organiza las secciones de modo que cada rol encuentre lo suyo: en la segunda línea de cada sección indica el rol o los roles que la usan (ej. "Monitoreo<br/>Comandante").
-- En la segunda línea de cada pantalla indica los RF que cubre (ej. "Historial de partes<br/>RF10"). Si una pantalla no cubre ningún RF, deja solo su nombre.
-- Todos los textos entre comillas dobles; usa <br/> para el salto de línea.
-- Conecta con --> de padre a hijo.
-- Al final define EXACTAMENTE estas clases y asigna cada nodo a su nivel:
-    ${ESTILOS}
-
-Ejemplo de sintaxis válida:
-${variasPlataformas ? EJEMPLO_VARIAS_PLATAFORMAS : EJEMPLO_UNA_PLATAFORMA}
-
-Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adicional:
-{
-  "diagrama_mermaid": "código mermaid completo aquí, como un solo string"
-}
+      : `- No hay prototipo aprobado: deriva las pantallas de los requerimientos funcionales (una por cada función que el usuario opera) y agrega a cada pantalla "rfs" con los códigos que cubre. Cada requerimiento funcional debe quedar en al menos una pantalla.
 `;
 
-    const response = await generarContenido({
-      usarClaude,
-      contents: instrucciones,
-      config: { responseMimeType: "application/json" },
-    });
+    const instrucciones = `
+Eres un arquitecto de información experto. Arma el ÁRBOL DE NAVEGACIÓN de "${nombreSistema}": por dónde se llega a cada pantalla, tal como lo muestra el prototipo.
 
-    const resultado = JSON.parse(response.text);
-    return NextResponse.json({ ...resultado, modelo_ia: response.modelVersion, costo_ia: response.costoUsd });
+CONTEXTO
+- Qué hace el sistema: ${descripcion?.trim() || "ver los requerimientos funcionales"}
+- Actores:
+${formatearActores(a)}
+- Plataformas: ${plataformas.length ? plataformas.join(", ") : "una sola"}
+- Requerimientos funcionales (con los actores que usan cada función):
+${textoRF}
+${contextoPantallas}${formatearIndicaciones(indicaciones)}
+QUÉ DEBE MOSTRAR
+- PLATAFORMAS: una entrada por plataforma${plataformas.length ? ` (${plataformas.join(", ")}, con ese mismo nombre)` : ""}. Cada pantalla va SOLO en su plataforma.
+- SECCIONES ("tipo": "seccion"): son las entradas del MENÚ PRINCIPAL de la plataforma, con el mismo texto que tienen en el prototipo y en el mismo orden. En "roles", los actores que usan esa sección (según "usada por" de sus pantallas y los requerimientos); si no se sabe, déjalo vacío.
+- PANTALLAS ("tipo": "pantalla"): con el nombre EXACTO de la lista. Bajo cada sección van las pantallas a las que lleva esa entrada del menú (incluidas las de sus submenús u "otros menús").
+- PANTALLAS HIJAS: una pantalla que se abre desde otra con un botón o enlace (ej. el formulario que abre el botón "Nuevo" de un listado, o el detalle de un elemento) va en "hijos" de esa pantalla, no al lado.
+- Las pantallas de acceso (inicio de sesión, registro) van primero, directamente bajo la plataforma, sin sección.
+- Si una entrada del menú lleva a una sola pantalla y de ella no cuelga ninguna otra, pon la pantalla directamente bajo la plataforma, sin sección.
+- Una pantalla sin menú principal (formularios a pantalla completa, pasos de un flujo) cuelga de la pantalla desde la que se abre; dedúcelo de los botones de las otras pantallas y de su nombre.
+
+QUÉ NO QUIERO
+- No inventes secciones que no estén en el menú del prototipo ni agrupes por "área del negocio": la organización es la del menú real.
+- No agregues pantallas que no estén en la lista, ni repitas una pantalla en dos lugares.
+- No cambies, acortes ni traduzcas los nombres de las pantallas.
+- No escribas los RF de las pantallas ni código de diagrama: la aplicación los agrega.
+- No copies los nombres del ejemplo; es de otro sistema y sirve solo para mostrar la estructura.
+
+FORMATO
+- Cada nodo es { "tipo", "nombre", "hijos" }; las secciones llevan además "roles". "hijos" se omite si está vacío.
+- En "explicacion", de 3 a 5 líneas cortas (una idea por línea, separadas con \\n) sobre cómo se organiza la navegación de cada plataforma y qué sección usa cada rol. Solo afirma lo que el árbol muestra: sin adjetivos de calidad (intuitivo, fluido, robusto) ni menciones al proceso de generación ni al prototipo.
+
+VERIFICACIÓN ANTES DE RESPONDER
+1. Están TODAS las pantallas de la lista, una sola vez, con su nombre exacto y en su plataforma.
+2. Las secciones coinciden con las entradas del menú principal del prototipo.
+3. Los formularios y detalles cuelgan de la pantalla que los abre.
+
+Ejemplo de estructura (sistema ajeno, no copiar sus nombres):
+${EJEMPLO}
+
+Responde ÚNICAMENTE con un JSON válido con esa estructura, sin texto adicional ni bloques de código.
+`;
+
+    const armar = (respuesta) =>
+      armarArbol({ nombre: nombreSistema, plataformas, pantallas: lista, codigosRF, respuesta });
+
+    const inicial = await generar(instrucciones, usarClaude);
+    let resultado = inicial.resultado;
+    let response = inicial.response;
+    let arbol = armar(resultado);
+    let costo = response.costoUsd;
+
+    // Un solo reintento: se le dice a la IA qué pantallas no quedaron ubicadas.
+    if (arbol.sinUbicar.length) {
+      try {
+        const reintento = await generar(
+          `${instrucciones}
+
+TU RESPUESTA ANTERIOR NO UBICÓ ESTAS PANTALLAS (faltaban, estaban repetidas, con otro nombre o en otra plataforma):
+${arbol.sinUbicar.map((p) => `- ${p}`).join("\n")}
+
+Respuesta anterior:
+${JSON.stringify(resultado)}
+
+Corrígela y responde de nuevo con el mismo JSON, completo.`,
+          usarClaude
+        );
+        const arbolNuevo = armar(reintento.resultado);
+        costo = sumar(costo, reintento.response.costoUsd);
+        if (arbolNuevo.sinUbicar.length < arbol.sinUbicar.length) {
+          resultado = reintento.resultado;
+          response = reintento.response;
+          arbol = arbolNuevo;
+        }
+      } catch {
+        // Si el reintento falla, se conserva el primer resultado.
+      }
+    }
+
+    const advertencias = nombre?.trim()
+      ? arbol.advertencias
+      : ["No se recibió el nombre del sistema: la raíz quedó con un nombre genérico.", ...arbol.advertencias];
+
+    return NextResponse.json({
+      diagrama_mermaid: arbol.codigo,
+      explicacion: resultado.explicacion,
+      advertencias,
+      modelo_ia: response.modelVersion,
+      costo_ia: costo,
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
