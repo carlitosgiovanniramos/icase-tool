@@ -294,6 +294,7 @@ const EJEMPLO_AMPLIAR = {
   casos_uso: "Ej: agrega el caso de uso Exportar reporte para el Administrador",
   er: "Ej: agrega la entidad PROVEEDOR relacionada con INSUMO",
   arbol: "Ej: mueve Reportes dentro de la sección Administración",
+  clases: "Ej: agrega a la clase Pedido la operación calcularTotal",
   arquitectura: "Ej: agrega un servicio de notificaciones push",
   sistema: "Ej: agrega un subsistema de seguridad con respaldos y auditoría",
 };
@@ -713,7 +714,17 @@ export default function WorkspaceProyecto() {
     setArtefactos(artefactosRef.current);
     if (paso.diagrama) setSvgs((s) => ({ ...s, [clave]: svg }));
 
-    await supabase.from("proyectos").update({ [paso.columna]: valor }).eq("id", id);
+    const { error } = await supabase.from("proyectos").update({ [paso.columna]: valor }).eq("id", id);
+    // Sin esto, un paso cuya columna aún no existe en la base se vería generado pero se perdería
+    // al recargar (ej. un paso nuevo antes de ejecutar su archivo de supabase/).
+    if (error) {
+      throw new Error(
+        `"${paso.nombre}" se generó pero no se pudo guardar: ${error.message}` +
+          (error.message.includes(paso.columna)
+            ? `\n\nFalta crear la columna "${paso.columna}": ejecuta el archivo correspondiente de la carpeta supabase/ en el SQL Editor.`
+            : "")
+      );
+    }
     if (paso.diagrama) await guardarSvgDiagrama(clave, valor, esPlantUML(valor) ? svg : null);
   }
 
@@ -753,8 +764,17 @@ export default function WorkspaceProyecto() {
         contexto: contextoRef.current,
       },
       casos_uso: { analisis: a.analisis },
-      // Las tecnologías dicen qué no va en el modelo (ej. contraseñas, si hay un servicio de autenticación).
-      er: { analisis: a.analisis, casosUso: a.casos_uso, tecnologias: contextoRef.current.tecnologias },
+      // Las clases salen de los requerimientos y los casos de uso. En un proyecto que ya tenía su
+      // entidad-relación antes de existir este paso, se le pasa para que no lo contradigan.
+      clases: { nombre: proyectoActual.nombre, analisis: a.analisis, casosUso: a.casos_uso, diagramaEr: a.er },
+      // El entidad-relación es cómo se guardan las clases aprobadas. Las tecnologías dicen qué no va
+      // en el modelo (ej. contraseñas, si hay un servicio de autenticación).
+      er: {
+        analisis: a.analisis,
+        casosUso: a.casos_uso,
+        diagramaClases: a.clases,
+        tecnologias: contextoRef.current.tecnologias,
+      },
       arbol: {
         nombre: proyectoActual.nombre,
         descripcion: proyectoActual.prompt,
@@ -1384,7 +1404,7 @@ export default function WorkspaceProyecto() {
     await actualizarEnCascada(PASOS.filter((p) => p.fase === "diseno"));
   }
 
-  // Aprobación general de la fase de Diseño: requiere sus cuatro subfases aprobadas.
+  // Aprobación general de la fase de Diseño: requiere todas sus subfases aprobadas.
   async function aprobarFaseDiseno() {
     await guardarFases((f) => {
       f.diseno = true;
@@ -1849,7 +1869,8 @@ export default function WorkspaceProyecto() {
   // edición: aparece con su estado (ej. desactualizado) pero sin controles hasta entonces.
   const PUEDE_TRABAJARSE = {
     casos_uso: requerimientosAprobados,
-    er: !!fasesAprobadas.analisis,
+    clases: !!fasesAprobadas.analisis,
+    er: !!fasesAprobadas.diseno_clases,
     prototipo: !!fasesAprobadas.diseno_er,
     arbol: !!fasesAprobadas.diseno_prototipo,
     arquitectura: !!fasesAprobadas.diseno_arbol,
@@ -2305,6 +2326,90 @@ export default function WorkspaceProyecto() {
           </div>
 
           <div className="p-6">
+            {/* --- Diagrama de clases --- */}
+            {visible("clases") && (
+              <>
+                <TituloPaso
+                  color={PALETA.naranjaOscuro}
+                  estado={pendientes.clases}
+                  modelo={modelos.clases}
+                  onActualizar={trabajable("clases") ? () => actualizarPaso("clases") : undefined}
+                  deshabilitado={ocupado}
+                  separador={false}
+                >
+                  Diagrama de clases
+                </TituloPaso>
+
+                {trabajable("clases") && !bloqueado("clases") && (
+                  <CampoIndicaciones
+                    clave="clases"
+                    valor={contexto.indicaciones?.clases}
+                    onChange={cambiarIndicaciones}
+                    deshabilitado={ocupado}
+                    ejemplo="Ej: usa herencia para los tipos de parte"
+                  />
+                )}
+
+                <ControlesPaso
+                  clave="clases"
+                  esperando={!trabajable("clases")}
+                  bloqueado={bloqueado("clases")}
+                  enEdicion={enEdicion("clases")}
+                  deshabilitado={ocupado}
+                  onEditar={desbloquearPaso}
+                  onCancelarEdicion={cancelarEdicion}
+                >
+                  <BotonGenerar
+                    onClick={() => regenerarPaso("clases")}
+                    secundario={!!artefactos.clases}
+                    disabled={ocupado}
+                    cargando={generando("clases")}
+                    color={PALETA.naranjaOscuro}
+                  >
+                    {artefactos.clases ? "Regenerar" : "Generar"} diagrama de clases
+                  </BotonGenerar>
+
+                  {svgs.clases && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("clases", "¿Eliminar el diagrama de clases?")}
+                      disabled={ocupado}
+                      title="Eliminar diagrama de clases"
+                    />
+                  )}
+                </ControlesPaso>
+
+                <DiagramaBox
+                  svg={svgs.clases}
+                  titulo="Diagrama de clases"
+                  nombreArchivo="diagrama-de-clases"
+                  codigo={artefactos.clases}
+                  renderizar={renderizar}
+                  editable={!ocupado && trabajable("clases") && !bloqueado("clases")}
+                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("clases", codigo)}
+                />
+
+                {recuadroAmpliar("clases")}
+
+                {svgs.clases && trabajable("clases") && (
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.diseno_clases}
+                      onClick={() => aprobarPaso("clases")}
+                      etiqueta="Diagrama de clases"
+                      disabled={ocupado}
+                    />
+                    {!fasesAprobadas.diseno_clases && (
+                      <BotonRechazar
+                        etiqueta="Diagrama de clases"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("clases", "¿Rechazar el diagrama de clases?")}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
             {/* --- Diagrama entidad-relación --- */}
             <TituloPaso
               color={PALETA.naranjaOscuro}
@@ -2312,7 +2417,7 @@ export default function WorkspaceProyecto() {
               modelo={modelos.er}
               onActualizar={trabajable("er") ? () => actualizarPaso("er") : undefined}
               deshabilitado={ocupado}
-              separador={false}
+              separador={visible("clases")}
             >
               Diagrama entidad-relación
             </TituloPaso>
@@ -2779,8 +2884,9 @@ export default function WorkspaceProyecto() {
               </>
             )}
 
-            {/* --- Aprobación general de la fase: requiere las cinco subfases aprobadas --- */}
-            {fasesAprobadas.diseno_er &&
+            {/* --- Aprobación general de la fase: requiere las seis subfases aprobadas --- */}
+            {fasesAprobadas.diseno_clases &&
+              fasesAprobadas.diseno_er &&
               fasesAprobadas.diseno_prototipo &&
               fasesAprobadas.diseno_arbol &&
               fasesAprobadas.diseno_arquitectura &&
@@ -2794,7 +2900,7 @@ export default function WorkspaceProyecto() {
                     <p className="text-xs text-gray-500 mt-0.5">
                       {disenoAprobado
                         ? "Aprobada. Proyecto completado."
-                        : "Entidad-relación, prototipo, árbol, arquitectura y sistema aprobados."}
+                        : "Clases, entidad-relación, prototipo, árbol, arquitectura y sistema aprobados."}
                     </p>
                   </div>
                   {disenoAprobado ? (

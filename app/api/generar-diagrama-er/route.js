@@ -5,9 +5,11 @@ import { leerJson, sumarCosto } from "@/lib/jsonIA";
 
 export const maxDuration = 300;
 
-// Diagrama entidad-relación en Mermaid (erDiagram). Después de generar se valida la estructura
-// (claves, relaciones, entidades sueltas) y, si incumple, se pide una corrección (un solo
-// reintento). Lo que quede pendiente se devuelve en "advertencias".
+// Diagrama entidad-relación en Mermaid (erDiagram). Es cómo se guardan las clases del diagrama
+// de clases aprobado, que es el paso anterior: cada clase tiene su entidad. Después de generar se
+// valida la estructura (claves, relaciones, entidades sueltas, una entidad por clase) y, si
+// incumple, se pide una corrección (un solo reintento). Lo que quede pendiente se devuelve en
+// "advertencias".
 
 const TEMA = `%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#ffffff", "primaryBorderColor": "#1e293b", "primaryTextColor": "#1e293b", "lineColor": "#1e293b", "tertiaryColor": "#f1f5f9", "fontFamily": "trebuchet ms, verdana, arial, sans-serif"}}}%%`;
 
@@ -57,9 +59,15 @@ function limpiarMermaid(codigo) {
 }
 
 const listar = (items, max = 6) => items.slice(0, max).join(", ") + (items.length > max ? ` y ${items.length - max} más` : "");
+const sinGuiones = (t) => String(t || "").replace(/[_\s]/g, "").toLowerCase();
+
+// Nombres de las clases declaradas en el diagrama de clases aprobado.
+function clasesDelDiagrama(diagramaClases) {
+  return [...String(diagramaClases || "").matchAll(/^\s*class\s+(\w+)/gm)].map((m) => m[1]);
+}
 
 // Revisa el diagrama y devuelve la lista de problemas (vacía si todo está bien).
-function validarDiagrama(codigo, { autenticacionExterna } = {}) {
+function validarDiagrama(codigo, { autenticacionExterna, clases = [] } = {}) {
   if (!/\berDiagram\b/.test(codigo)) return ['El diagrama no empieza con "erDiagram".'];
 
   const entidades = new Map(); // nombre → [{ nombre, claves }]
@@ -124,6 +132,13 @@ function validarDiagrama(codigo, { autenticacionExterna } = {}) {
   const muchosAMuchos = relaciones.filter((r) => /[{}]/.test(r.izquierda) && /[{}]/.test(r.derecha)).map((r) => `${r.a} – ${r.b}`);
   if (muchosAMuchos.length) problemas.push(`Relaciones de muchos a muchos sin tabla intermedia: ${listar(muchosAMuchos)}.`);
 
+  // Cada clase del diagrama de clases aprobado se guarda en una entidad con su mismo nombre.
+  const nombres = new Set([...entidades.keys()].map(sinGuiones));
+  const sinEntidad = clases.filter((c) => !nombres.has(sinGuiones(c)));
+  if (sinEntidad.length) {
+    problemas.push(`Estas clases del diagrama de clases no tienen su entidad (con el mismo nombre, en mayúsculas y con guion bajo): ${listar(sinEntidad, 10)}.`);
+  }
+
   if (autenticacionExterna) {
     const conContrasena = [...entidades]
       .filter(([, atributos]) => atributos.some((x) => CAMPO_CONTRASENA.test(x.nombre)))
@@ -147,9 +162,16 @@ async function generar(contents, usarClaude) {
 
 export async function POST(request) {
   try {
-    const { analisis, casosUso, tecnologias, indicaciones, usarClaude } = await request.json();
+    const { analisis, casosUso, diagramaClases, tecnologias, indicaciones, usarClaude } = await request.json();
 
     const autenticacionExterna = AUTENTICACION_EXTERNA.test(String(tecnologias || ""));
+    const clases = clasesDelDiagrama(diagramaClases);
+    const contextoClases = diagramaClases
+      ? `
+Diagrama de clases aprobado. El modelo de datos es cómo se GUARDAN estas clases: cada clase es una entidad con su mismo nombre (en MAYÚSCULAS y con guion bajo: OrdenServicio → ORDEN_SERVICIO) y sus mismos atributos; cada relación entre clases se convierte en una clave foránea o, si es de muchos a muchos, en una tabla intermedia. No agregues entidades que no vengan de una clase, salvo esas tablas intermedias, y no copies las operaciones: en el modelo de datos solo van datos.
+${diagramaClases}
+`
+      : "";
 
     const contextoCasosUso = casosUso
       ? `
@@ -169,7 +191,7 @@ ${formatearRequerimientos(analisis.requerimientos_funcionales)}
 
 Requerimientos no funcionales (tenlos en cuenta si implican datos, ej. auditoría, trazabilidad o historial):
 ${formatearRequerimientos(analisis.requerimientos_no_funcionales, { conCategoria: true })}
-${tecnologias?.trim() ? `\nTecnologías elegidas por el cliente (condicionan qué se guarda en el modelo): ${tecnologias.trim()}\n` : ""}${contextoCasosUso}${formatearIndicaciones(indicaciones)}
+${tecnologias?.trim() ? `\nTecnologías elegidas por el cliente (condicionan qué se guarda en el modelo): ${tecnologias.trim()}\n` : ""}${contextoClases}${contextoCasosUso}${formatearIndicaciones(indicaciones)}
 REGLAS DE MODELADO
 - Cobertura: todo dato que un requerimiento dice que se registra, se guarda, se consulta o queda almacenado debe tener una entidad y un atributo donde vivir. Recorre los requerimientos uno por uno antes de responder.
 - Datos que se repiten: si de algo puede haber varios por registro (varios ítems por pedido, varias personas atendidas por caso, varias líneas por documento), es una entidad propia con relación de uno a muchos. Nunca lo guardes como un texto dentro de otra entidad.
@@ -210,7 +232,8 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adiciona
     let resultado = inicial.resultado;
     let response = inicial.response;
     let diagrama = limpiarMermaid(resultado.diagrama_mermaid);
-    let problemas = validarDiagrama(diagrama, { autenticacionExterna });
+    const criterios = { autenticacionExterna, clases };
+    let problemas = validarDiagrama(diagrama, criterios);
     let costo = response.costoUsd;
 
     // Un solo reintento: se le muestran a la IA los problemas concretos y su diagrama anterior.
@@ -229,7 +252,7 @@ Corrígelo cumpliendo TODAS las reglas y responde de nuevo con el mismo JSON.`,
           usarClaude
         );
         const diagramaNuevo = limpiarMermaid(reintento.resultado.diagrama_mermaid);
-        const problemasNuevos = validarDiagrama(diagramaNuevo, { autenticacionExterna });
+        const problemasNuevos = validarDiagrama(diagramaNuevo, criterios);
         costo = sumarCosto(costo, reintento.response.costoUsd);
         if (problemasNuevos.length <= problemas.length) {
           resultado = reintento.resultado;
