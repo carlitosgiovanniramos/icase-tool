@@ -28,6 +28,15 @@ export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
       // Con Diseño ya generado se puede entrar a verlo aunque el Análisis se esté editando.
       bloqueado: !analisisAprobado && !hayDiseno,
     },
+    {
+      // No se aprueba: es el documento con las dos fases, disponible cuando ambas lo están.
+      clave: "informe",
+      numero: "03",
+      nombre: "Informe",
+      descripcion: "Documento con las dos fases, para revisar y exportar a PDF",
+      completado: false,
+      bloqueado: !(analisisAprobado && disenoAprobado),
+    },
   ];
 
   return (
