@@ -4,7 +4,8 @@
 //               general, fases_aprobadas.analisis, que exige sus dos subfases aprobadas)
 //   aprobacion: clave dentro de proyectos.fases_aprobadas
 //   columna:    columna de proyectos donde se guarda el artefacto
-//   diagrama:   el artefacto es código Mermaid que se renderiza como SVG
+//   diagrama:   el artefacto es código de diagrama que se renderiza como SVG (Mermaid en el
+//               navegador o PlantUML con Kroki, según el código; ver lib/diagramas.js)
 export const PASOS = [
   {
     clave: "analisis",
@@ -61,7 +62,7 @@ export const PASOS = [
   {
     clave: "sistema",
     fase: "diseno",
-    nombre: "Diagrama del sistema",
+    nombre: "Diagrama de sistemas",
     aprobacion: "diseno_sistema",
     columna: "diagrama_sistema",
     ruta: "/api/generar-diagrama-sistema",

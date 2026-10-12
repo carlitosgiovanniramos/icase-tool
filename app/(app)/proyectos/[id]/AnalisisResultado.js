@@ -9,6 +9,7 @@ import {
   PRIORIDAD_COLORES,
   PRIORIDAD_COLOR_DEFECTO,
 } from "../../../estilos";
+import { normalizarCategoria } from "@/lib/iso25010";
 import BadgeModelo from "./BadgeModelo";
 import FormularioRequisito from "./FormularioRequisito";
 
@@ -48,14 +49,15 @@ function EtiquetaSeccion({ children, extra }) {
   );
 }
 
-// Marca los actores y requerimientos agregados con "Ampliar con IA" hasta que se aprueban.
-function EtiquetaNuevo() {
+// Marca los actores y requerimientos agregados o cambiados con "Ampliar con IA" hasta que se
+// aprueban.
+function EtiquetaNuevo({ children = "Nuevo" }) {
   return (
     <span
       className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
       style={{ backgroundColor: PALETA.oliva }}
     >
-      Nuevo
+      {children}
     </span>
   );
 }
@@ -78,7 +80,7 @@ function TarjetaRequisito({ r, colorBadge, etiquetaBadge, badgeSolido, onEditar,
   return (
     <div
       className="bg-white border p-4"
-      style={{ borderColor: r.nuevo ? PALETA.oliva : "#d1d5db" }}
+      style={{ borderColor: r.nuevo || r.modificado ? PALETA.oliva : "#d1d5db" }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-3 min-w-0">
@@ -100,7 +102,9 @@ function TarjetaRequisito({ r, colorBadge, etiquetaBadge, badgeSolido, onEditar,
             </h4>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="text-xs font-mono text-gray-400">{r.codigo}</span>
+              {r.subcategoria && <span className="text-xs text-gray-500">{r.subcategoria}</span>}
               {r.nuevo && <EtiquetaNuevo />}
+              {r.modificado && <EtiquetaNuevo>Modificado</EtiquetaNuevo>}
               {prioridad && (
                 <span
                   className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
@@ -196,7 +200,6 @@ function SeccionRequisitos({
   editando,
   setEditando,
   actoresDisponibles,
-  categoriasSugeridas,
   onEliminar,
   onGuardar,
 }) {
@@ -210,7 +213,6 @@ function SeccionRequisitos({
       esNoFuncional={esNoFuncional}
       inicial={inicial}
       actoresDisponibles={actoresDisponibles}
-      categoriasSugeridas={categoriasSugeridas}
       onCancelar={() => setEditando(null)}
       onGuardar={async (datos) => {
         await onGuardar(tipo, inicial ? codigo : null, datos, codigo);
@@ -234,7 +236,9 @@ function SeccionRequisitos({
               r={r}
               colorBadge={
                 esNoFuncional
-                  ? CATEGORIA_COLORES[r.categoria] || CATEGORIA_COLOR_DEFECTO
+                  ? // Proyectos anteriores a la norma (ej. "Rendimiento") toman el color de su característica.
+                    CATEGORIA_COLORES[normalizarCategoria(r.categoria).categoria] ||
+                    CATEGORIA_COLOR_DEFECTO
                   : PALETA.navy
               }
               etiquetaBadge={esNoFuncional ? r.categoria : undefined}
@@ -284,14 +288,10 @@ export default function AnalisisResultado({
   } = resultado;
 
   const actoresDisponibles = actores.map((a) => a.nombre);
-  const categoriasSugeridas = [
-    ...new Set(requerimientos_no_funcionales.map((r) => r.categoria).filter(Boolean)),
-  ];
   const propsComunes = {
     editando,
     setEditando,
     actoresDisponibles,
-    categoriasSugeridas,
     onEliminar: onEliminarRequerimiento,
     onGuardar: onGuardarRequerimiento,
   };

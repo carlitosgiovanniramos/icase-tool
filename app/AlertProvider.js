@@ -26,7 +26,10 @@ export default function AlertProvider({ children }) {
     setEstado({ titulo, mensaje, tipo: "info" });
   }, []);
 
-  // Reemplazo de window.confirm: devuelve una promesa que se resuelve en true/false.
+  // Reemplazo de window.confirm: devuelve una promesa que se resuelve en true (botón principal),
+  // false (botón de la izquierda) o null (se cerró con Escape o clic fuera, sin elegir). Para un
+  // "sí/no" basta con tratar false y null igual; cuando el botón de la izquierda es una acción
+  // (ej. "Conservar como está"), null permite no decidir.
   const confirmar = useCallback(
     (mensaje, titulo = "¿Estás seguro?", textoConfirmar = "Eliminar", textoCancelar = "Cancelar") =>
       new Promise((resolver) => {
@@ -63,7 +66,7 @@ export default function AlertProvider({ children }) {
   useEffect(() => {
     if (!estado) return;
     function alTecla(e) {
-      if (e.key === "Escape") cerrar(false);
+      if (e.key === "Escape") cerrar(null);
     }
     window.addEventListener("keydown", alTecla);
     return () => window.removeEventListener("keydown", alTecla);
@@ -120,7 +123,7 @@ export default function AlertProvider({ children }) {
       {estado && (
         <div
           className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 animate-[fade-in_150ms_ease-out]"
-          onClick={() => cerrar(false)}
+          onClick={() => cerrar(null)}
         >
           <div
             className="bg-white border border-gray-300 max-w-md w-full animate-[scale-in_150ms_ease-out]"

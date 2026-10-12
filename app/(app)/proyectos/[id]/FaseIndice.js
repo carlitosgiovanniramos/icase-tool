@@ -2,7 +2,7 @@
 
 import { PALETA } from "../../../estilos";
 
-export default function FaseIndice({ fasesAprobadas, onNavegar }) {
+export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
   const analisisAprobado = !!fasesAprobadas?.analisis;
   // Proyectos anteriores a la aprobación general del Diseño: contaba la arquitectura.
   const disenoAprobado =
@@ -23,9 +23,10 @@ export default function FaseIndice({ fasesAprobadas, onNavegar }) {
       clave: "diseno",
       numero: "02",
       nombre: "Diseño",
-      descripcion: "Entidad-relación, prototipo, árbol de navegación, arquitectura y diagrama del sistema",
+      descripcion: "Entidad-relación, prototipo, árbol de navegación, arquitectura y diagrama de sistemas",
       completado: disenoAprobado,
-      bloqueado: !analisisAprobado,
+      // Con Diseño ya generado se puede entrar a verlo aunque el Análisis se esté editando.
+      bloqueado: !analisisAprobado && !hayDiseno,
     },
   ];
 

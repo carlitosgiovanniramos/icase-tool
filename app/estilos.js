@@ -22,14 +22,19 @@ export const ROTACION_COLORES = [
   PALETA.marron,
 ];
 
+// Un color por característica de ISO/IEC 25010:2011 (ver lib/iso25010.js). Las categorías que
+// no son de la norma se muestran en gris.
 export const CATEGORIA_COLORES = {
+  "Adecuación funcional": PALETA.negro,
+  "Eficiencia de desempeño": PALETA.naranjaOscuro,
+  Compatibilidad: "#134e4a",
   Usabilidad: PALETA.navy,
-  Rendimiento: PALETA.naranjaOscuro,
+  Fiabilidad: PALETA.oliva,
   Seguridad: PALETA.carmesi,
-  Disponibilidad: PALETA.oliva,
   Mantenibilidad: PALETA.marron,
+  Portabilidad: "#475569",
 };
-export const CATEGORIA_COLOR_DEFECTO = PALETA.negro;
+export const CATEGORIA_COLOR_DEFECTO = "#6b7280";
 
 export const PRIORIDAD_COLORES = {
   alta: PALETA.carmesi,

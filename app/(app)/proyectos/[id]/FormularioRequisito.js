@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PALETA } from "../../../estilos";
+import { CARACTERISTICAS_25010, normalizarCategoria } from "@/lib/iso25010";
 
 const PRIORIDADES = ["alta", "media", "baja"];
 const METODOS_VERIFICACION = ["Inspección", "Análisis", "Demostración", "Prueba"];
@@ -27,20 +28,25 @@ export default function FormularioRequisito({
   esNoFuncional,
   inicial,
   actoresDisponibles,
-  categoriasSugeridas = [],
   onGuardar,
   onCancelar,
 }) {
-  const [datos, setDatos] = useState(() => ({
-    nombre: inicial?.nombre || "",
-    descripcion: inicial?.descripcion || "El sistema debe ",
-    prioridad: inicial?.prioridad?.toLowerCase() || "media",
-    categoria: inicial?.categoria || "",
-    actores: Array.isArray(inicial?.actores) ? inicial.actores : [],
-    metodo_verificacion: inicial?.metodo_verificacion || "Prueba",
-    precondiciones: inicial?.precondiciones || "",
-    postcondiciones: inicial?.postcondiciones || "",
-  }));
+  const [datos, setDatos] = useState(() => {
+    // Una categoría anterior a la norma (ej. "Rendimiento") se lleva a su característica al editar.
+    const { categoria, subcategoria } = normalizarCategoria(inicial?.categoria, inicial?.subcategoria);
+    return {
+      nombre: inicial?.nombre || "",
+      descripcion: inicial?.descripcion || "El sistema debe ",
+      prioridad: inicial?.prioridad?.toLowerCase() || "media",
+      categoria: categoria || "",
+      subcategoria: subcategoria || "",
+      actores: Array.isArray(inicial?.actores) ? inicial.actores : [],
+      metodo_verificacion: inicial?.metodo_verificacion || "Prueba",
+      precondiciones: inicial?.precondiciones || "",
+      postcondiciones: inicial?.postcondiciones || "",
+    };
+  });
+  const caracteristica = CARACTERISTICAS_25010.find((c) => c.nombre === datos.categoria);
 
   const cambiar = (clave, valor) => setDatos((d) => ({ ...d, [clave]: valor }));
   const alternarActor = (nombre) =>
@@ -63,11 +69,15 @@ export default function FormularioRequisito({
       ...datos,
       nombre: datos.nombre.trim(),
       descripcion: datos.descripcion.trim(),
-      categoria: datos.categoria.trim(),
+      // undefined (y no "") para que al editar se borre la subcategoría anterior.
+      subcategoria: datos.subcategoria || undefined,
       precondiciones: datos.precondiciones.trim() || "No aplica",
       postcondiciones: datos.postcondiciones.trim() || "No aplica",
     };
-    if (!esNoFuncional) delete limpio.categoria;
+    if (!esNoFuncional) {
+      delete limpio.categoria;
+      delete limpio.subcategoria;
+    }
     onGuardar(limpio);
   }
 
@@ -99,19 +109,33 @@ export default function FormularioRequisito({
           />
         </Campo>
         {esNoFuncional && (
-          <Campo etiqueta="Categoría">
-            <input
+          <Campo etiqueta="Categoría (ISO/IEC 25010)">
+            <select
               value={datos.categoria}
-              onChange={(e) => cambiar("categoria", e.target.value)}
-              list={`categorias-${codigo}`}
-              placeholder="Ej: Seguridad"
+              onChange={(e) => setDatos((d) => ({ ...d, categoria: e.target.value, subcategoria: "" }))}
               className={CLASE_INPUT}
-            />
-            <datalist id={`categorias-${codigo}`}>
-              {categoriasSugeridas.map((c) => (
-                <option key={c} value={c} />
+            >
+              <option value="">Elige una característica</option>
+              {CARACTERISTICAS_25010.map((c) => (
+                <option key={c.nombre}>{c.nombre}</option>
               ))}
-            </datalist>
+              {/* Una categoría antigua que no corresponde a la norma se conserva hasta cambiarla. */}
+              {datos.categoria && !caracteristica && <option>{datos.categoria}</option>}
+            </select>
+          </Campo>
+        )}
+        {esNoFuncional && caracteristica && (
+          <Campo etiqueta="Subcaracterística">
+            <select
+              value={datos.subcategoria}
+              onChange={(e) => cambiar("subcategoria", e.target.value)}
+              className={CLASE_INPUT}
+            >
+              <option value="">Sin especificar</option>
+              {caracteristica.subcaracteristicas.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
           </Campo>
         )}
         <Campo etiqueta="Descripción" ancho>

@@ -51,6 +51,15 @@ const CAMPOS_TEXTO = [
     ejemplo: "Ej: cada emergencia tiene un número único\nUn parte firmado no se puede editar",
     ancho: true,
   },
+  // Va aquí, y no solo en el paso de arquitectura, porque también acota los requerimientos y el
+  // modelo de datos (ej. con un servicio de autenticación no se guardan contraseñas).
+  {
+    clave: "tecnologias",
+    etiqueta: "Tecnologías ya decididas",
+    ayuda: "Lo que ya está definido. Los requerimientos y diagramas lo respetan.",
+    ejemplo: "Ej: Next.js, Supabase (PostgreSQL y Auth), Flutter para la app móvil",
+    ancho: true,
+  },
 ];
 
 const CLASE_INPUT =
