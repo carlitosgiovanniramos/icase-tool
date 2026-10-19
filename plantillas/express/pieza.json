@@ -2,15 +2,30 @@
   "nombre": "express",
   "titulo": "Node.js / Express",
   "capa": "backend",
-  "reconoce": ["express", "node.js", "nodejs"],
+  "reconoce": [
+    "express",
+    "node.js",
+    "nodejs"
+  ],
   "servicios": {
     "backend": "API REST (Node.js/Express)"
   },
-  "integraciones": ["postgres"],
+  "integraciones": [
+    "postgres"
+  ],
   "variables": {
     "BACKEND_PORT": "4000"
   },
   "enlaces": {
     "BACKEND_PORT": "API"
+  },
+  "registro": "npm",
+  "librerias": {
+    "postgres": [
+      {
+        "nombre": "pg",
+        "motivo": "Conexión a PostgreSQL (la usa el archivo fijo de configuración)"
+      }
+    ]
   }
 }

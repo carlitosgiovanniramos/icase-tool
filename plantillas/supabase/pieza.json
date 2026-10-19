@@ -2,8 +2,18 @@
   "nombre": "supabase",
   "titulo": "Supabase",
   "capa": "backend",
-  "reconoce": ["supabase", "postgrest", "gotrue", "edge functions", "supabase storage", "supabase realtime"],
-  "incluye": ["postgres"],
+  "reconoce": [
+    "supabase",
+    "postgrest",
+    "gotrue",
+    "edge functions",
+    "supabase storage",
+    "supabase realtime"
+  ],
+  "incluye": [
+    "postgres"
+  ],
+  "descripcion": "Supabase autoalojado: corre en los contenedores del proyecto, no es el servicio en la nube de Supabase. No tiene alta disponibilidad propia. Las Edge Functions corren en Deno.",
   "servicios": {
     "db": "PostgreSQL de Supabase",
     "api-gw": "Puerta de entrada (Envoy)",
@@ -15,10 +25,29 @@
     "functions": "Edge Functions (Deno)"
   },
   "opcionales": {
-    "auth": ["auth", "autenticacion", "jwt", "gotrue", "inicio de sesion"],
-    "realtime": ["realtime", "websocket", "tiempo real"],
-    "storage": ["storage", "archivos", "adjuntos"],
-    "functions": ["edge functions", "functions", "funciones", "deno"]
+    "auth": [
+      "auth",
+      "autenticacion",
+      "jwt",
+      "gotrue",
+      "inicio de sesion"
+    ],
+    "realtime": [
+      "realtime",
+      "websocket",
+      "tiempo real"
+    ],
+    "storage": [
+      "storage",
+      "archivos",
+      "adjuntos"
+    ],
+    "functions": [
+      "edge functions",
+      "functions",
+      "funciones",
+      "deno"
+    ]
   },
   "variables": {
     "POSTGRES_PASSWORD": "{{secreto:hex:16}}",
@@ -32,5 +61,9 @@
   },
   "enlaces": {
     "SUPABASE_PORT": "API de Supabase"
+  },
+  "registro": "deno",
+  "incompatibles": {
+    "firebase-admin": "es para Node.js; en Deno, llama a la API HTTP v1 de Firebase con fetch y firma el token de la cuenta de servicio (por ejemplo con jsr:@panva/jose)"
   }
 }

@@ -301,8 +301,26 @@ Comportamientos conocidos:
    - las piezas y los opcionales existen;
    - ninguna tecnología del diseño con pieza en el catálogo quedó sin elegir (una pieza puede incluir a otra, como Supabase a PostgreSQL);
    - la alta disponibilidad tiene una pieza web;
-   - el diagrama de sistemas se lee directamente (cada componente con su tecnología y sus RF) y cada componente debe quedar implementado.
-   Un reintento con los problemas; lo que quede se muestra como advertencia antes de aprobar.
+   - el diagrama de sistemas se lee directamente (cada componente con su tecnología y sus RF) y cada componente debe quedar implementado;
+   - las librerías (ver abajo).
+   Un reintento con los problemas; lo que quede se muestra como advertencia antes de aprobar ("Revisar antes de aprobar").
+
+**Librerías.** La revisión de la ficha de bomberos mostró que, solo con el prompt, la IA olvidaba librerías que los requerimientos exigen (firma en pantalla, recepción de notificaciones en la app, modo sin conexión) y proponía librerías que no sirven en el entorno (`firebase-admin` en Deno). Por eso las reglas importantes las aplica el código:
+
+| Regla | Cómo se aplica |
+|---|---|
+| Librerías base de cada combinación | Las declara la pieza (`librerias` en `pieza.json`) y el código las agrega siempre. Ej.: Flutter con Supabase → `supabase_flutter`; Next.js con Supabase → `@supabase/supabase-js`; Express con PostgreSQL → `pg` |
+| Capacidades que piden los requerimientos | `CAPACIDADES` en `lib/stack.js` detecta en los RF y RNF: firma en pantalla, PDF, notificaciones push, almacenamiento sin conexión, detección de conexión, mapas, gráficos y hash. Cada pieza que implementa esos RF según el diagrama de sistemas debe tener una librería con esa `capacidad`. No se exige lo que el entorno ya trae (la criptografía del navegador y de Deno) |
+| Compatibilidad con el entorno | Cada pieza declara su registro (`npm`, `pub` o `deno`) y sus librerías `incompatibles` con el motivo. Ej.: `firebase-admin` no sirve en las Edge Functions (Deno) |
+| Que el paquete exista | Se consulta npm, pub.dev o jsr; un nombre que no existe es un problema |
+
+Además, en el prompt:
+- la IA debe recorrer cada requerimiento;
+- la librería va en cada pieza donde se usa la función;
+- los servicios externos incluyen a la app cuando recibe sus notificaciones o muestra sus mapas;
+- "avisos" es solo para lo que el usuario debe decidir o no se puede implementar.
+
+La ficha de Supabase aclara que es autoalojado (no el servicio en la nube) y sin alta disponibilidad propia.
 3. **Los contenedores salen del armador real**, no de la IA.
 4. **Se guarda** en `proyectos.stack_implementacion` (`supabase/stack_implementacion.sql`). De ahí lo toman el armador y el runner. Si las piezas cambian, el runner borra los contenedores, datos e imágenes del stack anterior antes de levantar.
 5. **Las claves de los servicios externos** van vacías a `.env.example` y como variables de entorno a los servicios que las usan.
@@ -324,6 +342,13 @@ Comportamientos conocidos:
   - Firebase con la API HTTP v1 (`FCM_SERVICE_ACCOUNT_JSON`).
 - **Taller:** Next.js + Supabase (Auth), 6 servicios.
 - **"Ampliar con IA":** agregó una librería de PDF y rechazó cambiar el backend a Django, con un aviso.
+- **Librerías en bomberos, con las reglas en el código:**
+  - quedaron `supabase_flutter`, `@supabase/supabase-js`, `sqflite`, `connectivity_plus`, `firebase_messaging`, `signature_pad` y librerías de PDF;
+  - `firebase-admin` desapareció;
+  - lo que el modelo no corrigió en su reintento (firma y mapa en la web, por RF11, RF16, RF17, RF28 y RF06) quedó como advertencia visible.
+- **Taller:** sin advertencias falsas.
+
+**Generador de arquitectura** (fase de Diseño): recibe el catálogo implementable. Lo que el cliente no definió se elige solo del catálogo; se valida que los clientes, el backend y la base de datos sean del catálogo. Lo que eligió el cliente fuera del catálogo se respeta y queda como advertencia ("no tiene implementación automática"). El estilo microservicios no tiene piezas.
 
 **Falta:** probarlo desde la interfaz con la sesión del usuario.
 
