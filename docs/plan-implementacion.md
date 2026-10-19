@@ -310,7 +310,7 @@ Comportamientos conocidos:
 | Regla | Cómo se aplica |
 |---|---|
 | Librerías base de cada combinación | Las declara la pieza (`librerias` en `pieza.json`) y el código las agrega siempre. Ej.: Flutter con Supabase → `supabase_flutter`; Next.js con Supabase → `@supabase/supabase-js`; Express con PostgreSQL → `pg` |
-| Capacidades que piden los requerimientos | `CAPACIDADES` en `lib/stack.js` detecta en los RF y RNF: firma en pantalla, PDF, notificaciones push, almacenamiento sin conexión, detección de conexión, mapas, gráficos y hash. Cada pieza que implementa esos RF según el diagrama de sistemas debe tener una librería con esa `capacidad`. No se exige lo que el entorno ya trae (la criptografía del navegador y de Deno) |
+| Capacidades que piden los requerimientos | `CAPACIDADES` en `lib/stack.js` detecta en los RF y RNF: firma en pantalla, PDF, notificaciones push, almacenamiento sin conexión, detección de conexión, mapas, gráficos, hash, ubicación GPS del dispositivo y adjuntar imágenes (cámara o galería). Cada pieza que implementa esos RF según el diagrama de sistemas debe tener una librería con esa `capacidad`. No se exige lo que el entorno ya trae (la criptografía del navegador y de Deno) |
 | Compatibilidad con el entorno | Cada pieza declara su registro (`npm`, `pub` o `deno`) y sus librerías `incompatibles` con el motivo. Ej.: `firebase-admin` no sirve en las Edge Functions (Deno) |
 | Que el paquete exista | Se consulta npm, pub.dev o jsr; un nombre que no existe es un problema |
 
