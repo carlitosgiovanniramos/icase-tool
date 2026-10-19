@@ -2,7 +2,7 @@
   "nombre": "express",
   "titulo": "Node.js / Express",
   "capa": "backend",
-  "reconoce": ["express", "node.js", "nodejs", "api rest"],
+  "reconoce": ["express", "node.js", "nodejs"],
   "servicios": {
     "backend": "API REST (Node.js/Express)"
   },

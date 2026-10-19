@@ -338,8 +338,8 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
               className="border border-gray-300 px-2 py-1.5 text-sm"
             >
               <option value="">Todos</option>
-              {ORDEN_SERVICIOS.map((s) => (
-                <option key={s} value={s}>{NOMBRE_SERVICIO[s]}</option>
+              {delProyecto.map((s) => (
+                <option key={s.nombre} value={s.nombre}>{s.nombre}</option>
               ))}
             </select>
             <button
