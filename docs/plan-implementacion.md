@@ -2,6 +2,26 @@
 
 Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada.
 
+## Estado actual (19 de octubre de 2026)
+
+**Estamos cerrando la Etapa 4 (paso "Stack técnico").** La siguiente es la Etapa 5 (Estructura de carpetas).
+
+| Etapa | Estado |
+|---|---|
+| 1. Proyecto de referencia hecho a mano | Terminada |
+| 2. Base de la fase dentro de icase-tool | Terminada |
+| 3. Piezas del catálogo | Terminada |
+| **4. Paso "Stack técnico"** | **Construida. Falta que el usuario apruebe en la interfaz la ficha de bomberos** |
+| 5. Paso "Estructura de carpetas" | Siguiente |
+| 6 a 11 | Pendientes |
+
+Para cerrar la Etapa 4, en la ficha de bomberos:
+
+1. agregar a mano `geolocator` (Flutter, ubicación GPS, RF06) e `image_picker` (Flutter, adjuntar imágenes, RF24);
+2. corregir el detalle de Realtime, que todavía menciona el tablero web descartado;
+3. que "Revisar antes de aprobar" quede vacío;
+4. aprobar la ficha.
+
 ## 1. Contexto
 
 Con las fases de Análisis y Diseño aprobadas, cada proyecto ya tiene requerimientos, casos de uso, diagrama de clases, diagrama entidad-relación, prototipo de pantallas, árbol de navegación, arquitectura y diagrama de sistemas. La fase de Implementación convierte esos artefactos en código ejecutable.
@@ -35,7 +55,7 @@ La solución es ejecutar cada proyecto generado en **contenedores Docker**, orqu
 | Uso del Supabase de icase-tool | Solo para icase-tool: usuarios, proyectos, diagramas, aprobaciones y la copia de los archivos generados |
 | Carpeta de trabajo | `C:\icase-workspaces\<id-proyecto>\`, fuera del repo de icase-tool |
 | Dockerfiles y configuración de contenedores | Salen de las piezas del catálogo, probadas a mano. No los escribe la IA |
-| Servicios externos (mapas, notificaciones, correo, pagos) | Los reales, con las claves en el `.env` del proyecto |
+| Servicios externos (mapas, notificaciones, correo, pagos) | Solo los del diseño aprobado (cajas punteadas de la arquitectura y componentes `<<externo>>` del diagrama de sistemas). Se usan los reales, con las claves en el `.env` del proyecto. En Implementación no se agregan servicios nuevos: para sumar uno se cambia la arquitectura |
 | Ejecución de Docker | La hace un servicio aparte, el runner. Next.js nunca ejecuta `docker` directamente |
 | Entorno disponible | Docker Desktop 29.7 y Docker Compose v5.5 sobre WSL2. Flutter 3.41.3 y el SDK de Android instalados |
 
@@ -80,12 +100,10 @@ Reglas del catálogo:
 
 - Si la arquitectura usa tecnologías del catálogo, la implementación es automática y completa.
 - Si usa una que no está, icase-tool lo dice claramente en vez de construir algo distinto o roto.
-- Para que todo proyecto nuevo quede dentro del catálogo, el generador de arquitectura debería elegir solo tecnologías de él. Es un cambio pendiente de aprobación, porque ese generador ya está aprobado.
+- Para que todo proyecto nuevo quede dentro del catálogo, el generador de arquitectura (fase de Diseño) recibe el catálogo y elige solo tecnologías de él para lo que el cliente no definió. Lo que el cliente eligió fuera del catálogo se respeta y queda como advertencia: "no tiene implementación automática". El estilo microservicios no tiene piezas.
 
 Catálogo inicial: lo que usa el proyecto de bomberos más lo más común.
 
-| Capa | Tecnologías | Estado |
-|---|---|---|
 | Capa | Pieza | Estado |
 |---|---|---|
 | Web | `react` (Vite + nginx) | Probada |
@@ -98,7 +116,9 @@ Catálogo inicial: lo que usa el proyecto de bomberos más lo más común.
 
 Algunas tecnologías son varios programas. Supabase, por ejemplo, se compone de autenticación (GoTrue), API de datos (PostgREST), Realtime, Edge Functions, Storage y una puerta de entrada (Envoy, la opción por defecto de la configuración oficial). Cada uno es un contenedor; así lo levanta también la herramienta oficial de Supabase.
 
-Cada pieza tiene un `README.md` con lo que la IA debe generar dentro de ella y las reglas que debe cumplir ese código. Desde la Etapa 4 esos textos se le pasan a la IA.
+Cada pieza tiene un `README.md` con lo que la IA debe generar dentro de ella y las reglas que debe cumplir ese código. Desde la Etapa 5 esos textos se le pasan a la IA al generar la estructura y el código.
+
+Cada `pieza.json` declara además lo que usa el paso "Stack técnico": las palabras con que se reconoce en el diseño (`reconoce`), lo que ya incluye (`incluye`, como Supabase a PostgreSQL), sus servicios opcionales, su registro de paquetes (`registro`), sus librerías base y las librerías que no sirven en su entorno (`incompatibles`).
 
 ## 6. Lo que no es un contenedor
 
@@ -197,7 +217,7 @@ El backend se adapta al stack:
 
 ### Etapa 1. Proyecto de referencia hecho a mano · Terminada
 
-Se construyó a mano un mini sistema de bomberos (gestión de personal) con React, Express y PostgreSQL en tres contenedores, en `C:\icase-workspaces\referencia\`. Comprobó que el enfoque funciona en Docker y dejó los primeros archivos fijos en `plantillas/react-express-postgres/`.
+Se construyó a mano un mini sistema de bomberos (gestión de personal) con React, Express y PostgreSQL en tres contenedores, en `C:\icase-workspaces\referencia\`. Comprobó que el enfoque funciona en Docker y dejó los primeros archivos fijos en `plantillas/react-express-postgres/`, que en la Etapa 3 se separaron en las piezas `react`, `express` y `postgres`.
 
 Se verificó:
 
@@ -282,87 +302,88 @@ Comportamientos conocidos:
 
 ---
 
-### Etapa 4. Paso "Stack técnico" · Construida
+### Etapa 4. Paso "Stack técnico" · Construida, en cierre
 
-**Objetivo:** decidir las tecnologías, las piezas y los contenedores del proyecto a partir del diseño.
+**Objetivo:** decidir las tecnologías, las piezas y los contenedores del proyecto a partir del diseño aprobado.
 
 **Entradas:** diagrama de arquitectura, diagrama de sistemas, requerimientos, y tecnologías y plataformas del contexto.
 
-**Cómo funciona** (`lib/stack.js`, ruta `/api/generar-stack`):
+**Resultado:** una ficha guardada en `proyectos.stack_implementacion` (`supabase/stack_implementacion.sql`). De ahí la toman el armador de proyectos y el runner.
+
+#### Cómo se genera
+
+Lógica en `lib/stack.js`, ruta `/api/generar-stack`.
 
 1. **La IA propone**, con el catálogo de piezas en el prompt (CONTEXTO / QUÉ DEBE MOSTRAR / QUÉ NO QUIERO / FORMATO):
-   - las piezas y sus servicios opcionales;
-   - si hay alta disponibilidad;
+   - las piezas y sus servicios opcionales, y si hay alta disponibilidad;
    - cómo se resuelve cada caja de la arquitectura: pieza, externo, dentro de la app, infraestructura o no soportado;
-   - las librerías, con el requerimiento que las justifica;
-   - los servicios externos, con la variable de su clave;
-   - avisos y una explicación.
-2. **El código valida** contra el catálogo:
-   - las piezas y los opcionales existen;
+   - las librerías, con su capacidad y los requerimientos que las piden;
+   - los servicios externos del diseño, con la variable de su clave y quién los usa;
+   - avisos (solo lo que el usuario debe decidir o lo que no se puede implementar) y una explicación.
+2. **El código valida** y, si encuentra problemas, le pide a la IA una corrección (un reintento):
+   - las piezas y los opcionales existen en el catálogo;
    - ninguna tecnología del diseño con pieza en el catálogo quedó sin elegir (una pieza puede incluir a otra, como Supabase a PostgreSQL);
    - la alta disponibilidad tiene una pieza web;
    - el diagrama de sistemas se lee directamente (cada componente con su tecnología y sus RF) y cada componente debe quedar implementado;
-   - las librerías (ver abajo).
-   Un reintento con los problemas; lo que quede se muestra como advertencia antes de aprobar ("Revisar antes de aprobar").
+   - las librerías cumplen las reglas de la tabla siguiente.
+3. **Los contenedores no los decide la IA:** salen del armador real (`lib/implementacion.js`) con las piezas elegidas.
+4. **Lo que la validación no pudo corregir queda guardado en la ficha** (`revision`) y se muestra en "Revisar antes de aprobar" hasta que se resuelve.
 
-**Librerías.** La revisión de la ficha de bomberos mostró que, solo con el prompt, la IA olvidaba librerías que los requerimientos exigen (firma en pantalla, recepción de notificaciones en la app, modo sin conexión) y proponía librerías que no sirven en el entorno (`firebase-admin` en Deno). Por eso las reglas importantes las aplica el código:
+#### Reglas de librerías (las aplica el código)
+
+La revisión de la ficha de bomberos mostró que, solo con el prompt, la IA olvidaba librerías que los requerimientos exigen (firma en pantalla, notificaciones en la app, modo sin conexión) y proponía librerías que no sirven en el entorno (`firebase-admin` en Deno). Por eso estas reglas no dependen del modelo:
 
 | Regla | Cómo se aplica |
 |---|---|
-| Librerías base de cada combinación | Las declara la pieza (`librerias` en `pieza.json`) y el código las agrega siempre. Ej.: Flutter con Supabase → `supabase_flutter`; Next.js con Supabase → `@supabase/supabase-js`; Express con PostgreSQL → `pg` |
-| Capacidades que piden los requerimientos | `CAPACIDADES` en `lib/stack.js` detecta en los RF y RNF: firma en pantalla, PDF, notificaciones push, almacenamiento sin conexión, detección de conexión, mapas, gráficos, hash, ubicación GPS del dispositivo y adjuntar imágenes (cámara o galería). Cada pieza que implementa esos RF según el diagrama de sistemas debe tener una librería con esa `capacidad`. No se exige lo que el entorno ya trae (la criptografía del navegador y de Deno) |
+| Librerías base de cada combinación | Las declara la pieza (`librerias` en `pieza.json`) y se agregan siempre. Ej.: Flutter con Supabase → `supabase_flutter`; Next.js con Supabase → `@supabase/supabase-js`; Express con PostgreSQL → `pg` |
+| Capacidades que piden los requerimientos | `lib/capacidades.js` detecta en los RF y RNF: firma en pantalla, PDF, notificaciones push, almacenamiento sin conexión, detección de conexión, mapas, gráficos, hash, ubicación GPS del dispositivo y adjuntar imágenes (cámara o galería). Cada pieza que implementa esos RF según el diagrama de sistemas debe tener una librería con esa capacidad. No se exige lo que el entorno ya trae (por ejemplo, la criptografía, la ubicación y el selector de archivos del navegador) |
 | Compatibilidad con el entorno | Cada pieza declara su registro (`npm`, `pub` o `deno`) y sus librerías `incompatibles` con el motivo. Ej.: `firebase-admin` no sirve en las Edge Functions (Deno) |
 | Que el paquete exista | Se consulta npm, pub.dev o jsr; un nombre que no existe es un problema |
 
-Además, en el prompt:
-- la IA debe recorrer cada requerimiento;
-- la librería va en cada pieza donde se usa la función;
-- los servicios externos incluyen a la app cuando recibe sus notificaciones o muestra sus mapas;
-- "avisos" es solo para lo que el usuario debe decidir o no se puede implementar.
+#### Edición manual
 
-La ficha de Supabase aclara que es autoalojado (no el servicio en la nube) y sin alta disponibilidad propia.
+Como en los requerimientos, con botones en cada fila. Lo que sale del diseño aprobado no se edita, para mantener la consistencia:
 
-**Edición manual de la ficha.** Como en los requerimientos, con botones en cada fila:
-
-| Parte | Edición |
+| Parte de la ficha | Edición |
 |---|---|
 | Librerías | Agregar, editar y eliminar. Las librerías base de una pieza no se eliminan: las exige la pieza |
-| Servicios externos | Editar y eliminar |
+| Servicios externos | Editar y eliminar. **No se agregan**: deben coincidir con el diseño aprobado. Para sumar uno se cambia la arquitectura |
 | Avisos | Descartar |
-| Piezas, opcionales, alta disponibilidad | No se editan: salen del diseño aprobado. Para cambiarlas se cambia la arquitectura |
+| Piezas, servicios opcionales, alta disponibilidad | No se editan: salen del diseño. Para cambiarlos se cambia la arquitectura |
 | Contenedores y componentes | No se editan: los calcula el código |
 
-Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y sin costo (`/api/revisar-stack`, `revisarStack` en `lib/stack.js`). Como toda edición, el paso pierde su aprobación. Lo que la validación encuentra queda guardado en la ficha (`revision`) y se muestra en "Revisar antes de aprobar" hasta que se resuelve.
-3. **Los contenedores salen del armador real**, no de la IA.
-4. **Se guarda** en `proyectos.stack_implementacion` (`supabase/stack_implementacion.sql`). De ahí lo toman el armador y el runner. Si las piezas cambian, el runner borra los contenedores, datos e imágenes del stack anterior antes de levantar.
-5. **Las claves de los servicios externos** van vacías a `.env.example` y como variables de entorno a los servicios que las usan.
+Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y sin costo (`/api/revisar-stack`, `revisarStack` en `lib/stack.js`). Como toda edición, el paso pierde su aprobación.
 
-**En la interfaz:** el paso está en `PASOS` (fase `implementacion`), con generar, regenerar, indicaciones, aprobar, rechazar, editar, "Ampliar con IA" y cascada. Los cambios en Implementación solo le quitan la aprobación a Implementación; aprobar la fase de Diseño ofrece actualizar el stack si quedó desactualizado. La ficha muestra:
+#### En la interfaz
 
-- piezas;
-- contenedores;
-- cada componente del diagrama de sistemas y cada elemento de la arquitectura con su implementación;
-- librerías;
-- servicios externos;
-- avisos.
+- El paso está en `PASOS` (fase `implementacion`), con generar, regenerar, indicaciones, aprobar, rechazar, editar, "Ampliar con IA" y cascada.
+- Los cambios en Implementación solo le quitan la aprobación a Implementación. Aprobar la fase de Diseño ofrece actualizar el stack si quedó desactualizado.
+- La ficha muestra:
+  - "Revisar antes de aprobar" y avisos;
+  - piezas, contenedores, cada componente del diagrama de sistemas y cada elemento de la arquitectura con su implementación;
+  - librerías y servicios externos.
 
-**Probado con IA real:**
+#### Al armar el proyecto
+
+- **Cambio de piezas:** si las piezas cambian, el runner borra los contenedores, datos e imágenes del stack anterior antes de levantar.
+- **Claves de servicios externos:** van vacías a `.env.example` y como variables de entorno a los servicios que las usan.
+
+#### Probado con IA real
 
 - **Bomberos:**
   - Next.js + Flutter + Supabase (Auth, Realtime, Storage, Edge Functions) + alta disponibilidad, 12 servicios;
   - los 17 componentes del diagrama de sistemas resueltos;
-  - Firebase con la API HTTP v1 (`FCM_SERVICE_ACCOUNT_JSON`).
-- **Taller:** Next.js + Supabase (Auth), 6 servicios.
+  - Firebase con la API HTTP v1 (`FCM_SERVICE_ACCOUNT_JSON`), sin `firebase-admin`.
+- **Taller:** Next.js + Supabase (Auth), 6 servicios, sin advertencias falsas.
 - **"Ampliar con IA":** agregó una librería de PDF y rechazó cambiar el backend a Django, con un aviso.
-- **Librerías en bomberos, con las reglas en el código:**
-  - quedaron `supabase_flutter`, `@supabase/supabase-js`, `sqflite`, `connectivity_plus`, `firebase_messaging`, `signature_pad` y librerías de PDF;
-  - `firebase-admin` desapareció;
-  - lo que el modelo no corrigió en su reintento (firma y mapa en la web, por RF11, RF16, RF17, RF28 y RF06) quedó como advertencia visible.
-- **Taller:** sin advertencias falsas.
+- **Revisión de librerías:**
+  - detectó la firma en pantalla del panel web por RF11 y RF28, que la IA había omitido;
+  - en la edición manual, con las librerías que faltaban agregadas, solo quedó marcado un paquete inexistente de prueba.
 
-**Generador de arquitectura** (fase de Diseño): recibe el catálogo implementable. Lo que el cliente no definió se elige solo del catálogo; se valida que los clientes, el backend y la base de datos sean del catálogo. Lo que eligió el cliente fuera del catálogo se respeta y queda como advertencia ("no tiene implementación automática"). El estilo microservicios no tiene piezas.
+#### Decisiones tomadas en esta etapa
 
-**Falta:** probarlo desde la interfaz con la sesión del usuario.
+- **Bomberos:** se descartó el tablero de métricas en tiempo real (RF22). Se quitó del Análisis, de los casos de uso, del diagrama de sistemas y de la explicación de la arquitectura con una edición directa, sin cascada. RNF06 quedó solo para la consulta histórica de partes.
+- **Servicios externos:** solo los del diseño aprobado; no se agregan en Implementación.
 
 **Terminado cuando:** la ficha está aprobada y determina qué piezas, contenedores y pasos lleva el proyecto.
 
@@ -498,13 +519,14 @@ Después de esta etapa sigue la fase de **Pruebas**, que se ejecuta sobre estos 
 
 | Momento | Qué se muestra |
 |---|---|
-| Fin de la Etapa 3 | Las piezas del catálogo y la combinación de bomberos corriendo en contenedores |
+| Fin de la Etapa 3 | Las piezas del catálogo y la combinación de bomberos corriendo en contenedores (lista) |
+| Fin de la Etapa 4 | La ficha de stack técnico de bomberos generada desde el diseño y aprobada |
 | Fin de la Etapa 5 | La estructura de carpetas generada por icase-tool a partir del diseño |
 | Fin de la Etapa 10 | El sistema completo generado y funcionando, web y móvil |
 
 ## 13. Ejemplo: proyecto de bomberos
 
-Confirmado con su diagrama de arquitectura y su diagrama de sistemas. Las tecnologías de los dos coinciden. La alta disponibilidad solo aparece en la arquitectura ("Servidor Web Master / Esclavo"); se acordó implementarla como servidores web con balanceador.
+Confirmado con su diagrama de arquitectura y su diagrama de sistemas. Las tecnologías de los dos coinciden. El tablero de métricas en tiempo real (RF22) se descartó. La alta disponibilidad solo aparece en la arquitectura ("Servidor Web Master / Esclavo"); se acordó implementarla como servidores web con balanceador.
 
 | En el diseño | Implementación | Contenedor |
 |---|---|---|
@@ -514,7 +536,7 @@ Confirmado con su diagrama de arquitectura y su diagrama de sistemas. Las tecnol
 | Almacenamiento local · SQLite | Dentro de la app Flutter, con sincronización al volver la conexión | — |
 | Supabase · Auth (RF01, RF02, RNF04, RNF05) | GoTrue | `auth` |
 | Supabase · API de datos · PostgREST | PostgREST | `rest` |
-| Supabase · Realtime (RF04, RF22, RF23) | Realtime | `realtime` |
+| Supabase · Realtime (RF04, RF23) | Realtime | `realtime` |
 | Supabase · Edge Functions · Deno/TypeScript (RF30) | Edge Runtime, con las funciones generadas | `functions` |
 | Supabase Storage · firmas y croquis | Storage | `storage` |
 | Puerta de entrada de Supabase | Envoy | `api-gw` |
@@ -526,6 +548,5 @@ Por comparación, el taller mecánico (Next.js + Supabase con Auth y API de dato
 
 ## 14. Pendientes por decidir
 
-- **Generador de arquitectura:** restringirlo al catálogo de tecnologías, para que todo proyecto nuevo se pueda implementar. Requiere aprobación, porque ese generador ya está aprobado.
 - **Réplica de la base de datos** en los diseños con alta disponibilidad: hoy se duplica el servidor web; replicar la base y su cambio automático (Patroni) queda como mejora posterior.
 - **Servicios externos en la app móvil:** Firebase y Google Maps necesitan además la configuración del proyecto de Firebase (`google-services.json`), que aporta el usuario.
