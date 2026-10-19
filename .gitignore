@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# las plantillas de proyectos generados sí versionan su .env.example (no tiene secretos)
+!/plantillas/**/.env.example
 
 # respaldos de la base de datos (prototipos, análisis): pesan varios MB y son datos del proyecto
 /respaldos/
