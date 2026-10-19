@@ -154,12 +154,12 @@ Las etapas van en orden de dependencia. Cada capa se valida en su contenedor ape
 1. **Tabla `archivos_proyecto` en Supabase**, en el script `supabase/archivos_proyecto.sql`.
    - Columnas: proyecto, ruta del archivo, contenido, paso que lo generó, estado y hash del contenido.
    - Políticas RLS iguales a las de `proyectos`: cada usuario ve solo los archivos de sus proyectos.
-2. **Fase "Implementación" en `app/(app)/proyectos/[id]/pasos.js`**, con sus pasos:
-   - stack técnico, estructura de carpetas, base de datos, contrato de API, backend y frontend;
-   - aprobación general de la fase, como Análisis y Diseño;
-   - la fase se habilita solo con Diseño aprobado.
+2. **Fase "Implementación"** como Fase 03 del proyecto (`ImplementacionFase.js`), habilitada solo con Diseño aprobado.
+   - Los seis pasos (stack técnico, estructura de carpetas, base de datos, contrato de API, backend y frontend) se listan en `PASOS_IMPLEMENTACION` de `pasos.js`.
+   - Cada paso pasa a `PASOS`, con su ruta, su aprobación y la cascada, en la etapa en que se construye su generador. Si se agregaran antes, la cascada intentaría generarlos sin tener con qué.
+   - La aprobación general de la fase (`fases_aprobadas.implementacion`) llega con el último paso.
 3. **Explorador de archivos:** árbol de carpetas a la izquierda y visor de código a la derecha, con el estado de cada archivo.
-4. **Runner mínimo** en `runner/`: un servicio Node propio, con su `package.json`, que icase-tool llama desde sus rutas API del servidor con un token compartido (`RUNNER_TOKEN`). Operaciones:
+4. **Runner** en `runner/index.mjs`: un servicio Node sin dependencias que se enciende con `npm run runner` y lee `.env.local`. icase-tool lo llama desde `app/api/implementacion/route.js`, que junta la plantilla con los archivos generados (`lib/implementacion.js`) y envía la clave compartida `RUNNER_TOKEN`. Escucha solo en `127.0.0.1`. Operaciones:
 
    | Operación | Qué hace |
    |---|---|

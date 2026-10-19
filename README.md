@@ -48,6 +48,12 @@ ANTHROPIC_API_KEY=tu_api_key_de_anthropic
 # Opcional: orden de modelos a probar (separados por comas)
 # GEMINI_MODELOS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview
 # GROQ_MODELOS=openai/gpt-oss-120b,openai/gpt-oss-20b
+
+# Fase de Implementación: runner que ejecuta Docker (npm run runner). RUNNER_TOKEN es una
+# clave larga y aleatoria que comparten icase-tool y el runner.
+RUNNER_URL=http://127.0.0.1:4100
+RUNNER_TOKEN=una_clave_larga_y_aleatoria
+# WORKSPACES_DIR=C:\icase-workspaces
 ```
 
 Cada integrante debe generar sus propias credenciales de desarrollo, o solicitar las del proyecto compartido al equipo.
@@ -59,6 +65,14 @@ npm run dev
 ```
 
 Luego abrir [http://localhost:3000](http://localhost:3000) en el navegador.
+
+Para la fase de Implementación hace falta además Docker Desktop encendido y el runner, en otra terminal:
+
+```bash
+npm run runner
+```
+
+La tabla de archivos se crea una vez ejecutando `supabase/archivos_proyecto.sql` en el SQL Editor de Supabase. El plan de la fase está en [docs/plan-implementacion.md](docs/plan-implementacion.md).
 
 ## Estructura del proyecto
 

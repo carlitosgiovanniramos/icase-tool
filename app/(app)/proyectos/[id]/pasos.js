@@ -82,6 +82,18 @@ export const PASOS = [
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));
 
+// Pasos de la fase de Implementación (ver docs/plan-implementacion.md). Por ahora solo se
+// muestran: cada uno pasa a PASOS, con su ruta y su aprobación, cuando tenga su generador; antes
+// de eso la cascada intentaría generarlos.
+export const PASOS_IMPLEMENTACION = [
+  { clave: "impl_stack", nombre: "Stack técnico" },
+  { clave: "impl_estructura", nombre: "Estructura de carpetas" },
+  { clave: "impl_bd", nombre: "Base de datos" },
+  { clave: "impl_contrato", nombre: "Contrato de API" },
+  { clave: "impl_backend", nombre: "Backend" },
+  { clave: "impl_frontend", nombre: "Frontend" },
+];
+
 export function pasosDespuesDe(clave) {
   const i = PASOS.findIndex((p) => p.clave === clave);
   return PASOS.slice(i + 1);

@@ -31,6 +31,7 @@ import ArbolNavegacion from "./ArbolNavegacion";
 import InformeProyecto from "./InformeProyecto";
 import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
+import ImplementacionFase from "./ImplementacionFase";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
@@ -564,7 +565,7 @@ export default function WorkspaceProyecto() {
   const [fasesAprobadas, setFasesAprobadas] = useState({});
   const [cargando, setCargando] = useState(null); // { paso, modo } generación manual en curso
   const [progreso, setProgreso] = useState(null); // { indice, total, nombre } cascada en curso
-  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "informe"
+  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "implementacion" | "informe"
 
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
@@ -1892,7 +1893,13 @@ export default function WorkspaceProyecto() {
       ? !!fasesAprobadas.diseno_arquitectura
       : !!fasesAprobadas.diseno;
 
-  const faseActual = !fasesAprobadas.analisis ? "analisis" : !disenoAprobado ? "diseno" : null;
+  const faseActual = !fasesAprobadas.analisis
+    ? "analisis"
+    : !disenoAprobado
+    ? "diseno"
+    : !fasesAprobadas.implementacion
+    ? "implementacion"
+    : null;
 
   // Recuadro "Ampliar con IA" bajo un diagrama ya generado que se puede trabajar.
   const recuadroAmpliar = (clave) =>
@@ -2035,6 +2042,16 @@ export default function WorkspaceProyecto() {
         ) : (
           <p className="text-sm text-gray-600">
             El informe se habilita cuando las fases de Análisis y Diseño están aprobadas.
+          </p>
+        ))}
+
+      {/* ===================== IMPLEMENTACIÓN ===================== */}
+      {vista === "implementacion" &&
+        (disenoAprobado ? (
+          <ImplementacionFase proyectoId={id} onVolver={() => setVista("resumen")} />
+        ) : (
+          <p className="text-sm text-gray-600">
+            La implementación se habilita cuando la fase de Diseño está aprobada.
           </p>
         ))}
 
@@ -2310,10 +2327,10 @@ export default function WorkspaceProyecto() {
             <div className="flex items-center gap-4">
               {fasesAprobadas.analisis && disenoAprobado && (
                 <button
-                  onClick={() => setVista("informe")}
+                  onClick={() => setVista("implementacion")}
                   className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
                 >
-                  Continuar al Informe →
+                  Continuar a Implementación →
                 </button>
               )}
               <button
@@ -2899,17 +2916,17 @@ export default function WorkspaceProyecto() {
                     <p className="text-sm font-bold text-gray-900">Fase de Diseño</p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {disenoAprobado
-                        ? "Aprobada. Proyecto completado."
+                        ? "Aprobada."
                         : "Clases, entidad-relación, prototipo, árbol, arquitectura y sistema aprobados."}
                     </p>
                   </div>
                   {disenoAprobado ? (
                     <button
-                      onClick={() => setVista("informe")}
+                      onClick={() => setVista("implementacion")}
                       style={{ backgroundColor: PALETA.navy }}
                       className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
                     >
-                      Continuar al Informe →
+                      Continuar a Implementación →
                     </button>
                   ) : (
                     <button

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "runner": "node --env-file=.env.local runner/index.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

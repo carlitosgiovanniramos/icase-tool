@@ -29,9 +29,17 @@ export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
       bloqueado: !analisisAprobado && !hayDiseno,
     },
     {
+      clave: "implementacion",
+      numero: "03",
+      nombre: "Implementación",
+      descripcion: "Código del proyecto y ejecución en contenedores: base de datos, backend y frontend",
+      completado: !!fasesAprobadas?.implementacion,
+      bloqueado: !disenoAprobado,
+    },
+    {
       // No se aprueba: es el documento con las dos fases, disponible cuando ambas lo están.
       clave: "informe",
-      numero: "03",
+      numero: "04",
       nombre: "Informe",
       descripcion: "Documento con las dos fases, para revisar y exportar a PDF",
       completado: false,
