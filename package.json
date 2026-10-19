@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "runner": "node --env-file=.env.local runner/index.mjs"
+    "runner": "node --env-file=.env.local runner/index.mjs",
+    "all": "concurrently -k -n web,runner -c blue,magenta \"npm:dev\" \"npm:runner\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "concurrently": "^10.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4"
