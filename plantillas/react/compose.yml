@@ -1,0 +1,10 @@
+# Aplicación React (Vite) compilada y servida por nginx.
+services:
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }

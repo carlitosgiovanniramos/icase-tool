@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { armarProyecto } from "@/lib/implementacion";
+import { armarProyecto, catalogo } from "@/lib/implementacion";
 
 export const maxDuration = 120;
 
@@ -57,7 +57,30 @@ async function archivosDelProyecto(supabase, proyecto) {
     }
     throw error;
   }
-  return { generados: data.length, archivos: await armarProyecto({ nombre: proyecto.nombre, generados: data }) };
+  // Las piezas saldrán del paso "Stack técnico"; mientras no exista, armarProyecto usa las de la
+  // referencia (React + Express + PostgreSQL).
+  const { archivos, servicios } = await armarProyecto({ nombre: proyecto.nombre, generados: data });
+  return { generados: data.length, archivos, servicios };
+}
+
+// Nombre de cada puerto según las piezas del catálogo ({ WEB_PORT: "Web", ... }).
+async function nombresDePuertos() {
+  const nombres = {};
+  for (const ficha of await catalogo()) Object.assign(nombres, ficha.enlaces || {});
+  return nombres;
+}
+
+// Estado del runner más los enlaces para abrir el proyecto (solo con algún contenedor encendido).
+async function estadoConEnlaces(base) {
+  const estado = await runner("GET", `${base}/estado`);
+  const encendido = (estado.servicios || []).some((s) => s.estado === "running");
+  const nombres = await nombresDePuertos();
+  const enlaces = encendido
+    ? Object.entries(estado.puertos || {})
+        .filter(([variable]) => nombres[variable])
+        .map(([variable, puerto]) => ({ nombre: nombres[variable], url: `http://localhost:${puerto}` }))
+    : [];
+  return { ...estado, enlaces };
 }
 
 export async function POST(request) {
@@ -89,7 +112,7 @@ export async function POST(request) {
       return NextResponse.json(await runner("POST", `${base}/levantar`, {}));
     }
 
-    if (accion === "estado") return NextResponse.json(await runner("GET", `${base}/estado`));
+    if (accion === "estado") return NextResponse.json(await estadoConEnlaces(base));
 
     if (accion === "logs") {
       const consulta = servicio ? `?servicio=${encodeURIComponent(servicio)}` : "";

@@ -86,14 +86,19 @@ Catálogo inicial: lo que usa el proyecto de bomberos más lo más común.
 
 | Capa | Tecnologías | Estado |
 |---|---|---|
-| Web | React (Vite + nginx) | Probada en la Etapa 1; hay que separarla como pieza propia |
-| Web | Next.js | Por construir |
-| Móvil | Flutter | Por construir |
-| Backend | Node.js/Express | Probada en la Etapa 1; hay que separarla como pieza propia |
-| Backend | Supabase (Auth, API de datos, Realtime, Edge Functions, Storage, Kong) | Por construir |
-| Base de datos | PostgreSQL | Probada en la Etapa 1; hay que separarla como pieza propia |
+| Capa | Pieza | Estado |
+|---|---|---|
+| Web | `react` (Vite + nginx) | Probada |
+| Web | `nextjs` (Next.js 16, standalone) | Probada |
+| Móvil | `flutter` (Flutter 3.41) | Probada (vista previa web en Docker) |
+| Backend | `express` (Node.js/Express) | Probada |
+| Backend | `supabase` (base, API de datos, puerta de entrada; opcionales: Auth, Realtime, Storage, Edge Functions) | Probada |
+| Base de datos | `postgres` (PostgreSQL 17) | Probada |
+| Infraestructura | `alta-disponibilidad` (web master y esclavo con balanceador nginx) | Probada |
 
-Algunas tecnologías son varios programas. Supabase, por ejemplo, se compone de autenticación (GoTrue), API de datos (PostgREST), Realtime, Edge Functions, Storage y una puerta de entrada (Kong). Cada uno es un contenedor; así lo levanta también la herramienta oficial de Supabase.
+Algunas tecnologías son varios programas. Supabase, por ejemplo, se compone de autenticación (GoTrue), API de datos (PostgREST), Realtime, Edge Functions, Storage y una puerta de entrada (Envoy, la opción por defecto de la configuración oficial). Cada uno es un contenedor; así lo levanta también la herramienta oficial de Supabase.
+
+Cada pieza tiene un `README.md` con lo que la IA debe generar dentro de ella y las reglas que debe cumplir ese código. Desde la Etapa 4 esos textos se le pasan a la IA.
 
 ## 6. Lo que no es un contenedor
 
@@ -104,7 +109,7 @@ Algunas tecnologías son varios programas. Supabase, por ejemplo, se compone de 
 | Apps móviles (Flutter, React Native) | Corren en el celular, no en un servidor | El código se genera completo. Un contenedor compila una vista previa web para probarla desde icase-tool. La app real se ejecuta en el celular o el emulador (`flutter run`). Las apps de iPhone necesitan una Mac |
 | Almacenamiento local del dispositivo (SQLite) | Vive dentro de la app | Se implementa en el código de la app móvil |
 | Servicios de internet (Google Maps, Firebase Cloud Messaging, pagos, correo) | Son de terceros; no se pueden descargar | Se usan los reales. Cada clave va en el `.env` del proyecto. Sin ella el sistema arranca igual y solo esa función responde con un error claro, por ejemplo "Falta GOOGLE_MAPS_API_KEY" |
-| Infraestructura de varios servidores (alta disponibilidad, balanceo) | Pensada para varias máquinas físicas | Se representa en contenedores, por ejemplo una base principal y una réplica en espera. Es una versión demostrativa; el cambio automático ante fallas necesita herramientas adicionales (Patroni) y queda como mejora posterior |
+| Infraestructura de varios servidores (alta disponibilidad, balanceo) | Pensada para varias máquinas físicas | Se representa en contenedores con la pieza `alta-disponibilidad`: servidor web master y esclavo detrás de un balanceador, con cambio automático. Es una versión demostrativa en una sola PC; replicar la base de datos queda como mejora posterior |
 
 ## 7. Contenedores frente a granularidad
 
@@ -229,31 +234,51 @@ Se verificó:
 
 ---
 
-### Etapa 3. Piezas del catálogo
+### Etapa 3. Piezas del catálogo · Terminada
 
-**Objetivo:** tener una pieza probada en Docker por cada tecnología del catálogo inicial.
+Se leyeron la arquitectura y el diagrama de sistemas de bomberos y del taller mecánico. Se construyeron y probaron las piezas de la sección 5:
 
-**Antes de empezar:** leer el diagrama de arquitectura y el diagrama de sistemas aprobados del proyecto de bomberos, y confirmar con ellos la lista de contenedores de la sección 13.
+- **Supabase:** a partir de la configuración oficial, sin Studio, pooler, analytics ni imgproxy.
+  - Auth, Realtime, Storage y Edge Functions son opcionales: se incluyen solo si el diseño los tiene.
+  - La tarea `migraciones` aplica `supabase/migrations/*.sql` y `supabase/seed.sql` cuando Supabase ya creó sus esquemas, y termina.
+- **Next.js:** con integración Supabase. El navegador usa `localhost:<SUPABASE_PORT>` y el servidor de Next.js usa la red interna.
+- **Flutter:** vista previa web compilada con la imagen oficial; la app real se ejecuta con `flutter run`.
+- **Alta disponibilidad:** web master y esclavo con un balanceador nginx que cambia al esclavo si el master no responde.
+- **React, Express y PostgreSQL:** la plantilla de la Etapa 1, separada en tres piezas.
 
-**Tareas:**
+Cómo se arma un proyecto:
 
-1. Separar `react-express-postgres` en tres piezas: `react`, `express` y `postgres`.
-2. Construir la pieza `supabase`:
-   - servicios Auth, API de datos, Realtime, Edge Functions, Storage y Kong, con las imágenes oficiales;
-   - generar sus claves (JWT, anon y service role) al crear el `.env` del proyecto.
-3. Construir la pieza `nextjs`: Dockerfile de producción y conexión con su backend.
-4. Construir la pieza `flutter`:
-   - contenedor que compila la vista previa web;
-   - instrucciones para `flutter run` en el celular o el emulador, apuntando a la IP de la PC.
-5. Construir la pieza de réplica en espera de PostgreSQL, para los diseños con alta disponibilidad.
-6. Armar el `docker-compose.yml` juntando las piezas.
-7. Generalizar los puertos del runner: hoy maneja `FRONTEND_PORT` y `BACKEND_PORT`; debe asignar todas las variables `*_PORT` que declaren las piezas.
-8. Probar a mano cada pieza y una combinación completa (la de bomberos), igual que en la Etapa 1.
+- **`lib/implementacion.js`** junta las piezas elegidas:
+  - une sus partes del `docker-compose.yml` y aplica sus integraciones (por ejemplo, Next.js con Supabase);
+  - quita los servicios opcionales que el diseño no tiene y las dependencias hacia ellos;
+  - aplica la alta disponibilidad;
+  - arma `.env.example` con las variables de todas las piezas.
+- **El runner:**
+  - genera las claves que piden las piezas (`{{secreto:hex:N}}`, `{{secreto:base64:N}}`, y `{{jwt:<rol>}}` firmado con `JWT_SECRET`);
+  - conserva las existentes y asigna un puerto libre a cada variable `*_PORT`.
+- **La interfaz** muestra los servicios reales de cada proyecto y un botón "Abrir" por cada puerto con nombre (Web, Móvil, API de Supabase...).
+- **`.gitattributes`** obliga saltos de línea LF en `plantillas/`: con `core.autocrlf` en Windows, los `.sh` dejarían de funcionar dentro de los contenedores.
 
-**Terminado cuando:**
+Se verificó con un proyecto armado solo por piezas (bomberos, 12 servicios), levantado con el runner:
 
-- Cada pieza levanta sola y combinada con las demás.
-- Un proyecto mínimo con las piezas de bomberos funciona de punta a punta: inicio de sesión, lectura y escritura de datos, Realtime, una Edge Function, Storage y la vista previa móvil.
+- **Auth:** registro e inicio de sesión.
+- **API con RLS:** sin sesión no ve datos y no se puede crear a nombre de otro.
+- **Realtime:** el aviso de un nuevo parte llega por WebSocket.
+- **Storage:** solo en la carpeta propia.
+- **Edge Function:** con verificación de JWT, y responde con un error claro si falta la clave de Firebase.
+- **Web:** consulta Supabase por la red interna.
+- **Alta disponibilidad:** con el master apagado responde el esclavo.
+- **Vista previa móvil:** compilada y apuntando al Supabase del proyecto.
+
+También:
+
+- el taller arma 6 servicios y la referencia de la Etapa 1, 3; la referencia sigue funcionando;
+- al eliminar no queda ningún contenedor, volumen ni carpeta.
+
+Comportamientos conocidos:
+
+- La primera suscripción a Realtime después de levantar puede perder su primer aviso, mientras Realtime crea su canal de replicación.
+- La imagen de Flutter pesa unos 7 GB: la primera compilación de un proyecto con móvil tarda varios minutos.
 
 ---
 
@@ -415,26 +440,28 @@ Después de esta etapa sigue la fase de **Pruebas**, que se ejecuta sobre estos 
 
 ## 13. Ejemplo: proyecto de bomberos
 
-Tecnologías según su diagrama de arquitectura:
+Confirmado con su diagrama de arquitectura y su diagrama de sistemas. Las tecnologías de los dos coinciden. La alta disponibilidad solo aparece en la arquitectura ("Servidor Web Master / Esclavo"); se acordó implementarla como servidores web con balanceador.
 
-| En el diagrama | Implementación | Contenedor |
+| En el diseño | Implementación | Contenedor |
 |---|---|---|
-| Panel Web · Next.js | Proyecto Next.js | `web` |
-| App Móvil · Flutter | Proyecto Flutter; vista previa web en contenedor y app real con `flutter run` | `movil` |
+| Panel Web · Next.js (6 módulos) | Proyecto Next.js | `web-master`, `web-esclavo` |
+| Alta disponibilidad · Servidor Web Master / Esclavo | Balanceador nginx con cambio automático al esclavo | `balanceador` |
+| App Móvil · Flutter (2 módulos) | Proyecto Flutter; vista previa web en contenedor y app real con `flutter run` | `movil` |
 | Almacenamiento local · SQLite | Dentro de la app Flutter, con sincronización al volver la conexión | — |
-| Supabase · Auth | GoTrue | `auth` |
-| Supabase · API de datos | PostgREST | `rest` |
-| Supabase · Realtime | Realtime | `realtime` |
-| Supabase · Edge Functions | Edge Runtime, con las funciones generadas | `functions` |
-| Supabase · Storage (firmas y croquis) | Storage | `storage` |
-| Puerta de entrada de Supabase | Kong | `kong` |
+| Supabase · Auth (RF01, RF02, RNF04, RNF05) | GoTrue | `auth` |
+| Supabase · API de datos · PostgREST | PostgREST | `rest` |
+| Supabase · Realtime (RF04, RF22, RF23) | Realtime | `realtime` |
+| Supabase · Edge Functions · Deno/TypeScript (RF30) | Edge Runtime, con las funciones generadas | `functions` |
+| Supabase Storage · firmas y croquis | Storage | `storage` |
+| Puerta de entrada de Supabase | Envoy | `api-gw` |
 | PostgreSQL | PostgreSQL de Supabase | `db` |
-| Alta disponibilidad Master / Esclavo | Réplica en espera de la base de datos | `db-replica` |
+| Tablas del proyecto | Tarea de un solo uso que las aplica y termina | `migraciones` |
 | Google Maps, Firebase Cloud Messaging | Servicios reales con claves en `.env` | — |
 
-**Pendiente:** confirmar esta lista con el diagrama de sistemas antes de construir las piezas.
+Por comparación, el taller mecánico (Next.js + Supabase con Auth y API de datos) lleva `web`, `db`, `api-gw`, `rest`, `auth` y `migraciones`.
 
 ## 14. Pendientes por decidir
 
 - **Generador de arquitectura:** restringirlo al catálogo de tecnologías, para que todo proyecto nuevo se pueda implementar. Requiere aprobación, porque ese generador ya está aprobado.
-- **Cambio automático ante fallas** en los diseños con alta disponibilidad: queda como mejora posterior.
+- **Réplica de la base de datos** en los diseños con alta disponibilidad: hoy se duplica el servidor web; replicar la base y su cambio automático (Patroni) queda como mejora posterior.
+- **Servicios externos en la app móvil:** Firebase y Google Maps necesitan además la configuración del proyecto de Firebase (`google-services.json`), que aporta el usuario.

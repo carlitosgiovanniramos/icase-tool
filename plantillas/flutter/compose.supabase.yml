@@ -1,0 +1,9 @@
+services:
+  movil:
+    build:
+      args:
+        SUPABASE_URL: http://localhost:${SUPABASE_PORT:-8000}
+        SUPABASE_ANON_KEY: ${ANON_KEY}
+    depends_on:
+      api-gw:
+        condition: service_healthy

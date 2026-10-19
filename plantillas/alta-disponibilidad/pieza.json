@@ -1,0 +1,10 @@
+{
+  "nombre": "alta-disponibilidad",
+  "titulo": "Alta disponibilidad (master / esclavo con balanceador)",
+  "capa": "infraestructura",
+  "reconoce": ["alta disponibilidad", "master", "esclavo", "standby", "failover", "replica"],
+  "servicios": {
+    "balanceador": "Balanceador nginx: master activo, esclavo en espera"
+  },
+  "descripcion": "Duplica el servicio indicado por la pieza web (altaDisponibilidad.servicio) en <servicio>-master y <servicio>-esclavo, y publica el puerto por el balanceador."
+}

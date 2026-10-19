@@ -25,11 +25,9 @@ const MAX_SALIDA = 100_000; // caracteres de salida de docker que se conservan p
 const ESPERA_CORTA_MS = 60_000; // estado, logs
 const ESPERA_LARGA_MS = 15 * 60_000; // construir imágenes y levantar
 
-// Puertos de la PC donde se publican los contenedores: [variable de .env, primer puerto a probar].
-const PUERTOS_PUBLICADOS = [
-  ["FRONTEND_PORT", 8080],
-  ["BACKEND_PORT", 4000],
-];
+// Toda variable de .env que termina en _PORT es un puerto de la PC donde se publica un contenedor;
+// su valor en .env.example es el primer puerto que se prueba.
+const ES_PUERTO = /_PORT$/;
 
 if (!TOKEN) {
   console.error("Falta RUNNER_TOKEN en .env.local. Agrega una clave larga y aleatoria, la misma que usa icase-tool.");
@@ -193,16 +191,48 @@ async function buscarPuertoLibre(desde, ocupados) {
 async function asignarPuertos(variables, encendido) {
   const deDocker = encendido ? new Set() : await puertosDeDocker();
   const usados = new Set();
-  for (const [clave, desde] of PUERTOS_PUBLICADOS) {
+  for (const clave of Object.keys(variables).filter((k) => ES_PUERTO.test(k))) {
     const actual = Number(variables[clave]);
     const libre = actual && !usados.has(actual) && !deDocker.has(actual) && (await puertoLibre(actual));
     if (actual && !usados.has(actual) && (encendido || libre)) {
       usados.add(actual);
       continue;
     }
-    const nuevo = await buscarPuertoLibre(actual || desde, new Set([...usados, ...deDocker]));
+    const nuevo = await buscarPuertoLibre(actual || 8000, new Set([...usados, ...deDocker]));
     variables[clave] = String(nuevo);
     usados.add(nuevo);
+  }
+  return variables;
+}
+
+// Claves que piden las piezas en .env.example, generadas una vez por proyecto:
+//   {{secreto:hex:N}} / {{secreto:base64:N}}   N bytes aleatorios
+//   {{jwt:<rol>}}                               JWT HS256 firmado con JWT_SECRET (claves de Supabase)
+const SECRETO = /^\{\{secreto:(hex|base64):(\d+)\}\}$/;
+const JWT = /^\{\{jwt:([a-z_]+)\}\}$/;
+
+function firmarJwt(rol, secreto) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const iat = Math.floor(Date.now() / 1000);
+  const contenido = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ role: rol, iss: "supabase", iat, exp: iat + 5 * 365 * 24 * 3600 })}`;
+  return `${contenido}.${crypto.createHmac("sha256", secreto).update(contenido).digest("base64url")}`;
+}
+
+// .env del proyecto: conserva los valores que ya tenía (la base de datos se creó con esas claves) y
+// agrega las variables nuevas de .env.example, generando las claves que pidan.
+function completarVariables(ejemplo, existentes) {
+  const variables = { ...existentes };
+  const jwts = [];
+  for (const [clave, valor] of Object.entries(ejemplo)) {
+    if (clave in variables) continue;
+    const secreto = valor.match(SECRETO);
+    if (secreto) variables[clave] = crypto.randomBytes(Number(secreto[2])).toString(secreto[1]);
+    else if (JWT.test(valor)) jwts.push([clave, valor.match(JWT)[1]]);
+    else variables[clave] = valor;
+  }
+  for (const [clave, rol] of jwts) {
+    if (!variables.JWT_SECRET) throw new ErrorRunner(400, `${clave} necesita JWT_SECRET en .env.example.`);
+    variables[clave] = firmarJwt(rol, variables.JWT_SECRET);
   }
   return variables;
 }
@@ -225,11 +255,13 @@ async function sincronizar(id, archivos) {
     await writeFile(destino, contenido, "utf8");
   }
 
-  if (!(await leerEnv(carpeta))) {
-    const ejemplo = archivos.find((a) => a.ruta === ".env.example");
-    const variables = leerVariables(ejemplo?.contenido);
-    if ("DB_PASSWORD" in variables || !ejemplo) variables.DB_PASSWORD = crypto.randomBytes(18).toString("hex");
-    await writeFile(path.join(carpeta, ".env"), escribirVariables(await asignarPuertos(variables, false)), "utf8");
+  const ejemplo = leerVariables(archivos.find((a) => a.ruta === ".env.example")?.contenido);
+  const existentes = (await leerEnv(carpeta)) || {};
+  const variables = completarVariables(ejemplo, existentes);
+  const nuevas = Object.keys(variables).filter((k) => !(k in existentes));
+  if (nuevas.length) {
+    // Los puertos se verifican al levantar; aquí solo se completan los que faltan.
+    await writeFile(path.join(carpeta, ".env"), escribirVariables(variables), "utf8");
   }
   return { archivos: destinos.length };
 }
@@ -291,13 +323,14 @@ async function consultarEstado(id) {
   if (!variables) return { ...base, sincronizado: false, servicios: [] };
 
   const servicios = await contenedores(id);
-  const frontend = servicios.find((s) => s.servicio === "frontend" && s.estado === "running");
   return {
     ...base,
     sincronizado: true,
     servicios,
-    puertos: { frontend: Number(variables.FRONTEND_PORT) || null, backend: Number(variables.BACKEND_PORT) || null },
-    url: frontend && variables.FRONTEND_PORT ? `http://localhost:${variables.FRONTEND_PORT}` : null,
+    // Puertos de la PC asignados al proyecto ({ WEB_PORT: 3001, ... }); icase-tool les pone nombre.
+    puertos: Object.fromEntries(
+      Object.entries(variables).filter(([k]) => ES_PUERTO.test(k)).map(([k, v]) => [k, Number(v)])
+    ),
   };
 }
 

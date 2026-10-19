@@ -165,12 +165,11 @@ function ExploradorArchivos({ archivos }) {
 
 // --- Panel de ejecución ---------------------------------------------------------------------
 
-const ORDEN_SERVICIOS = ["db", "backend", "frontend"];
-const NOMBRE_SERVICIO = { db: "Base de datos", backend: "Backend", frontend: "Frontend" };
-
-function describirServicio(s) {
+// tarea: servicio de un solo uso (por ejemplo, migraciones), que termina solo.
+function describirServicio(s, tarea) {
   if (!s) return { texto: "Sin crear", color: "#9ca3af" };
   if (s.salud === "unhealthy" || (s.estado === "exited" && s.codigoSalida)) return { texto: "Con errores", color: PALETA.carmesi };
+  if (tarea && s.estado === "exited") return { texto: "Completada", color: PALETA.oliva };
   if (s.estado === "running" && s.salud === "starting") return { texto: "Iniciando", color: PALETA.naranjaOscuro };
   if (s.estado === "running") return { texto: "Encendido", color: PALETA.oliva };
   if (s.estado === "restarting") return { texto: "Reiniciando", color: PALETA.naranjaOscuro };
@@ -179,7 +178,8 @@ function describirServicio(s) {
 
 const ultimasLineas = (texto, n = 40) => String(texto || "").trimEnd().split("\n").slice(-n).join("\n");
 
-function PanelEjecucion({ proyectoId, hayArchivos }) {
+// servicios: [{ nombre, descripcion, tarea }] del docker-compose.yml del proyecto.
+function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
   const { confirmar, mostrarError } = useAlert();
   const [estado, setEstado] = useState(null);
   const [errorEstado, setErrorEstado] = useState("");
@@ -261,13 +261,16 @@ function PanelEjecucion({ proyectoId, hayArchivos }) {
     <div className="border border-gray-300 p-4">
       {errorEstado && <p className="text-sm mb-3" style={{ color: PALETA.carmesi }}>{errorEstado}</p>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-        {ORDEN_SERVICIOS.map((clave) => {
-          const d = describirServicio(servicios[clave]);
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
+        {delProyecto.map(({ nombre, descripcion, tarea }) => {
+          const d = describirServicio(servicios[nombre], tarea);
           return (
-            <div key={clave} className="border border-gray-200 px-3 py-2 flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-800">{NOMBRE_SERVICIO[clave]}</span>
-              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: d.color }}>
+            <div key={nombre} className="border border-gray-200 px-3 py-2 flex items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-gray-800 font-mono">{nombre}</span>
+                <span className="block text-xs text-gray-500 truncate">{descripcion}</span>
+              </span>
+              <span className="text-xs font-bold uppercase tracking-wide shrink-0" style={{ color: d.color }}>
                 {d.texto}
               </span>
             </div>
@@ -293,17 +296,19 @@ function PanelEjecucion({ proyectoId, hayArchivos }) {
             {estado?.operacion === "deteniendo" ? "Deteniendo..." : "Detener"}
           </button>
         )}
-        {estado?.url && !operando && (
-          <a
-            href={estado.url}
-            target="_blank"
-            rel="noreferrer"
-            style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
-            className="border px-4 py-2 text-sm font-semibold hover:bg-gray-50"
-          >
-            Abrir {estado.url.replace("http://", "")}
-          </a>
-        )}
+        {!operando &&
+          (estado?.enlaces || []).map((enlace) => (
+            <a
+              key={enlace.url}
+              href={enlace.url}
+              target="_blank"
+              rel="noreferrer"
+              style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
+              className="border px-4 py-2 text-sm font-semibold hover:bg-gray-50"
+            >
+              {enlace.nombre} · {enlace.url.replace("http://", "")}
+            </a>
+          ))}
         {!hayArchivos && <span className="text-xs text-gray-500">Sin archivos generados</span>}
       </div>
 
@@ -365,6 +370,7 @@ function PanelEjecucion({ proyectoId, hayArchivos }) {
 export default function ImplementacionFase({ proyectoId, onVolver }) {
   const [archivos, setArchivos] = useState(null);
   const [generados, setGenerados] = useState(0);
+  const [servicios, setServicios] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -372,6 +378,7 @@ export default function ImplementacionFase({ proyectoId, onVolver }) {
       .then((datos) => {
         setArchivos(datos.archivos);
         setGenerados(datos.generados);
+        setServicios(datos.servicios || []);
       })
       .catch((err) => setError(err.message));
   }, [proyectoId]);
@@ -424,7 +431,7 @@ export default function ImplementacionFase({ proyectoId, onVolver }) {
 
         <div>
           <Subtitulo>Ejecución</Subtitulo>
-          <PanelEjecucion proyectoId={proyectoId} hayArchivos={generados > 0} />
+          <PanelEjecucion proyectoId={proyectoId} hayArchivos={generados > 0} servicios={servicios} />
         </div>
       </div>
     </section>

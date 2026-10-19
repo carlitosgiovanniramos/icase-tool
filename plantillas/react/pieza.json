@@ -1,0 +1,17 @@
+{
+  "nombre": "react",
+  "titulo": "React",
+  "capa": "web",
+  "reconoce": ["react", "vite"],
+  "servicios": {
+    "frontend": "Aplicación web (React)"
+  },
+  "integraciones": ["express"],
+  "altaDisponibilidad": { "servicio": "frontend", "puerto": 80, "variablePuerto": "FRONTEND_PORT" },
+  "variables": {
+    "FRONTEND_PORT": "8080"
+  },
+  "enlaces": {
+    "FRONTEND_PORT": "Web"
+  }
+}

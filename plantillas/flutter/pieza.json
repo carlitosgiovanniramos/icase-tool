@@ -1,0 +1,16 @@
+{
+  "nombre": "flutter",
+  "titulo": "Flutter",
+  "capa": "movil",
+  "reconoce": ["flutter", "dart"],
+  "servicios": {
+    "movil": "Vista previa web de la app móvil (Flutter)"
+  },
+  "integraciones": ["supabase"],
+  "variables": {
+    "MOVIL_PORT": "8090"
+  },
+  "enlaces": {
+    "MOVIL_PORT": "Móvil (vista previa)"
+  }
+}

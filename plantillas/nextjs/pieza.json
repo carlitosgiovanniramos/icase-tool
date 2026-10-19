@@ -1,0 +1,17 @@
+{
+  "nombre": "nextjs",
+  "titulo": "Next.js",
+  "capa": "web",
+  "reconoce": ["next.js", "nextjs", "next"],
+  "servicios": {
+    "web": "Panel web (Next.js)"
+  },
+  "integraciones": ["supabase"],
+  "altaDisponibilidad": { "servicio": "web", "puerto": 3000, "variablePuerto": "WEB_PORT" },
+  "variables": {
+    "WEB_PORT": "3000"
+  },
+  "enlaces": {
+    "WEB_PORT": "Web"
+  }
+}

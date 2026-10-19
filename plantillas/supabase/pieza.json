@@ -1,0 +1,35 @@
+{
+  "nombre": "supabase",
+  "titulo": "Supabase",
+  "capa": "backend",
+  "reconoce": ["supabase", "postgrest", "gotrue", "edge functions", "supabase storage", "supabase realtime"],
+  "servicios": {
+    "db": "PostgreSQL de Supabase",
+    "api-gw": "Puerta de entrada (Envoy)",
+    "rest": "API de datos (PostgREST)",
+    "migraciones": "Tarea de un solo uso: aplica las tablas del proyecto",
+    "auth": "Autenticación (GoTrue)",
+    "realtime": "Realtime (WebSocket)",
+    "storage": "Storage (archivos)",
+    "functions": "Edge Functions (Deno)"
+  },
+  "opcionales": {
+    "auth": ["auth", "autenticacion", "jwt", "gotrue", "inicio de sesion"],
+    "realtime": ["realtime", "websocket", "tiempo real"],
+    "storage": ["storage", "archivos", "adjuntos"],
+    "functions": ["edge functions", "functions", "funciones", "deno"]
+  },
+  "variables": {
+    "POSTGRES_PASSWORD": "{{secreto:hex:16}}",
+    "JWT_SECRET": "{{secreto:base64:30}}",
+    "ANON_KEY": "{{jwt:anon}}",
+    "SERVICE_ROLE_KEY": "{{jwt:service_role}}",
+    "SECRET_KEY_BASE": "{{secreto:base64:48}}",
+    "REALTIME_DB_ENC_KEY": "{{secreto:hex:8}}",
+    "DASHBOARD_PASSWORD": "{{secreto:hex:16}}",
+    "SUPABASE_PORT": "8000"
+  },
+  "enlaces": {
+    "SUPABASE_PORT": "API de Supabase"
+  }
+}

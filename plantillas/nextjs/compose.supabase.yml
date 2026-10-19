@@ -1,0 +1,15 @@
+# Next.js con Supabase: el navegador llega por localhost y el puerto de la puerta de entrada (fijado
+# al compilar); el servidor de Next.js llega por la red interna (api-gw:8000).
+services:
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: http://localhost:${SUPABASE_PORT:-8000}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+    environment:
+      SUPABASE_URL_INTERNA: http://api-gw:8000
+    depends_on:
+      api-gw:
+        condition: service_healthy
+      migraciones:
+        condition: service_completed_successfully
