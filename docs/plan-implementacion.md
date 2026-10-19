@@ -4,16 +4,127 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 ## Estado actual (19 de octubre de 2026)
 
-**Estamos en la Etapa 5 (paso "Estructura de carpetas").** La Etapa 4 quedó terminada con la ficha de stack técnico de bomberos aprobada.
+**Estamos en la Etapa 5 (paso "Estructura de carpetas").** Está construida y probada con IA real. El usuario ya generó desde la interfaz la estructura de bomberos; **falta revisarla y aprobarla**. Después sigue la Etapa 6 (Base de datos), el primer paso que escribe código.
 
 | Etapa | Estado |
 |---|---|
 | 1. Proyecto de referencia hecho a mano | Terminada |
 | 2. Base de la fase dentro de icase-tool | Terminada |
 | 3. Piezas del catálogo | Terminada |
-| 4. Paso "Stack técnico" | Terminada |
-| **5. Paso "Estructura de carpetas"** | **Construida. Falta generarla y aprobarla en la interfaz** |
-| 6 a 11 | Pendientes |
+| 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada) |
+| **5. Paso "Estructura de carpetas"** | **Construida. Falta revisar y aprobar la de bomberos** |
+| 6. Paso "Base de datos" | Siguiente |
+| 7 a 11 | Pendientes |
+
+Pendientes inmediatos:
+
+1. **Estructura de bomberos:** revisar y aprobar la generada en la interfaz. Esperado: cobertura completa (36 pantallas, 22 tablas, 14 módulos, 29 RF) y ninguna referencia al tablero de métricas descartado.
+2. **Propuesta sin respuesta del usuario:** con Docker Desktop apagado, el panel de Ejecución consulta el estado cada 10 segundos y deja un `POST /api/implementacion 500` por consulta en la terminal. Se propuso mostrar "Docker Desktop no está encendido" con un botón Reintentar, dejar de consultar hasta entonces y responder 503 en vez de 500. **No está aplicado:** esperar el sí.
+
+## Guía para retomar el trabajo
+
+### Encender el entorno
+
+1. Abrir **Docker Desktop** y esperar "Engine running". Solo hace falta para levantar contenedores: generar el stack o la estructura no lo usa.
+2. En la raíz del repo: `npm run all`. Enciende icase-tool (`[web]`, puerto 3000) y el runner (`[runner]`, puerto 4100) en una terminal. También existen por separado `npm run dev` y `npm run runner`.
+3. Abrir http://localhost:3000 e iniciar sesión.
+
+### Base de datos de icase-tool (Supabase)
+
+Scripts de `supabase/` que deben estar ejecutados en el SQL Editor, cada uno una sola vez. Todos lo están en el Supabase actual:
+
+| Script | Para qué |
+|---|---|
+| `rls_proyectos.sql`, `rls_storage.sql`, `contexto_proyecto.sql`, `diagrama_clases.sql`, `diagramas_svg.sql` | Fases de Análisis y Diseño |
+| `archivos_proyecto.sql` | Tabla del código generado (Etapa 2) |
+| `stack_implementacion.sql` | Columna del paso "Stack técnico" (Etapa 4) |
+| `estructura_implementacion.sql` | Columna del paso "Estructura de carpetas" (Etapa 5) |
+
+Cada paso nuevo de Implementación con columna propia agrega su script aquí.
+
+### Variables de `.env.local`
+
+- Supabase, Gemini, Groq y Anthropic, como describe el README.
+- `RUNNER_URL` y `RUNNER_TOKEN`, que comparten icase-tool y el runner.
+
+**Modelos de IA: solo gratuitos, salvo Claude.**
+- Gemini: 3.8 Flash primero, el más nuevo con cuota gratis.
+- Groq: `gpt-oss-120b`, `qwen/qwen3.8-27b` y `gpt-oss-20b`.
+- Claude es el único de pago y solo responde con el interruptor "Usar Claude".
+- El usuario rechazó usar modelos de pago de Gemini (Gemini 4 Argon, los Pro). Al actualizar modelos, verificar con una llamada real que respondan con la clave gratuita: un 429 `RESOURCE_EXHAUSTED` inmediato significa que no tienen cuota gratis.
+
+### Mapa de archivos
+
+| Archivo | Qué es |
+|---|---|
+| `docs/plan-implementacion.md` | Este plan. Mantener al día la sección "Estado actual" |
+| `plantillas/<pieza>/` | Catálogo de piezas: `pieza.json` (ficha), `compose.yml`, `compose.<otra>.yml`, `archivos/`, `archivos.<otra>/`, `README.md` (guía para la IA) |
+| `lib/implementacion.js` | Armador de proyectos: junta las piezas en `docker-compose.yml`, `.env.example` y archivos fijos |
+| `lib/stack.js` | Paso "Stack técnico": prompt, validación, lectura del diagrama de sistemas, revisión manual (`revisarStack`) y revisión de la arquitectura contra el catálogo |
+| `lib/capacidades.js` | Capacidades que exigen librería (firma, PDF, sin conexión, mapas, ubicación, adjuntos...); se usa también en el navegador |
+| `lib/estructura.js` | Paso "Estructura de carpetas": una generación por pieza y la validación de cobertura |
+| `lib/gemini.js`, `lib/groq.js`, `lib/claude.js` | Llamadas a la IA: Gemini, después Groq; solo Claude con el interruptor |
+| `runner/index.mjs` | Runner: el único proceso que ejecuta Docker |
+| `app/api/implementacion/route.js` | Puente entre la interfaz y el runner; arma los archivos del proyecto (fijos, generados y planificados) |
+| `app/api/generar-stack`, `revisar-stack`, `generar-estructura` | Rutas finas de cada paso; la lógica está en `lib/` |
+| `app/(app)/proyectos/[id]/pasos.js` | `PASOS` (la cadena con aprobación y cascada) y `PASOS_IMPLEMENTACION` (los pendientes que se listan) |
+| `app/(app)/proyectos/[id]/page.js` | Página del proyecto: generación, aprobación, cascada y el bloque de cada paso |
+| `ImplementacionFase.js`, `FichaStack.js`, `FichaEstructura.js` | Fase 03: explorador, panel de ejecución y fichas de cada paso |
+| `app/api/exportar-diseno/route.js` | Solo desarrollo: guarda los diagramas de los proyectos en `respaldos/diseno/` |
+
+### Probar sin la interfaz
+
+- **Leer los datos de un proyecto:** con sesión iniciada, abrir `/api/exportar-diseno`. Guarda una copia de cada proyecto en `respaldos/diseno/`, carpeta que no se sube a git. **La copia actual de bomberos es anterior a los últimos cambios** (RF22, arquitectura y diagrama de sistemas): exportar de nuevo antes de probar.
+- **Probar un paso con IA real:** las rutas usan el alias `@/` y no se pueden importar desde Node, pero la lógica está en `lib/`, con imports relativos. Un script en la carpeta de trabajo importa la función (`generarStack`, `generarEstructura`...) con `pathToFileURL(path.resolve("lib/..."))` y se ejecuta desde la raíz con `node --env-file=.env.local`.
+- **Probar contenedores:** un runner aparte con `RUNNER_PORT=4101` evita cortar el que tiene encendido el usuario.
+- **Probar SQL que se ejecutará en Supabase:** primero sobre una copia de los datos en un PostgreSQL local (`docker run postgres:17-alpine`). En Git Bash, usar `MSYS_NO_PATHCONV=1` para que `docker exec` no convierta las rutas del contenedor.
+- **Siempre con dos proyectos de temas distintos**, para que las reglas sirvan para cualquier sistema.
+
+### Proyectos de prueba
+
+| Proyecto | Id | Estado |
+|---|---|---|
+| Cuerpo de Bomberos Baños de Agua Santa | `10784326-7058-4a78-ac13-d0470623a5d5` | Análisis y Diseño aprobados. Stack aprobado (Next.js + Flutter + Supabase con Auth, Realtime, Storage y Edge Functions + alta disponibilidad; 12 servicios). Estructura generada, pendiente de aprobar. Cambios de esta fase: se descartó RF22 (tablero de métricas) con una edición directa en Supabase; se corrigieron la arquitectura (alta disponibilidad del Panel Web con balanceador; Realtime solo para la app) y el diagrama de sistemas (RF14, RF15, RF19 y RNF03 a RNF06 bien asignados) |
+| Órdenes de servicio de un taller mecánico | `d124d4ec-9560-4055-af05-0fc038ac79b6` | Análisis y Diseño aprobados. Sirve de segundo proyecto: Next.js + Supabase (Auth), 6 servicios, sin móvil |
+
+Carpetas de trabajo en `C:\icase-workspaces\`:
+- `referencia/`: Etapa 1, React + Express + PostgreSQL;
+- `prueba-supabase/`: Etapa 3, Supabase + Next.js + Flutter armados a mano, apagado;
+- una carpeta por id de proyecto, creada por el runner.
+
+### Reglas de trabajo acordadas con el usuario
+
+- **Paso a paso:** el usuario revisa y aprueba cada resultado. Cuando pregunta algo sobre un generador que ya aprobó, se responde y se propone el cambio; se implementa solo después de su sí.
+- **Reglas generales:** las reglas, los prompts y las validaciones deben servir para cualquier sistema, no solo para bomberos.
+- **Revisar la salida real:** antes de dar algo por bueno, leer lo que generó la IA, no solo las cifras. Así se encontró el tablero de métricas que reapareció en la estructura.
+- **Lo importante lo valida el código, no el prompt.** La IA propone; el código comprueba contra el catálogo y el diseño; un reintento con los problemas; lo que quede, en "Revisar antes de aprobar".
+- **Consistencia con lo aprobado:** la implementación no agrega tecnologías, servicios externos ni funciones que el diseño no tenga. Para cambiarlos se cambia el diseño.
+- **Interfaz:** textos mínimos, sin emojis, avisos y confirmaciones con `app/AlertProvider.js`.
+- **Costo:** avisar el costo antes de generar con Claude. Ningún modelo de pago fuera de Claude.
+- **Al cerrar cada etapa:** actualizar "Estado actual" y la sección de la etapa en este plan, y hacer commit.
+
+### Receta para construir un paso nuevo de Implementación
+
+Así se hicieron "Stack técnico" y "Estructura de carpetas":
+
+1. **Columna:** script `supabase/<paso>_implementacion.sql` con la columna `jsonb` en `proyectos`.
+2. **Lógica en `lib/<paso>.js`:**
+   - prompt con la estructura CONTEXTO / QUÉ DEBE MOSTRAR / QUÉ NO QUIERO / FORMATO;
+   - validación determinista contra el diseño y el catálogo;
+   - un reintento con los problemas;
+   - advertencias en el resultado.
+   - Si el paso es grande, una generación por pieza en paralelo.
+3. **Ruta fina** `app/api/generar-<paso>/route.js` que solo llama a la función de `lib/`.
+4. **Agregar el paso a `PASOS`** en `pasos.js` (fase `implementacion`, `aprobacion`, `columna`, `ruta`). Sale solo de la lista de pendientes.
+5. **En `page.js`:**
+   - `cuerpo<Paso>()` con lo que lee el paso;
+   - la entrada en `cuerpos`;
+   - la rama en `pedirPaso` que guarda las advertencias en `revision`;
+   - `PUEDE_TRABAJARSE` (el paso anterior aprobado);
+   - el bloque visible con título, indicaciones, generar, eliminar, ficha, "Ampliar con IA", aprobar y rechazar;
+   - la función de ampliar.
+6. **Un componente `Ficha<Paso>.js`**, con "Revisar antes de aprobar" arriba.
+7. **Probar con IA real** con bomberos y el taller, leer la salida completa, revisar con lint (`--rule '{"no-undef":"error"}'`) y `next build`, actualizar este plan y hacer commit.
 
 ## 1. Contexto
 
@@ -51,6 +162,7 @@ La solución es ejecutar cada proyecto generado en **contenedores Docker**, orqu
 | Servicios externos (mapas, notificaciones, correo, pagos) | Solo los del diseño aprobado (cajas punteadas de la arquitectura y componentes `<<externo>>` del diagrama de sistemas). Se usan los reales, con las claves en el `.env` del proyecto. En Implementación no se agregan servicios nuevos: para sumar uno se cambia la arquitectura |
 | Ejecución de Docker | La hace un servicio aparte, el runner. Next.js nunca ejecuta `docker` directamente |
 | Entorno disponible | Docker Desktop 29.7 y Docker Compose v5.5 sobre WSL2. Flutter 3.41.3 y el SDK de Android instalados |
+| Modelos de IA | Solo gratuitos en Gemini (3.8 Flash primero) y Groq (gpt-oss-120b, qwen3.8-27b, gpt-oss-20b). Claude es el único de pago, con el interruptor "Usar Claude". Un modelo sin cuota queda en pausa el tiempo que indica Google |
 
 ## 4. Cómo se conocen las tecnologías de un proyecto
 
@@ -199,7 +311,7 @@ El backend se adapta al stack:
 - **Validación inmediata:** cada capa se prueba en su contenedor apenas se genera, para que los errores no se acumulen al final.
 - **Generación por partes:** el código se genera archivo por archivo, igual que el prototipo pantalla por pantalla. Así no se corta por el límite de salida y se puede regenerar un archivo suelto con el error como contexto.
 - **Contexto acotado:** cada archivo se genera con el stack, la estructura y solo la parte de los diagramas que le corresponde.
-- **Costo de IA:** Gemini queda por defecto. Claude se usa solo con el interruptor "Usar Claude" activado, y antes de generar un lote se avisa el costo estimado.
+- **Costo de IA:** Gemini queda por defecto, con Groq de respaldo, solo con modelos gratuitos. Claude se usa solo con el interruptor "Usar Claude" activado, y antes de generar un lote se avisa el costo estimado. Referencia: el stack técnico cuesta unos 5 a 10 centavos con Claude Sonnet 5; la estructura de carpetas, unos 20 a 40 (tres generaciones grandes).
 - **Reglas generales:** prompts, validaciones y piezas deben servir para cualquier sistema, no solo para el proyecto con el que se prueba.
 - **Interfaz:** textos mínimos, sin emojis; confirmaciones y avisos con el modal de `app/AlertProvider.js`.
 - **Seguridad del código generado:** se ejecuta solo dentro de sus contenedores, con límites de CPU y memoria, sin montar carpetas fuera de su carpeta de trabajo y sin las credenciales de icase-tool.
@@ -382,7 +494,7 @@ Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y 
 
 ---
 
-### Etapa 5. Paso "Estructura de carpetas" · Construida, en revisión
+### Etapa 5. Paso "Estructura de carpetas" · Construida, falta aprobar la de bomberos
 
 **Objetivo:** definir el árbol completo de archivos antes de escribir código.
 
@@ -433,7 +545,9 @@ Lógica en `lib/estructura.js`, ruta `/api/generar-estructura`.
   - ninguna advertencia.
 - **Lo que mostró la primera prueba:** con una ficha de stack vieja que incluía `chart.js`, volvió a aparecer el tablero de métricas descartado. Por eso el prompt recibe ahora las decisiones del stack, prohíbe funciones que ningún requerimiento pide, y el código marca componentes y servicios sin requerimiento. Con la ficha aprobada, el tablero no aparece.
 
-**Falta:** generarla desde la interfaz con el proyecto real y aprobarla.
+**Falta:** revisar y aprobar la estructura de bomberos, que el usuario ya generó desde la interfaz.
+
+**Pendiente para después:** edición manual de la estructura (agregar, editar o quitar archivos con botones, como en la ficha del stack). Hoy se ajusta con "Ampliar con IA" o regenerando.
 
 **Terminado cuando:** la estructura está aprobada. Desde aquí cada paso solo rellena archivos de este árbol.
 
@@ -579,5 +693,7 @@ Por comparación, el taller mecánico (Next.js + Supabase con Auth y API de dato
 
 ## 14. Pendientes por decidir
 
+- **Panel de Ejecución con Docker apagado:** propuesta de mostrar el aviso con Reintentar, dejar de consultar y responder 503. Sin respuesta del usuario (ver "Estado actual").
+- **Edición manual de la estructura de carpetas:** como en la ficha del stack.
 - **Réplica de la base de datos** en los diseños con alta disponibilidad: hoy se duplica el servidor web; replicar la base y su cambio automático (Patroni) queda como mejora posterior.
 - **Servicios externos en la app móvil:** Firebase y Google Maps necesitan además la configuración del proyecto de Firebase (`google-services.json`), que aporta el usuario.
