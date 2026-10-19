@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { armarProyecto, catalogo } from "@/lib/implementacion";
+import { armarProyecto, catalogo, PIEZAS_POR_DEFECTO } from "@/lib/implementacion";
 
 export const maxDuration = 120;
 
@@ -57,10 +57,33 @@ async function archivosDelProyecto(supabase, proyecto) {
     }
     throw error;
   }
-  // Las piezas saldrán del paso "Stack técnico"; mientras no exista, armarProyecto usa las de la
-  // referencia (React + Express + PostgreSQL).
-  const { archivos, servicios } = await armarProyecto({ nombre: proyecto.nombre, generados: data });
-  return { generados: data.length, archivos, servicios };
+  // Piezas del paso "Stack técnico" (proyectos.stack_implementacion). Sin stack aprobado,
+  // armarProyecto usa las de la referencia (React + Express + PostgreSQL).
+  const stack = proyecto.stack_implementacion || {};
+  const { archivos, servicios } = await armarProyecto({
+    nombre: proyecto.nombre,
+    generados: data,
+    piezas: stack.piezas?.length ? stack.piezas : undefined,
+    altaDisponibilidad: !!stack.altaDisponibilidad,
+    externos: stack.externos || [],
+  });
+  return { generados: data.length, archivos, servicios, firma: firmaDelStack(stack) };
+}
+
+// Identifica el stack del proyecto. Si cambia, el runner borra los contenedores y los datos
+// anteriores antes de levantar (por ejemplo, una base PostgreSQL no sirve para Supabase).
+function firmaDelStack(stack) {
+  const piezas = stack.piezas?.length ? stack.piezas : PIEZAS_POR_DEFECTO;
+  const partes = piezas.map((p) => `${p.pieza}${p.opcionales?.length ? `[${[...p.opcionales].sort().join(",")}]` : ""}`);
+  return [...partes.sort(), ...(stack.altaDisponibilidad ? ["alta-disponibilidad"] : [])].join("+");
+}
+
+// Proyecto con su stack. Si la columna stack_implementacion todavía no existe, sigue sin ella.
+async function leerProyecto(supabase, id) {
+  let { data, error } = await supabase.from("proyectos").select("id, nombre, stack_implementacion").eq("id", id).maybeSingle();
+  if (error?.code === "42703") ({ data, error } = await supabase.from("proyectos").select("id, nombre").eq("id", id).maybeSingle());
+  if (error) throw error;
+  return data;
 }
 
 // Nombre de cada puerto según las piezas del catálogo ({ WEB_PORT: "Web", ... }).
@@ -89,12 +112,7 @@ export async function POST(request) {
     if (!ACCIONES.has(accion)) return NextResponse.json({ error: "Acción no válida." }, { status: 400 });
 
     const supabase = await createClient();
-    const { data: proyecto, error } = await supabase
-      .from("proyectos")
-      .select("id, nombre")
-      .eq("id", proyectoId)
-      .maybeSingle();
-    if (error) throw error;
+    const proyecto = await leerProyecto(supabase, proyectoId);
     if (!proyecto) return NextResponse.json({ error: "No se encontró el proyecto." }, { status: 404 });
 
     const base = `/proyectos/${proyecto.id}`;
@@ -104,11 +122,14 @@ export async function POST(request) {
     }
 
     if (accion === "levantar") {
-      const { generados, archivos } = await archivosDelProyecto(supabase, proyecto);
+      const { generados, archivos, firma } = await archivosDelProyecto(supabase, proyecto);
       if (!generados) {
         return NextResponse.json({ error: "El proyecto todavía no tiene archivos generados." }, { status: 400 });
       }
-      await runner("POST", `${base}/sincronizar`, { archivos: archivos.map(({ ruta, contenido }) => ({ ruta, contenido })) });
+      await runner("POST", `${base}/sincronizar`, {
+        firma,
+        archivos: archivos.map(({ ruta, contenido }) => ({ ruta, contenido })),
+      });
       return NextResponse.json(await runner("POST", `${base}/levantar`, {}));
     }
 

@@ -78,13 +78,22 @@ export const PASOS = [
     ruta: "/api/generar-diagrama-sistema",
     diagrama: true,
   },
+  // Implementación: con qué piezas del catálogo (plantillas/) se construye el diseño aprobado.
+  {
+    clave: "impl_stack",
+    fase: "implementacion",
+    nombre: "Stack técnico",
+    aprobacion: "impl_stack",
+    columna: "stack_implementacion",
+    ruta: "/api/generar-stack",
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));
 
-// Pasos de la fase de Implementación (ver docs/plan-implementacion.md). Por ahora solo se
-// muestran: cada uno pasa a PASOS, con su ruta y su aprobación, cuando tenga su generador; antes
-// de eso la cascada intentaría generarlos.
+// Pasos de la fase de Implementación (ver docs/plan-implementacion.md). Los que ya tienen
+// generador están también en PASOS; los demás solo se listan como pendientes: cada uno pasa a
+// PASOS cuando tenga su generador, porque antes la cascada intentaría generarlos.
 export const PASOS_IMPLEMENTACION = [
   { clave: "impl_stack", nombre: "Stack técnico" },
   { clave: "impl_estructura", nombre: "Estructura de carpetas" },

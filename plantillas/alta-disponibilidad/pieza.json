@@ -6,5 +6,5 @@
   "servicios": {
     "balanceador": "Balanceador nginx: master activo, esclavo en espera"
   },
-  "descripcion": "Duplica el servicio indicado por la pieza web (altaDisponibilidad.servicio) en <servicio>-master y <servicio>-esclavo, y publica el puerto por el balanceador."
+  "descripcion": "Solo el servidor web: duplica la aplicación web (Next.js o React) en un master activo y un esclavo en espera detrás de un balanceador nginx, con cambio automático. No replica el backend, Supabase ni la base de datos."
 }

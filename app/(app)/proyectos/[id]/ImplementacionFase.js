@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PALETA } from "../../../estilos";
 import { useAlert } from "../../../AlertProvider";
-import { PASOS_IMPLEMENTACION } from "./pasos";
+import { PASO, PASOS_IMPLEMENTACION } from "./pasos";
 
 // Fase 03: pasos de Implementación, explorador de los archivos del proyecto y panel para
 // levantarlo en contenedores con el runner.
@@ -367,11 +367,15 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
 
 // --- Fase -----------------------------------------------------------------------------------
 
-export default function ImplementacionFase({ proyectoId, onVolver }) {
+// children: los pasos de la fase que ya tienen generador (los arma la página del proyecto, con
+// sus controles de aprobar, rechazar y cascada). recarga: cambia cuando cambian las piezas del
+// stack, y con ellas los archivos fijos y los servicios del proyecto.
+export default function ImplementacionFase({ proyectoId, onVolver, recarga, children }) {
   const [archivos, setArchivos] = useState(null);
   const [generados, setGenerados] = useState(0);
   const [servicios, setServicios] = useState([]);
   const [error, setError] = useState("");
+  const pendientes = PASOS_IMPLEMENTACION.filter((p) => !PASO[p.clave]);
 
   useEffect(() => {
     llamar(proyectoId, "archivos")
@@ -379,9 +383,10 @@ export default function ImplementacionFase({ proyectoId, onVolver }) {
         setArchivos(datos.archivos);
         setGenerados(datos.generados);
         setServicios(datos.servicios || []);
+        setError("");
       })
       .catch((err) => setError(err.message));
-  }, [proyectoId]);
+  }, [proyectoId, recarga]);
 
   return (
     <section className="bg-white border border-gray-300">
@@ -396,20 +401,24 @@ export default function ImplementacionFase({ proyectoId, onVolver }) {
       </div>
 
       <div className="p-6 space-y-8">
-        <div>
-          <Subtitulo>Pasos</Subtitulo>
-          <ol className="border border-gray-300 divide-y divide-gray-200">
-            {PASOS_IMPLEMENTACION.map((paso, i) => (
-              <li key={paso.clave} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                <span className="text-sm text-gray-800">
-                  <span className="text-gray-400 mr-2">{i + 1}.</span>
-                  {paso.nombre}
-                </span>
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pendiente</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        <div>{children}</div>
+
+        {pendientes.length > 0 && (
+          <div>
+            <Subtitulo>Próximos pasos</Subtitulo>
+            <ol className="border border-gray-300 divide-y divide-gray-200">
+              {pendientes.map((paso) => (
+                <li key={paso.clave} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="text-sm text-gray-800">
+                    <span className="text-gray-400 mr-2">{PASOS_IMPLEMENTACION.indexOf(paso) + 1}.</span>
+                    {paso.nombre}
+                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pendiente</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
 
         <div>
           <Subtitulo>Archivos del proyecto</Subtitulo>
@@ -424,7 +433,7 @@ export default function ImplementacionFase({ proyectoId, onVolver }) {
                   Todavía no hay archivos generados. Se muestran los de la plantilla.
                 </p>
               )}
-              <ExploradorArchivos archivos={archivos} />
+              <ExploradorArchivos key={recarga} archivos={archivos} />
             </>
           )}
         </div>

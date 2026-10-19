@@ -282,23 +282,50 @@ Comportamientos conocidos:
 
 ---
 
-### Etapa 4. Paso "Stack técnico"
+### Etapa 4. Paso "Stack técnico" · Construida
 
 **Objetivo:** decidir las tecnologías, las piezas y los contenedores del proyecto a partir del diseño.
 
-**Entradas:** diagrama de arquitectura, diagrama de sistemas, y tecnologías y plataformas del contexto.
+**Entradas:** diagrama de arquitectura, diagrama de sistemas, requerimientos, y tecnologías y plataformas del contexto.
 
-**Tareas:**
+**Cómo funciona** (`lib/stack.js`, ruta `/api/generar-stack`):
 
-1. Leer cada caja de la arquitectura con su tecnología, y cada componente del diagrama de sistemas con la suya.
-2. Buscar cada tecnología en el catálogo y producir una ficha con:
-   - piezas elegidas y sus versiones;
-   - contenedores, indicando de qué caja de cada diagrama sale cada uno;
-   - lo que no es contenedor y cómo se resuelve (app móvil, almacenamiento local, servicios externos);
-   - librerías que necesita el proyecto, cada una con el requerimiento que la justifica;
-   - servicios externos con la variable de entorno de cada clave;
-   - avisos: tecnologías sin pieza en el catálogo, o diferencias entre arquitectura, sistemas y contexto.
-3. Agregar el paso a `PASOS`, con aprobar, rechazar y cascada.
+1. **La IA propone**, con el catálogo de piezas en el prompt (CONTEXTO / QUÉ DEBE MOSTRAR / QUÉ NO QUIERO / FORMATO):
+   - las piezas y sus servicios opcionales;
+   - si hay alta disponibilidad;
+   - cómo se resuelve cada caja de la arquitectura: pieza, externo, dentro de la app, infraestructura o no soportado;
+   - las librerías, con el requerimiento que las justifica;
+   - los servicios externos, con la variable de su clave;
+   - avisos y una explicación.
+2. **El código valida** contra el catálogo:
+   - las piezas y los opcionales existen;
+   - ninguna tecnología del diseño con pieza en el catálogo quedó sin elegir (una pieza puede incluir a otra, como Supabase a PostgreSQL);
+   - la alta disponibilidad tiene una pieza web;
+   - el diagrama de sistemas se lee directamente (cada componente con su tecnología y sus RF) y cada componente debe quedar implementado.
+   Un reintento con los problemas; lo que quede se muestra como advertencia antes de aprobar.
+3. **Los contenedores salen del armador real**, no de la IA.
+4. **Se guarda** en `proyectos.stack_implementacion` (`supabase/stack_implementacion.sql`). De ahí lo toman el armador y el runner. Si las piezas cambian, el runner borra los contenedores, datos e imágenes del stack anterior antes de levantar.
+5. **Las claves de los servicios externos** van vacías a `.env.example` y como variables de entorno a los servicios que las usan.
+
+**En la interfaz:** el paso está en `PASOS` (fase `implementacion`), con generar, regenerar, indicaciones, aprobar, rechazar, editar, "Ampliar con IA" y cascada. Los cambios en Implementación solo le quitan la aprobación a Implementación; aprobar la fase de Diseño ofrece actualizar el stack si quedó desactualizado. La ficha muestra:
+
+- piezas;
+- contenedores;
+- cada componente del diagrama de sistemas y cada elemento de la arquitectura con su implementación;
+- librerías;
+- servicios externos;
+- avisos.
+
+**Probado con IA real:**
+
+- **Bomberos:**
+  - Next.js + Flutter + Supabase (Auth, Realtime, Storage, Edge Functions) + alta disponibilidad, 12 servicios;
+  - los 17 componentes del diagrama de sistemas resueltos;
+  - Firebase con la API HTTP v1 (`FCM_SERVICE_ACCOUNT_JSON`).
+- **Taller:** Next.js + Supabase (Auth), 6 servicios.
+- **"Ampliar con IA":** agregó una librería de PDF y rechazó cambiar el backend a Django, con un aviso.
+
+**Falta:** probarlo desde la interfaz con la sesión del usuario.
 
 **Terminado cuando:** la ficha está aprobada y determina qué piezas, contenedores y pasos lleva el proyecto.
 

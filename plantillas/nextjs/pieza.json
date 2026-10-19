@@ -2,7 +2,7 @@
   "nombre": "nextjs",
   "titulo": "Next.js",
   "capa": "web",
-  "reconoce": ["next.js", "nextjs", "next"],
+  "reconoce": ["next.js", "nextjs"],
   "servicios": {
     "web": "Panel web (Next.js)"
   },

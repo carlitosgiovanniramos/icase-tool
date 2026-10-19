@@ -32,6 +32,7 @@ import InformeProyecto from "./InformeProyecto";
 import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
 import ImplementacionFase from "./ImplementacionFase";
+import FichaStack from "./FichaStack";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
@@ -731,6 +732,21 @@ export default function WorkspaceProyecto() {
 
   // ---------- Generación ----------
 
+  // Lo que recibe el paso "Stack técnico": el diseño aprobado (arquitectura y sistemas) y las
+  // tecnologías y plataformas del contexto.
+  function cuerpoStack() {
+    const a = artefactosRef.current;
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      diagramaArquitectura: a.arquitectura,
+      diagramaSistema: a.sistema,
+      tecnologias: contextoRef.current.tecnologias,
+      plataformas: contextoRef.current.prototipo?.plataformas || plataformasDePrototipo(contextoRef.current),
+    };
+  }
+
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   async function pedirPaso(clave, opciones = {}) {
@@ -818,6 +834,7 @@ export default function WorkspaceProyecto() {
         // Las áreas de presentación salen de las pantallas reales de cada plataforma.
         arbolNavegacion: a.arbol,
       },
+      impl_stack: cuerpoStack(),
     };
 
     const data = await pedirIA(PASO[clave].ruta, { ...cuerpos[clave], indicaciones });
@@ -828,6 +845,11 @@ export default function WorkspaceProyecto() {
       // Las advertencias de la revisión se muestran, pero no forman parte del análisis guardado.
       const { advertencias = [], ...analisis } = resto;
       return { valor: analisis, modelo, advertencias };
+    }
+    if (clave === "impl_stack") {
+      // Lo que la validación no pudo corregir se muestra para revisar antes de aprobar.
+      const { advertencias = [], ...stack } = resto;
+      return { valor: stack, modelo, advertencias };
     }
     // Se guarda ya limpio, para que los pasos siguientes reciban código válido. Cada ruta devuelve
     // diagrama_plantuml o diagrama_mermaid según el motor del paso. Si la IA devolvió una
@@ -1106,11 +1128,13 @@ export default function WorkspaceProyecto() {
         delete f.fasesPrevias;
         delete f.aprobacionesPrevias;
       }
-      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno };
-      // Un cambio en una subfase quita también la aprobación general de su fase. El Diseño
-      // depende de todo lo anterior, así que cualquier cambio le quita la aprobación.
-      if (!clave || PASO[clave].fase === "analisis") f.analisis = false;
-      f.diseno = false;
+      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno, implementacion: !!f.implementacion };
+      // Un cambio en una subfase quita también la aprobación general de su fase y de las que
+      // vienen después (cada fase depende de las anteriores, nunca de las siguientes).
+      const fase = clave ? PASO[clave].fase : "analisis";
+      if (fase === "analisis") f.analisis = false;
+      if (fase !== "implementacion") f.diseno = false;
+      f.implementacion = false;
       for (const p of clave ? pasosDespuesDe(clave) : PASOS) {
         if (artefactosRef.current[p.clave] && f.pendientes[p.clave] !== "desactualizado") {
           // Sin valor registrado: en el Análisis cuenta la fase (proyectos anteriores a las
@@ -1226,7 +1250,8 @@ export default function WorkspaceProyecto() {
           await guardarFases((f) => {
             f[p.aprobacion] = false;
             if (p.fase === "analisis") f.analisis = false;
-            f.diseno = false;
+            if (p.fase !== "implementacion") f.diseno = false;
+            f.implementacion = false;
             f.pendientes[p.clave] = "revision";
             if (modelo) f.modelos[p.clave] = modelo;
             return f;
@@ -1405,12 +1430,35 @@ export default function WorkspaceProyecto() {
     await actualizarEnCascada(PASOS.filter((p) => p.fase === "diseno"));
   }
 
-  // Aprobación general de la fase de Diseño: requiere todas sus subfases aprobadas.
+  // Aprobación general de la fase de Diseño: requiere todas sus subfases aprobadas y habilita la
+  // Implementación (actualizándola en cascada si quedó desactualizada).
   async function aprobarFaseDiseno() {
     await guardarFases((f) => {
       f.diseno = true;
       return f;
     });
+    await actualizarEnCascada(PASOS.filter((p) => p.fase === "implementacion"));
+  }
+
+  // "Ampliar con IA" del stack técnico: la IA modifica la ficha actual según la instrucción.
+  async function ampliarStack(instruccion) {
+    setCargando({ paso: "ampliar:impl_stack" });
+    try {
+      // Contenedores y componentes los calcula el código, no la IA: no se le envían.
+      const { contenedores, componentes, titulos, ...actual } = artefactosRef.current.impl_stack;
+      const data = await pedirIA(PASO.impl_stack.ruta, { ...cuerpoStack(), actual, instruccion });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia: modelo, advertencias = [], ...stack } = data;
+      await guardarArtefacto("impl_stack", stack);
+      await marcarCambio("impl_stack", {}, modelo);
+      if (advertencias.length) mostrarInfo(textoAdvertencias(advertencias), "Stack técnico: revisa antes de aprobar");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar: Stack técnico");
+      return false;
+    } finally {
+      setCargando(null);
+    }
   }
 
   // ---------- Datos del proyecto ----------
@@ -1492,6 +1540,8 @@ export default function WorkspaceProyecto() {
         );
       f.analisis = (f.fasesPrevias?.analisis ?? true) && faseCompleta("analisis");
       f.diseno = (f.fasesPrevias?.diseno ?? true) && faseCompleta("diseno");
+      // La Implementación solo vuelve a quedar aprobada si ya lo estaba (su aprobación general es explícita).
+      f.implementacion = !!f.fasesPrevias?.implementacion && faseCompleta("implementacion");
       delete f.aprobacionesPrevias;
       delete f.fasesPrevias;
       return f;
@@ -1876,6 +1926,7 @@ export default function WorkspaceProyecto() {
     arbol: !!fasesAprobadas.diseno_prototipo,
     arquitectura: !!fasesAprobadas.diseno_arbol,
     sistema: !!fasesAprobadas.diseno_arquitectura,
+    impl_stack: !!fasesAprobadas.diseno,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2047,8 +2098,92 @@ export default function WorkspaceProyecto() {
 
       {/* ===================== IMPLEMENTACIÓN ===================== */}
       {vista === "implementacion" &&
-        (disenoAprobado ? (
-          <ImplementacionFase proyectoId={id} onVolver={() => setVista("resumen")} />
+        (disenoAprobado || artefactos.impl_stack ? (
+          <ImplementacionFase
+            proyectoId={id}
+            onVolver={() => setVista("resumen")}
+            // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
+            recarga={JSON.stringify([artefactos.impl_stack?.piezas, artefactos.impl_stack?.altaDisponibilidad, artefactos.impl_stack?.externos])}
+          >
+            <TituloPaso
+              color={PALETA.marron}
+              estado={pendientes.impl_stack}
+              modelo={modelos.impl_stack}
+              onActualizar={trabajable("impl_stack") ? () => actualizarPaso("impl_stack") : undefined}
+              deshabilitado={ocupado}
+              separador={false}
+            >
+              Stack técnico
+            </TituloPaso>
+
+            {trabajable("impl_stack") && !bloqueado("impl_stack") && (
+              <CampoIndicaciones
+                clave="impl_stack"
+                valor={contexto.indicaciones?.impl_stack}
+                onChange={cambiarIndicaciones}
+                deshabilitado={ocupado}
+                ejemplo="Ej: para el tablero de métricas usa la librería recharts"
+              />
+            )}
+
+            <ControlesPaso
+              clave="impl_stack"
+              esperando={!trabajable("impl_stack")}
+              bloqueado={bloqueado("impl_stack")}
+              enEdicion={enEdicion("impl_stack")}
+              deshabilitado={ocupado}
+              onEditar={desbloquearPaso}
+              onCancelarEdicion={cancelarEdicion}
+            >
+              <BotonGenerar
+                onClick={() => regenerarPaso("impl_stack")}
+                secundario={!!artefactos.impl_stack}
+                disabled={ocupado}
+                cargando={generando("impl_stack")}
+                color={PALETA.marron}
+              >
+                {artefactos.impl_stack ? "Regenerar" : "Generar"} stack técnico
+              </BotonGenerar>
+
+              {artefactos.impl_stack && (
+                <BotonEliminar
+                  onClick={() => eliminarPaso("impl_stack", "¿Eliminar el stack técnico?")}
+                  disabled={ocupado}
+                  title="Eliminar stack técnico"
+                />
+              )}
+            </ControlesPaso>
+
+            {artefactos.impl_stack && <FichaStack stack={artefactos.impl_stack} />}
+
+            {artefactos.impl_stack && trabajable("impl_stack") && !bloqueado("impl_stack") && (
+              <AmpliarConIA
+                descripcion="Describe qué agregar o cambiar. La IA ajusta la ficha actual sin generarla de nuevo."
+                ejemplo="Ej: agrega la librería de gráficos para el tablero de métricas"
+                onEnviar={ampliarStack}
+                cargando={generando("ampliar:impl_stack")}
+                deshabilitado={ocupado}
+              />
+            )}
+
+            {artefactos.impl_stack && trabajable("impl_stack") && (
+              <div className="mt-4 flex items-center gap-3 flex-wrap">
+                <BotonAprobar
+                  aprobado={!!fasesAprobadas.impl_stack}
+                  onClick={() => aprobarPaso("impl_stack")}
+                  etiqueta="Stack técnico"
+                  disabled={ocupado}
+                />
+                {!fasesAprobadas.impl_stack && (
+                  <BotonRechazar
+                    etiqueta="Stack técnico"
+                    disabled={ocupado}
+                    onClick={() => rechazarPaso("impl_stack", "¿Rechazar el stack técnico?")}
+                  />
+                )}
+              </div>
+            )}
+          </ImplementacionFase>
         ) : (
           <p className="text-sm text-gray-600">
             La implementación se habilita cuando la fase de Diseño está aprobada.

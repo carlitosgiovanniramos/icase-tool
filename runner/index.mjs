@@ -69,7 +69,7 @@ function rutaSegura(carpeta, ruta) {
   if (!limpia || limpia === "." || limpia.startsWith("../") || limpia === ".." || path.isAbsolute(limpia) || /^[a-zA-Z]:/.test(limpia)) {
     throw new ErrorRunner(400, `Ruta de archivo no válida: ${ruta}`);
   }
-  if (limpia === ".env") throw new ErrorRunner(400, "El archivo .env lo genera el runner.");
+  if (limpia === ".env" || limpia === ".icase-stack") throw new ErrorRunner(400, `El archivo ${limpia} lo genera el runner.`);
   const destino = path.resolve(carpeta, limpia);
   if (!destino.startsWith(carpeta + path.sep)) throw new ErrorRunner(400, `Ruta de archivo no válida: ${ruta}`);
   return destino;
@@ -239,17 +239,39 @@ function completarVariables(ejemplo, existentes) {
 
 // --- Operaciones ----------------------------------------------------------------------------
 
-async function sincronizar(id, archivos) {
+// Archivo de la carpeta del proyecto con la firma de su stack (piezas elegidas).
+const ARCHIVO_STACK = ".icase-stack";
+const CONSERVAR = new Set([".env", ARCHIVO_STACK]);
+
+// firma: identifica las piezas del proyecto. Si cambió (por ejemplo, de PostgreSQL a Supabase), lo
+// anterior no sirve: se borran sus contenedores, datos e imágenes y se generan claves nuevas.
+async function sincronizar(id, archivos, firma) {
   if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
+  const estado = estadoDe(id);
+  if (estado.operacion) throw new ErrorRunner(409, "Ya hay una operación en curso para este proyecto.");
   const carpeta = carpetaDe(id);
   const destinos = archivos.map((a) => [rutaSegura(carpeta, a.ruta), String(a.contenido ?? "")]);
 
   await mkdir(carpeta, { recursive: true });
-  // La carpeta queda igual a los archivos recibidos: se borra lo anterior salvo .env, que guarda
-  // la contraseña con la que se creó la base de datos.
-  for (const entrada of await readdir(carpeta)) {
-    if (entrada !== ".env") await rm(path.join(carpeta, entrada), { recursive: true, force: true });
+  const anterior = await readFile(path.join(carpeta, ARCHIVO_STACK), "utf8").catch(() => null);
+  if (firma && anterior !== firma && (await leerEnv(carpeta))) {
+    estado.operacion = "reiniciando";
+    try {
+      if (existsSync(path.join(carpeta, "docker-compose.yml"))) {
+        await compose(id, ["down", "-v", "--remove-orphans", "--rmi", "local"], { espera: ESPERA_LARGA_MS });
+      }
+      await rm(path.join(carpeta, ".env"), { force: true });
+    } finally {
+      estado.operacion = null;
+    }
   }
+
+  // La carpeta queda igual a los archivos recibidos: se borra lo anterior salvo .env, que guarda
+  // las claves con las que se creó la base de datos, y la firma del stack.
+  for (const entrada of await readdir(carpeta)) {
+    if (!CONSERVAR.has(entrada)) await rm(path.join(carpeta, entrada), { recursive: true, force: true });
+  }
+  if (firma) await writeFile(path.join(carpeta, ARCHIVO_STACK), firma, "utf8");
   for (const [destino, contenido] of destinos) {
     await mkdir(path.dirname(destino), { recursive: true });
     await writeFile(destino, contenido, "utf8");
@@ -299,7 +321,7 @@ function levantar(id, servicios = []) {
       const encendido = (await contenedores(id)).some((c) => c.estado === "running");
       await writeFile(path.join(carpeta, ".env"), escribirVariables(await asignarPuertos(variables, encendido)), "utf8");
 
-      await compose(id, ["up", "-d", "--build", "--wait", ...servicios], {
+      await compose(id, ["up", "-d", "--build", "--wait", "--remove-orphans", ...servicios], {
         espera: ESPERA_LARGA_MS,
         alSalir: (s) => (estado.salida = s),
       });
@@ -416,7 +438,10 @@ const servidor = http.createServer(async (req, res) => {
     estadoDe(id).ultimoUso = Date.now();
 
     const ruta = `${req.method} ${accion}`;
-    if (ruta === "POST sincronizar") return responder(res, 200, await sincronizar(id, (await leerCuerpo(req)).archivos));
+    if (ruta === "POST sincronizar") {
+      const { archivos, firma } = await leerCuerpo(req);
+      return responder(res, 200, await sincronizar(id, archivos, firma));
+    }
     if (ruta === "POST levantar") return responder(res, 202, levantar(id, (await leerCuerpo(req)).servicios));
     if (ruta === "GET estado") return responder(res, 200, await consultarEstado(id));
     if (ruta === "GET logs") return responder(res, 200, await logs(id, url.searchParams.get("servicio")));

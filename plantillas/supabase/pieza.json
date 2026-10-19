@@ -3,6 +3,7 @@
   "titulo": "Supabase",
   "capa": "backend",
   "reconoce": ["supabase", "postgrest", "gotrue", "edge functions", "supabase storage", "supabase realtime"],
+  "incluye": ["postgres"],
   "servicios": {
     "db": "PostgreSQL de Supabase",
     "api-gw": "Puerta de entrada (Envoy)",
