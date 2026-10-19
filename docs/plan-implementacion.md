@@ -12,7 +12,7 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 2. Base de la fase dentro de icase-tool | Terminada |
 | 3. Piezas del catálogo | Terminada |
 | 4. Paso "Stack técnico" | Terminada |
-| **5. Paso "Estructura de carpetas"** | **En curso** |
+| **5. Paso "Estructura de carpetas"** | **Construida. Falta generarla y aprobarla en la interfaz** |
 | 6 a 11 | Pendientes |
 
 ## 1. Contexto
@@ -382,21 +382,58 @@ Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y 
 
 ---
 
-### Etapa 5. Paso "Estructura de carpetas"
+### Etapa 5. Paso "Estructura de carpetas" · Construida, en revisión
 
 **Objetivo:** definir el árbol completo de archivos antes de escribir código.
 
-**Entradas:** stack aprobado y todos los artefactos del diseño (ver sección 9).
+**Entradas:**
+- el stack aprobado, incluidas sus decisiones por elemento (por ejemplo, qué cliente usa Realtime);
+- los requerimientos y los actores;
+- el prototipo (nombre, plataforma y RF de cada pantalla, no su HTML);
+- el árbol de navegación, el ER, las clases y el diagrama de sistemas;
+- la guía (`README.md`) y los archivos fijos de cada pieza.
 
-**Tareas:**
+**Resultado:** una ficha guardada en `proyectos.estructura_implementacion` (`supabase/estructura_implementacion.sql`).
 
-1. Generar la lista de archivos de cada pieza siguiendo la sección 8. Para cada archivo, indicar su propósito, los requerimientos que cubre y el artefacto del que sale.
-2. Validar la cobertura:
-   - cada pantalla del prototipo tiene su página o pantalla, según su plataforma;
-   - cada tabla del ER tiene su migración;
-   - cada módulo del diagrama de sistemas tiene su lugar;
-   - cada requerimiento funcional queda cubierto por al menos un archivo.
-3. Mostrarla en el explorador de archivos, todavía sin contenido.
+#### Cómo se genera
+
+Lógica en `lib/estructura.js`, ruta `/api/generar-estructura`.
+
+1. **Una generación por pieza con código propio, en paralelo.** Cada pieza recibe solo lo que le corresponde:
+   - la web, sus pantallas Web;
+   - la app, sus pantallas Móvil;
+   - Supabase o PostgreSQL, el ER y las clases completos.
+   Así cada respuesta es más chica y no se corta. La alta disponibilidad no genera archivos.
+2. **Por cada archivo, la IA indica:**
+   - ruta, tipo y propósito;
+   - los RF y RNF que implementa y el artefacto del diseño del que sale;
+   - lo que cubre: las pantallas del prototipo (una página puede cubrir varias, por ejemplo con una ruta dinámica `[tipo]`), las tablas del ER (migraciones) o el módulo del diagrama de sistemas.
+3. **El código valida** y, si encuentra problemas, le pide a la pieza una corrección (un reintento por pieza):
+   - **cobertura:** cada pantalla de la plataforma tiene su página, cada entidad del ER su migración, cada componente del diagrama de sistemas con RF tiene archivos, y cada RF queda cubierto por algún archivo de alguna pieza;
+   - **rutas:** cada archivo está en la carpeta de su pieza (`carpeta` en `pieza.json`), no repite un archivo fijo y es una ruta válida;
+   - **trazabilidad:** no se citan requerimientos inexistentes (por ejemplo, uno descartado), y ningún componente, servicio o función queda sin requerimiento, para evitar funciones que el diseño no pide.
+4. **Lo que no se pudo corregir queda en la ficha** (`revision`) y se muestra en "Revisar antes de aprobar".
+
+#### En la interfaz
+
+- El paso está en `PASOS` (fase `implementacion`), después del stack técnico. Se habilita con el stack aprobado y tiene generar, regenerar, indicaciones, aprobar, rechazar, editar, "Ampliar con IA" (cada pieza aplica la instrucción a su lista) y cascada.
+- La ficha muestra la cobertura (archivos, pantallas, tablas, módulos y RF) y, por pieza, cada archivo con su tipo, propósito, requerimientos y lo que cubre.
+- El explorador de archivos muestra los archivos planificados en cursiva, marcados como "Pendiente", con su propósito, requerimientos y cobertura. Nunca se envían al runner: vacíos romperían la compilación.
+
+#### Probado con IA real
+
+- **Bomberos (Next.js + Flutter + Supabase):**
+  - 91 archivos: 38 de la web, 45 de la app y 8 de Supabase;
+  - cobertura completa: 36 de 36 pantallas, 22 de 22 tablas, 14 de 14 módulos y 29 de 29 RF;
+  - ninguna advertencia;
+  - Supabase en 6 migraciones ordenadas (usuarios, vehículos y bitácoras, partes, permisos RLS, Realtime, Storage), la Edge Function de notificaciones y los datos de prueba.
+- **Taller (Next.js + Supabase):**
+  - 18 archivos, sin pieza móvil;
+  - 9 de 9 pantallas, 7 de 7 tablas, 6 de 6 módulos y 16 de 16 RF;
+  - ninguna advertencia.
+- **Lo que mostró la primera prueba:** con una ficha de stack vieja que incluía `chart.js`, volvió a aparecer el tablero de métricas descartado. Por eso el prompt recibe ahora las decisiones del stack, prohíbe funciones que ningún requerimiento pide, y el código marca componentes y servicios sin requerimiento. Con la ficha aprobada, el tablero no aparece.
+
+**Falta:** generarla desde la interfaz con el proyecto real y aprobarla.
 
 **Terminado cuando:** la estructura está aprobada. Desde aquí cada paso solo rellena archivos de este árbol.
 

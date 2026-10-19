@@ -33,6 +33,7 @@ import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
 import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
+import FichaEstructura from "./FichaEstructura";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
@@ -747,6 +748,24 @@ export default function WorkspaceProyecto() {
     };
   }
 
+  // Lo que recibe el paso "Estructura de carpetas": el stack aprobado y todo el diseño. Del
+  // prototipo van solo el nombre, la plataforma y los RF de cada pantalla, no su HTML.
+  function cuerpoEstructura() {
+    const a = artefactosRef.current;
+    const { contenedores, componentes, titulos, revision, ...stack } = a.impl_stack || {};
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      stack,
+      diagramaER: a.er,
+      diagramaClases: a.clases,
+      arbol: a.arbol,
+      diagramaSistema: a.sistema,
+      pantallas: (a.prototipo || []).map((p) => ({ nombre: p.nombre, plataforma: p.plataforma || "Web", rfs: p.rfs || [] })),
+    };
+  }
+
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   async function pedirPaso(clave, opciones = {}) {
@@ -835,6 +854,7 @@ export default function WorkspaceProyecto() {
         arbolNavegacion: a.arbol,
       },
       impl_stack: cuerpoStack(),
+      impl_estructura: cuerpoEstructura(),
     };
 
     const data = await pedirIA(PASO[clave].ruta, { ...cuerpos[clave], indicaciones });
@@ -846,11 +866,11 @@ export default function WorkspaceProyecto() {
       const { advertencias = [], ...analisis } = resto;
       return { valor: analisis, modelo, advertencias };
     }
-    if (clave === "impl_stack") {
+    if (clave === "impl_stack" || clave === "impl_estructura") {
       // Lo que la validación no pudo corregir queda en la ficha ("revision") para revisarlo antes
       // de aprobar, y también se muestra al generar.
-      const { advertencias = [], ...stack } = resto;
-      return { valor: { ...stack, revision: advertencias }, modelo, advertencias };
+      const { advertencias = [], ...ficha } = resto;
+      return { valor: { ...ficha, revision: advertencias }, modelo, advertencias };
     }
     // Se guarda ya limpio, para que los pasos siguientes reciban código válido. Cada ruta devuelve
     // diagrama_plantuml o diagrama_mermaid según el motor del paso. Si la IA devolvió una
@@ -1462,6 +1482,26 @@ export default function WorkspaceProyecto() {
     }
   }
 
+  // "Ampliar con IA" de la estructura de carpetas: cada pieza aplica la instrucción a su lista.
+  async function ampliarEstructura(instruccion) {
+    setCargando({ paso: "ampliar:impl_estructura" });
+    try {
+      const actual = { archivos: artefactosRef.current.impl_estructura?.archivos || [] };
+      const data = await pedirIA(PASO.impl_estructura.ruta, { ...cuerpoEstructura(), actual, instruccion });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia: modelo, advertencias = [], ...estructura } = data;
+      await guardarArtefacto("impl_estructura", { ...estructura, revision: advertencias });
+      await marcarCambio("impl_estructura", {}, modelo);
+      if (advertencias.length) mostrarInfo(textoAdvertencias(advertencias), "Estructura de carpetas: revisa antes de aprobar");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar: Estructura de carpetas");
+      return false;
+    } finally {
+      setCargando(null);
+    }
+  }
+
   // Edición manual de la ficha del stack (librerías, servicios externos, avisos): pasa por las
   // mismas validaciones que la generada, sin IA, y como toda edición quita la aprobación del paso.
   async function guardarStackManual(nuevo) {
@@ -1952,6 +1992,7 @@ export default function WorkspaceProyecto() {
     arquitectura: !!fasesAprobadas.diseno_arbol,
     sistema: !!fasesAprobadas.diseno_arquitectura,
     impl_stack: !!fasesAprobadas.diseno,
+    impl_estructura: !!fasesAprobadas.impl_stack,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2128,7 +2169,12 @@ export default function WorkspaceProyecto() {
             proyectoId={id}
             onVolver={() => setVista("resumen")}
             // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
-            recarga={JSON.stringify([artefactos.impl_stack?.piezas, artefactos.impl_stack?.altaDisponibilidad, artefactos.impl_stack?.externos])}
+            recarga={JSON.stringify([
+              artefactos.impl_stack?.piezas,
+              artefactos.impl_stack?.altaDisponibilidad,
+              artefactos.impl_stack?.externos,
+              (artefactos.impl_estructura?.archivos || []).map((a) => a.ruta),
+            ])}
           >
             <TituloPaso
               color={PALETA.marron}
@@ -2214,6 +2260,90 @@ export default function WorkspaceProyecto() {
                   />
                 )}
               </div>
+            )}
+
+            {/* --- Estructura de carpetas --- */}
+            {visible("impl_estructura") && (
+              <>
+                <TituloPaso
+                  color={PALETA.marron}
+                  estado={pendientes.impl_estructura}
+                  modelo={modelos.impl_estructura}
+                  onActualizar={trabajable("impl_estructura") ? () => actualizarPaso("impl_estructura") : undefined}
+                  deshabilitado={ocupado}
+                >
+                  Estructura de carpetas
+                </TituloPaso>
+
+                {trabajable("impl_estructura") && !bloqueado("impl_estructura") && (
+                  <CampoIndicaciones
+                    clave="impl_estructura"
+                    valor={contexto.indicaciones?.impl_estructura}
+                    onChange={cambiarIndicaciones}
+                    deshabilitado={ocupado}
+                    ejemplo="Ej: agrupa los componentes de la web por módulo del panel"
+                  />
+                )}
+
+                <ControlesPaso
+                  clave="impl_estructura"
+                  esperando={!trabajable("impl_estructura")}
+                  bloqueado={bloqueado("impl_estructura")}
+                  enEdicion={enEdicion("impl_estructura")}
+                  deshabilitado={ocupado}
+                  onEditar={desbloquearPaso}
+                  onCancelarEdicion={cancelarEdicion}
+                >
+                  <BotonGenerar
+                    onClick={() => regenerarPaso("impl_estructura")}
+                    secundario={!!artefactos.impl_estructura}
+                    disabled={ocupado}
+                    cargando={generando("impl_estructura")}
+                    textoCargando="Generando (una pieza a la vez puede tardar unos minutos)..."
+                    color={PALETA.marron}
+                  >
+                    {artefactos.impl_estructura ? "Regenerar" : "Generar"} estructura de carpetas
+                  </BotonGenerar>
+
+                  {artefactos.impl_estructura && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("impl_estructura", "¿Eliminar la estructura de carpetas?")}
+                      disabled={ocupado}
+                      title="Eliminar estructura de carpetas"
+                    />
+                  )}
+                </ControlesPaso>
+
+                {artefactos.impl_estructura && <FichaEstructura estructura={artefactos.impl_estructura} />}
+
+                {artefactos.impl_estructura && trabajable("impl_estructura") && !bloqueado("impl_estructura") && (
+                  <AmpliarConIA
+                    descripcion="Describe qué agregar o cambiar. La IA ajusta la lista actual de cada pieza sin generarla de nuevo."
+                    ejemplo="Ej: separa el formulario de parte de la web en un componente por sección"
+                    onEnviar={ampliarEstructura}
+                    cargando={generando("ampliar:impl_estructura")}
+                    deshabilitado={ocupado}
+                  />
+                )}
+
+                {artefactos.impl_estructura && trabajable("impl_estructura") && (
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.impl_estructura}
+                      onClick={() => aprobarPaso("impl_estructura")}
+                      etiqueta="Estructura de carpetas"
+                      disabled={ocupado}
+                    />
+                    {!fasesAprobadas.impl_estructura && (
+                      <BotonRechazar
+                        etiqueta="Estructura de carpetas"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("impl_estructura", "¿Rechazar la estructura de carpetas?")}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </ImplementacionFase>
         ) : (

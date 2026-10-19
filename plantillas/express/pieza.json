@@ -27,5 +27,6 @@
         "motivo": "Conexión a PostgreSQL (la usa el archivo fijo de configuración)"
       }
     ]
-  }
+  },
+  "carpeta": "backend"
 }

@@ -65,5 +65,6 @@
   "registro": "deno",
   "incompatibles": {
     "firebase-admin": "es para Node.js; en Deno, llama a la API HTTP v1 de Firebase con fetch y firma el token de la cuenta de servicio (por ejemplo con jsr:@panva/jose)"
-  }
+  },
+  "carpeta": "supabase"
 }

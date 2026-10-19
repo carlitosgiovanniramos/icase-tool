@@ -23,5 +23,6 @@
   "enlaces": {
     "FRONTEND_PORT": "Web"
   },
-  "registro": "npm"
+  "registro": "npm",
+  "carpeta": "frontend"
 }

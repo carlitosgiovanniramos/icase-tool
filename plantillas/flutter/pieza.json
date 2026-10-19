@@ -26,5 +26,6 @@
         "motivo": "Cliente de Supabase: API de datos, Auth, Realtime y Storage"
       }
     ]
-  }
+  },
+  "carpeta": "movil"
 }

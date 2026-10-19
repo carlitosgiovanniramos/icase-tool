@@ -94,7 +94,8 @@ function NodoCarpeta({ nodo, ruta, nivel, abiertas, alternar, seleccionado, onSe
                 ...sangria,
                 paddingLeft: `${20 + nivel * 14}px`,
                 backgroundColor: activo ? "#e5e7eb" : undefined,
-                color: archivo.origen === "plantilla" ? "#6b7280" : "#111827",
+                color: archivo.origen === "generado" ? "#111827" : archivo.origen === "planificado" ? "#9ca3af" : "#6b7280",
+                fontStyle: archivo.origen === "planificado" ? "italic" : undefined,
               }}
             >
               {archivo.nombre}
@@ -143,7 +144,25 @@ function ExploradorArchivos({ archivos }) {
                   Plantilla
                 </span>
               )}
+              {archivo.origen === "planificado" && (
+                <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-200">
+                  Pendiente
+                </span>
+              )}
             </div>
+            {archivo.origen === "planificado" ? (
+              // Todavía sin código: lo que dice la estructura de carpetas sobre el archivo.
+              <div className="p-4 text-sm text-gray-700 space-y-2">
+                <p>{archivo.proposito}</p>
+                <p className="text-xs text-gray-500">Tipo: {archivo.tipo}</p>
+                {archivo.requerimientos?.length > 0 && (
+                  <p className="text-xs text-gray-500">Requerimientos: {archivo.requerimientos.join(", ")}</p>
+                )}
+                {archivo.pantallas?.length > 0 && <p className="text-xs text-gray-500">Pantallas: {archivo.pantallas.join(" · ")}</p>}
+                {archivo.tablas?.length > 0 && <p className="text-xs text-gray-500">Tablas: {archivo.tablas.join(", ")}</p>}
+                {archivo.modulo && <p className="text-xs text-gray-500">Módulo: {archivo.modulo}</p>}
+              </div>
+            ) : (
             <pre className="flex-1 overflow-auto max-h-[520px] text-xs leading-5 font-mono p-0 m-0">
               <code className="grid" style={{ gridTemplateColumns: "auto 1fr" }}>
                 {archivo.contenido.split("\n").map((linea, i) => (
@@ -154,6 +173,7 @@ function ExploradorArchivos({ archivos }) {
                 ))}
               </code>
             </pre>
+            )}
           </>
         ) : (
           <p className="m-auto text-sm text-gray-500">Selecciona un archivo.</p>
@@ -430,7 +450,7 @@ export default function ImplementacionFase({ proyectoId, onVolver, recarga, chil
             <>
               {!generados && (
                 <p className="text-sm text-gray-500 mb-3">
-                  Todavía no hay archivos generados. Se muestran los de la plantilla.
+                  Todavía no hay código generado. Se muestran los archivos fijos de las piezas y, en cursiva, los planificados.
                 </p>
               )}
               <ExploradorArchivos key={recarga} archivos={archivos} />

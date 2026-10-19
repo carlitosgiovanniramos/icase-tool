@@ -2,7 +2,10 @@
   "nombre": "postgres",
   "titulo": "PostgreSQL",
   "capa": "datos",
-  "reconoce": ["postgresql", "postgres"],
+  "reconoce": [
+    "postgresql",
+    "postgres"
+  ],
   "servicios": {
     "db": "Base de datos (PostgreSQL)"
   },
@@ -10,5 +13,6 @@
     "DB_NAME": "{{nombre_bd}}",
     "DB_USER": "app",
     "DB_PASSWORD": "{{secreto:hex:16}}"
-  }
+  },
+  "carpeta": "database"
 }

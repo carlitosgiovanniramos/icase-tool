@@ -87,6 +87,15 @@ export const PASOS = [
     columna: "stack_implementacion",
     ruta: "/api/generar-stack",
   },
+  // Lista de archivos de cada pieza, con su propósito y lo que cubre del diseño, antes del código.
+  {
+    clave: "impl_estructura",
+    fase: "implementacion",
+    nombre: "Estructura de carpetas",
+    aprobacion: "impl_estructura",
+    columna: "estructura_implementacion",
+    ruta: "/api/generar-estructura",
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));

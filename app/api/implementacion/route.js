@@ -67,7 +67,30 @@ async function archivosDelProyecto(supabase, proyecto) {
     altaDisponibilidad: !!stack.altaDisponibilidad,
     externos: stack.externos || [],
   });
-  return { generados: data.length, archivos, servicios, firma: firmaDelStack(stack) };
+
+  // Archivos de la estructura de carpetas que todavía no tienen código: se muestran en el
+  // explorador como planificados, pero nunca se envían al runner (vacíos romperían la compilación).
+  const existentes = new Set(archivos.map((a) => a.ruta));
+  const planificados = (proyecto.estructura_implementacion?.archivos || [])
+    .filter((a) => !existentes.has(a.ruta))
+    .map(({ ruta, tipo, proposito, requerimientos, pantallas, tablas, modulo }) => ({
+      ruta,
+      contenido: "",
+      origen: "planificado",
+      tipo,
+      proposito,
+      requerimientos,
+      pantallas,
+      tablas,
+      modulo,
+    }));
+
+  return {
+    generados: data.length,
+    archivos: [...archivos, ...planificados].sort((a, b) => a.ruta.localeCompare(b.ruta)),
+    servicios,
+    firma: firmaDelStack(stack),
+  };
 }
 
 // Identifica el stack del proyecto. Si cambia, el runner borra los contenedores y los datos
@@ -78,12 +101,17 @@ function firmaDelStack(stack) {
   return [...partes.sort(), ...(stack.altaDisponibilidad ? ["alta-disponibilidad"] : [])].join("+");
 }
 
-// Proyecto con su stack. Si la columna stack_implementacion todavía no existe, sigue sin ella.
+// Proyecto con su stack y su estructura de carpetas. Si alguna de esas columnas todavía no existe
+// (falta ejecutar su archivo de supabase/), sigue sin ella.
 async function leerProyecto(supabase, id) {
-  let { data, error } = await supabase.from("proyectos").select("id, nombre, stack_implementacion").eq("id", id).maybeSingle();
-  if (error?.code === "42703") ({ data, error } = await supabase.from("proyectos").select("id, nombre").eq("id", id).maybeSingle());
-  if (error) throw error;
-  return data;
+  const intentos = ["id, nombre, stack_implementacion, estructura_implementacion", "id, nombre, stack_implementacion", "id, nombre"];
+  for (const columnas of intentos) {
+    const { data, error } = await supabase.from("proyectos").select(columnas).eq("id", id).maybeSingle();
+    if (error?.code === "42703") continue;
+    if (error) throw error;
+    return data;
+  }
+  return null;
 }
 
 // Nombre de cada puerto según las piezas del catálogo ({ WEB_PORT: "Web", ... }).
@@ -128,7 +156,8 @@ export async function POST(request) {
       }
       await runner("POST", `${base}/sincronizar`, {
         firma,
-        archivos: archivos.map(({ ruta, contenido }) => ({ ruta, contenido })),
+        // Los planificados (sin código todavía) no van a la carpeta del proyecto.
+        archivos: archivos.filter((a) => a.origen !== "planificado").map(({ ruta, contenido }) => ({ ruta, contenido })),
       });
       return NextResponse.json(await runner("POST", `${base}/levantar`, {}));
     }
