@@ -34,6 +34,8 @@ import FaseIndice from "./FaseIndice";
 import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
 import FichaEstructura from "./FichaEstructura";
+import FichaBD from "./FichaBD";
+import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
@@ -292,6 +294,36 @@ function AmpliarPrototipo({ pantallas, plataformas, onModificar, onAgregar, carg
   );
 }
 
+// "Ampliar con IA" de la base de datos: cambia el archivo elegido y lo prueba de nuevo.
+function AmpliarBD({ archivos, onEnviar, cargando, deshabilitado }) {
+  const [ruta, setRuta] = useState("");
+  const elegida = archivos.some((a) => a.ruta === ruta) ? ruta : archivos[0]?.ruta;
+  return (
+    <AmpliarConIA
+      descripcion="Elige el archivo y describe qué agregar o cambiar. Al aplicarlo se prueba de nuevo."
+      ejemplo="Ej: agrega un índice por fecha y permite al administrador ver todos los registros"
+      onEnviar={(instruccion) => onEnviar(elegida, instruccion)}
+      cargando={cargando}
+      deshabilitado={deshabilitado}
+      incompleto={!elegida}
+      extra={
+        <select
+          value={elegida || ""}
+          onChange={(e) => setRuta(e.target.value)}
+          disabled={deshabilitado}
+          className="h-9 mb-2 max-w-full border border-gray-300 bg-white px-2 text-sm font-mono text-gray-800 focus:outline-none focus:border-gray-900"
+        >
+          {archivos.map((a) => (
+            <option key={a.ruta} value={a.ruta}>
+              {a.ruta}
+            </option>
+          ))}
+        </select>
+      }
+    />
+  );
+}
+
 // Ejemplo del recuadro "Ampliar con IA" de cada diagrama.
 const EJEMPLO_AMPLIAR = {
   casos_uso: "Ej: agrega el caso de uso Exportar reporte para el Administrador",
@@ -538,6 +570,11 @@ async function renderizar(codigo) {
 
 const SIN_ARTEFACTOS = Object.fromEntries(PASOS.map((p) => [p.clave, null]));
 
+// Base de datos: correcciones automáticas tras la prueba en contenedores (cada una muestra el
+// error siguiente) y costo estimado por archivo con Claude, para avisar antes de generar.
+const CORRECCIONES_BD = 3;
+const COSTO_ARCHIVO_BD_CLAUDE = 0.1;
+
 // Plataformas por defecto del prototipo: las del contexto del análisis que aplican (Web/Móvil).
 function plataformasDePrototipo(contexto) {
   const aplicables = (contexto?.plataformas || []).filter((p) => p === "Web" || p === "Móvil");
@@ -766,9 +803,28 @@ export default function WorkspaceProyecto() {
     };
   }
 
+  // Lo que recibe cada archivo del paso "Base de datos": el stack, el diseño de los datos y, de la
+  // estructura, solo los archivos de la base (migraciones y datos de prueba).
+  function cuerpoBD() {
+    const a = artefactosRef.current;
+    const { contenedores, componentes, titulos, revision, ...stack } = a.impl_stack || {};
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      stack,
+      estructura: { archivos: archivosDeBaseDatos(a.impl_estructura) },
+      diagramaER: a.er,
+      diagramaClases: a.clases,
+      indicaciones: contextoRef.current.indicaciones?.impl_bd,
+    };
+  }
+
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
+  // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
+    if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto);
     if (clave === "prototipo") {
       const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
       if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
@@ -985,6 +1041,12 @@ export default function WorkspaceProyecto() {
       "¿Generar con Claude?",
       "Generar"
     );
+  }
+
+  // Costo estimado de generar la base de datos con Claude (un archivo por petición).
+  function costoBD() {
+    const cantidad = archivosDeBaseDatos(artefactosRef.current.impl_estructura).length;
+    return `Costo estimado con Claude: ~$${(cantidad * COSTO_ARCHIVO_BD_CLAUDE).toFixed(2)} (${cantidad} archivos), más las correcciones si la prueba falla.`;
   }
 
   // lote: generación de varias pantallas (muestra el botón "Detener").
@@ -1210,12 +1272,17 @@ export default function WorkspaceProyecto() {
         `\n\nCosto estimado con Claude: ~$${(cantidad * porPantalla).toFixed(2)} (${cantidad} pantallas).`
       );
     }
+    if (clave === "impl_bd" && claudeActivo()) partes.push(`\n\n${costoBD()}`);
 
     if (!(await confirmar(partes.join(" "), `¿Regenerar ${nombre}?`, "Regenerar"))) return;
     return generarPaso(clave, { costoConfirmado: true });
   }
 
   async function generarPaso(clave, { costoConfirmado } = {}) {
+    if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
+      const continuar = await confirmar(costoBD(), "¿Generar con Claude?", "Generar");
+      if (!continuar) return;
+    }
     if (clave === "prototipo" && !costoConfirmado) {
       const cantidad = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo)
         .length;
@@ -1226,6 +1293,7 @@ export default function WorkspaceProyecto() {
     try {
       const { valor, modelo, fallidas, detenido, advertencias } = await pedirPaso(clave, {
         onProgreso: progresoPantallas(clave),
+        onTexto: (detalle) => setCargando({ paso: clave, detalle }),
       });
       await guardarArtefacto(clave, valor);
       await marcarCambio(clave, {}, modelo);
@@ -1266,6 +1334,8 @@ export default function WorkspaceProyecto() {
                 nombre: `${p.nombre} (pantalla ${j + 1}/${total}: ${pantalla})`,
                 detenible: true,
               }),
+            onTexto: (texto) =>
+              setProgreso({ indice: i, total: pasos.length, nombre: `${p.nombre} (${texto.replace(/.+$/, "")})` }),
           });
           await guardarArtefacto(p.clave, valor);
           await guardarFases((f) => {
@@ -1502,6 +1572,181 @@ export default function WorkspaceProyecto() {
     }
   }
 
+  // ---------- Base de datos ----------
+
+  // Código generado de un paso con archivos (archivos_proyecto): se guarda cada archivo apenas
+  // se genera, así un corte no pierde lo que ya se pagó.
+  async function guardarArchivoGenerado(clave, ruta, contenido) {
+    const { error } = await supabase.from("archivos_proyecto").upsert(
+      { proyecto_id: id, ruta, contenido, paso: clave, estado: "generado", hash: hashCodigo(contenido), actualizado_en: new Date().toISOString() },
+      { onConflict: "proyecto_id,ruta" }
+    );
+    if (error) {
+      throw new Error(
+        /archivos_proyecto/.test(error.message)
+          ? "Falta la tabla archivos_proyecto: ejecuta supabase/archivos_proyecto.sql en el SQL Editor."
+          : `No se pudo guardar ${ruta}: ${error.message}`
+      );
+    }
+  }
+
+  // Borra el código de un paso, salvo las rutas de "conservar".
+  async function borrarArchivosDePaso(clave, conservar = []) {
+    let consulta = supabase.from("archivos_proyecto").delete().eq("proyecto_id", id).eq("paso", clave);
+    if (conservar.length) consulta = consulta.not("ruta", "in", `(${conservar.map((r) => `"${r}"`).join(",")})`);
+    const { error } = await consulta;
+    if (error) console.warn(`No se pudieron borrar los archivos de ${clave}:`, error.message);
+  }
+
+  async function leerArchivosDePaso(clave) {
+    const { data, error } = await supabase
+      .from("archivos_proyecto")
+      .select("ruta, contenido")
+      .eq("proyecto_id", id)
+      .eq("paso", clave);
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Aplica los archivos de la base desde cero en un proyecto aparte (no toca el que está
+  // encendido). Si Docker o el runner no responden, la prueba queda sin hacer (ok: null).
+  async function probarBaseDatos() {
+    const data = await pedirJson("/api/implementacion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proyectoId: id, accion: "probar-bd" }),
+    });
+    if (data.error) {
+      return { ok: null, fecha: new Date().toISOString(), error: data.error, advertencias: [`La base no se probó: ${data.error}`] };
+    }
+    return data;
+  }
+
+  // Prueba y, si un archivo falla al aplicarse, lo corrige con el error (hasta CORRECCIONES_BD
+  // veces: cada corrección deja ver el error siguiente). archivos: [{ ruta, contenido, ... }].
+  async function probarYCorregir(archivos, avisar = () => {}) {
+    const lista = [...archivos];
+    let corregidos = 0;
+    let modelo;
+    avisar("Probando en contenedores...");
+    let prueba = await probarBaseDatos();
+    while (prueba.ok === false && prueba.archivo && corregidos < CORRECCIONES_BD) {
+      const i = lista.findIndex((a) => a.ruta === prueba.archivo);
+      if (i === -1) break;
+      avisar(`Corrigiendo ${prueba.archivo.split("/").pop()}...`);
+      const data = await pedirIA(PASO.impl_bd.ruta, {
+        ...cuerpoBD(),
+        archivo: prueba.archivo,
+        anteriores: lista,
+        actual: lista[i].contenido,
+        error: prueba.error,
+      });
+      if (data.error) break;
+      await guardarArchivoGenerado("impl_bd", data.ruta, data.contenido);
+      lista[i] = { ...lista[i], contenido: data.contenido, advertencias: data.advertencias || [], corregido: true };
+      modelo = data.modelo_ia;
+      corregidos++;
+      avisar("Probando en contenedores...");
+      prueba = await probarBaseDatos();
+    }
+    return { archivos: lista, prueba, corregidos, modelo };
+  }
+
+  // Ficha guardada en proyectos.bd_implementacion (el código va en archivos_proyecto).
+  function fichaBD(archivos, prueba) {
+    const plan = archivosDeBaseDatos(artefactosRef.current.impl_estructura);
+    const lista = archivos.map(({ ruta, contenido, advertencias = [], corregido }) => ({
+      ruta,
+      lineas: contenido.trimEnd().split("\n").length,
+      tablas: plan.find((a) => a.ruta === ruta)?.tablas || [],
+      advertencias,
+      ...(corregido ? { corregido } : {}),
+    }));
+    return {
+      archivos: lista,
+      prueba,
+      revision: [...lista.flatMap((a) => a.advertencias.map((x) => `${a.ruta}: ${x}`)), ...(prueba?.advertencias || [])],
+      actualizado: new Date().toISOString(),
+    };
+  }
+
+  // Genera las migraciones y los datos de prueba de la estructura, uno por petición y en orden
+  // (cada uno con el código de los anteriores), y los prueba en contenedores.
+  async function generarBaseDatos(avisar = () => {}) {
+    const plan = archivosDeBaseDatos(artefactosRef.current.impl_estructura);
+    if (!plan.length) throw new Error("La estructura de carpetas no tiene migraciones.");
+    const generados = [];
+    let modelo;
+    for (const [i, a] of plan.entries()) {
+      avisar(`Generando ${i + 1}/${plan.length}: ${a.ruta.split("/").pop()}...`);
+      const data = await pedirIA(PASO.impl_bd.ruta, { ...cuerpoBD(), archivo: a.ruta, anteriores: generados });
+      if (data.error) throw new Error(`${a.ruta}: ${data.error}`);
+      await guardarArchivoGenerado("impl_bd", a.ruta, data.contenido);
+      generados.push({ ruta: a.ruta, contenido: data.contenido, advertencias: data.advertencias || [] });
+      modelo = data.modelo_ia;
+    }
+    await borrarArchivosDePaso("impl_bd", plan.map((a) => a.ruta));
+
+    const resultado = await probarYCorregir(generados, avisar);
+    const valor = fichaBD(resultado.archivos, resultado.prueba);
+    return { valor, modelo: resultado.modelo || modelo, advertencias: valor.revision };
+  }
+
+  // "Probar de nuevo": aplica los archivos actuales desde cero. Si tuvo que corregir alguno, es
+  // un cambio del paso (pierde la aprobación); si no, solo se actualiza el resultado.
+  async function reprobarBD() {
+    setCargando({ paso: "probar:impl_bd" });
+    try {
+      const guardados = await leerArchivosDePaso("impl_bd");
+      const actuales = (artefactosRef.current.impl_bd?.archivos || [])
+        .map((a) => ({ ...a, contenido: guardados.find((g) => g.ruta === a.ruta)?.contenido }))
+        .filter((a) => a.contenido != null);
+      const { archivos, prueba, corregidos, modelo } = await probarYCorregir(actuales);
+      const valor = fichaBD(archivos, prueba);
+      await guardarArtefacto("impl_bd", valor);
+      if (corregidos) await marcarCambio("impl_bd", {}, modelo);
+      if (valor.revision.length) mostrarInfo(textoAdvertencias(valor.revision), "Base de datos: revisa antes de aprobar");
+    } catch (err) {
+      mostrarError(err.message, "No se pudo probar: Base de datos");
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // "Ampliar con IA" de la base de datos: la IA modifica el archivo elegido y se prueba de nuevo.
+  async function ampliarBD(ruta, instruccion) {
+    setCargando({ paso: "ampliar:impl_bd" });
+    try {
+      const guardados = await leerArchivosDePaso("impl_bd");
+      const actuales = (artefactosRef.current.impl_bd?.archivos || [])
+        .map((a) => ({ ...a, contenido: guardados.find((g) => g.ruta === a.ruta)?.contenido }))
+        .filter((a) => a.contenido != null);
+      const i = actuales.findIndex((a) => a.ruta === ruta);
+      if (i === -1) throw new Error(`No se encontró el código de ${ruta}: genera la base de datos de nuevo.`);
+      const data = await pedirIA(PASO.impl_bd.ruta, {
+        ...cuerpoBD(),
+        archivo: ruta,
+        anteriores: actuales,
+        actual: actuales[i].contenido,
+        instruccion,
+      });
+      if (data.error) throw new Error(data.error);
+      await guardarArchivoGenerado("impl_bd", ruta, data.contenido);
+      actuales[i] = { ...actuales[i], contenido: data.contenido, advertencias: data.advertencias || [], corregido: false };
+      const resultado = await probarYCorregir(actuales);
+      const valor = fichaBD(resultado.archivos, resultado.prueba);
+      await guardarArtefacto("impl_bd", valor);
+      await marcarCambio("impl_bd", {}, resultado.modelo || data.modelo_ia);
+      if (valor.revision.length) mostrarInfo(textoAdvertencias(valor.revision), "Base de datos: revisa antes de aprobar");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar: Base de datos");
+      return false;
+    } finally {
+      setCargando(null);
+    }
+  }
+
   // Edición manual de la ficha del stack (librerías, servicios externos, avisos): pasa por las
   // mismas validaciones que la generada, sin IA, y como toda edición quita la aprobación del paso.
   async function guardarStackManual(nuevo) {
@@ -1637,6 +1882,7 @@ export default function WorkspaceProyecto() {
 
     borrar.push(...siguientes.map((p) => p.clave));
     for (const c of borrar) await guardarArtefacto(c, null);
+    for (const c of borrar) if (PASO[c].archivos) await borrarArchivosDePaso(c);
 
     // Lo borrado deja de tener modelo, estado y aprobación; ya no queda nada que marcar como
     // desactualizado, así que no hay aviso.
@@ -1993,6 +2239,7 @@ export default function WorkspaceProyecto() {
     sistema: !!fasesAprobadas.diseno_arquitectura,
     impl_stack: !!fasesAprobadas.diseno,
     impl_estructura: !!fasesAprobadas.impl_stack,
+    impl_bd: !!fasesAprobadas.impl_estructura,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2174,6 +2421,7 @@ export default function WorkspaceProyecto() {
               artefactos.impl_stack?.altaDisponibilidad,
               artefactos.impl_stack?.externos,
               (artefactos.impl_estructura?.archivos || []).map((a) => a.ruta),
+              artefactos.impl_bd?.actualizado,
             ])}
           >
             <TituloPaso
@@ -2339,6 +2587,96 @@ export default function WorkspaceProyecto() {
                         etiqueta="Estructura de carpetas"
                         disabled={ocupado}
                         onClick={() => rechazarPaso("impl_estructura", "¿Rechazar la estructura de carpetas?")}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* --- Base de datos --- */}
+            {visible("impl_bd") && (
+              <>
+                <TituloPaso
+                  color={PALETA.marron}
+                  estado={pendientes.impl_bd}
+                  modelo={modelos.impl_bd}
+                  onActualizar={trabajable("impl_bd") ? () => actualizarPaso("impl_bd") : undefined}
+                  deshabilitado={ocupado}
+                >
+                  Base de datos
+                </TituloPaso>
+
+                {trabajable("impl_bd") && !bloqueado("impl_bd") && (
+                  <CampoIndicaciones
+                    clave="impl_bd"
+                    valor={contexto.indicaciones?.impl_bd}
+                    onChange={cambiarIndicaciones}
+                    deshabilitado={ocupado}
+                    ejemplo="Ej: en los datos de prueba usa nombres y direcciones de la ciudad del cliente"
+                  />
+                )}
+
+                <ControlesPaso
+                  clave="impl_bd"
+                  esperando={!trabajable("impl_bd")}
+                  bloqueado={bloqueado("impl_bd")}
+                  enEdicion={enEdicion("impl_bd")}
+                  deshabilitado={ocupado}
+                  onEditar={desbloquearPaso}
+                  onCancelarEdicion={cancelarEdicion}
+                >
+                  <BotonGenerar
+                    onClick={() => regenerarPaso("impl_bd")}
+                    secundario={!!artefactos.impl_bd}
+                    disabled={ocupado}
+                    cargando={generando("impl_bd")}
+                    textoCargando={cargando?.detalle || "Generando..."}
+                    color={PALETA.marron}
+                  >
+                    {artefactos.impl_bd ? "Regenerar" : "Generar"} base de datos
+                  </BotonGenerar>
+
+                  {artefactos.impl_bd && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("impl_bd", "¿Eliminar la base de datos?")}
+                      disabled={ocupado}
+                      title="Eliminar base de datos"
+                    />
+                  )}
+                </ControlesPaso>
+
+                {artefactos.impl_bd && (
+                  <FichaBD
+                    bd={artefactos.impl_bd}
+                    onProbar={trabajable("impl_bd") && !bloqueado("impl_bd") ? reprobarBD : undefined}
+                    probando={generando("probar:impl_bd")}
+                    deshabilitado={ocupado}
+                  />
+                )}
+
+                {artefactos.impl_bd && trabajable("impl_bd") && !bloqueado("impl_bd") && (
+                  <AmpliarBD
+                    archivos={artefactos.impl_bd.archivos || []}
+                    onEnviar={ampliarBD}
+                    cargando={generando("ampliar:impl_bd")}
+                    deshabilitado={ocupado}
+                  />
+                )}
+
+                {artefactos.impl_bd && trabajable("impl_bd") && (
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.impl_bd}
+                      onClick={() => aprobarPaso("impl_bd")}
+                      etiqueta="Base de datos"
+                      disabled={ocupado}
+                    />
+                    {!fasesAprobadas.impl_bd && (
+                      <BotonRechazar
+                        etiqueta="Base de datos"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("impl_bd", "¿Rechazar la base de datos?")}
                       />
                     )}
                   </div>

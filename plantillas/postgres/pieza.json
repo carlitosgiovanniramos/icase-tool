@@ -14,5 +14,11 @@
     "DB_USER": "app",
     "DB_PASSWORD": "{{secreto:hex:16}}"
   },
-  "carpeta": "database"
+  "carpeta": "database",
+  "bd": {
+    "servicio": "db",
+    "modo": "servicio",
+    "rls": false,
+    "conexion": { "usuario": "${DB_USER}", "baseDatos": "${DB_NAME}" }
+  }
 }

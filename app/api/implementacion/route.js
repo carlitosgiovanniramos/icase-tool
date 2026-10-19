@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { armarProyecto, catalogo, PIEZAS_POR_DEFECTO } from "@/lib/implementacion";
+import { piezaDeBaseDatos, revisarPrueba } from "@/lib/bd";
 
-export const maxDuration = 120;
+// Probar la base de datos levanta su parte de Supabase o PostgreSQL desde cero (hasta un par de minutos).
+export const maxDuration = 300;
 
 // Fase de Implementación: arma los archivos del proyecto (plantilla + generados) y le pasa las
 // órdenes al runner (runner/index.mjs), que es el único que ejecuta Docker. El proyecto se lee
@@ -14,9 +16,11 @@ export const maxDuration = 120;
 //   estado       contenedores, puertos y operación en curso
 //   logs         últimas líneas de log (de un servicio o de todos)
 //   detener      apaga los contenedores (borrarDatos: también la base de datos)
+//   probar-bd    aplica las migraciones y los datos de prueba en un proyecto aparte, desde cero,
+//                y devuelve lo que quedó en la base revisado contra el diseño
 
 const RUNNER_URL = (process.env.RUNNER_URL || "http://127.0.0.1:4100").replace(/\/+$/, "");
-const ACCIONES = new Set(["archivos", "levantar", "estado", "logs", "detener"]);
+const ACCIONES = new Set(["archivos", "levantar", "estado", "logs", "detener", "probar-bd"]);
 
 class ErrorRunner extends Error {
   constructor(estado, mensaje, salida) {
@@ -26,7 +30,7 @@ class ErrorRunner extends Error {
   }
 }
 
-async function runner(metodo, ruta, cuerpo) {
+async function runner(metodo, ruta, cuerpo, espera = 110_000) {
   if (!process.env.RUNNER_TOKEN) {
     throw new ErrorRunner(500, "Falta RUNNER_TOKEN en .env.local.");
   }
@@ -36,7 +40,7 @@ async function runner(metodo, ruta, cuerpo) {
       method: metodo,
       headers: { Authorization: `Bearer ${process.env.RUNNER_TOKEN}`, "Content-Type": "application/json" },
       body: cuerpo ? JSON.stringify(cuerpo) : undefined,
-      signal: AbortSignal.timeout(110_000),
+      signal: AbortSignal.timeout(espera),
     });
   } catch {
     throw new ErrorRunner(503, "El runner no está encendido. Inícialo con: npm run runner");
@@ -163,6 +167,36 @@ export async function POST(request) {
     }
 
     if (accion === "estado") return NextResponse.json(await estadoConEnlaces(base));
+
+    if (accion === "probar-bd") {
+      const { data: diseno, error } = await supabase
+        .from("proyectos")
+        .select("diagrama_er, analisis")
+        .eq("id", proyecto.id)
+        .single();
+      if (error) throw error;
+      const ficha = piezaDeBaseDatos(proyecto.stack_implementacion, await catalogo());
+      if (!ficha) return NextResponse.json({ error: "El stack no tiene una pieza de base de datos." }, { status: 400 });
+      const { archivos } = await archivosDelProyecto(supabase, proyecto);
+      const prueba = await runner(
+        "POST",
+        `${base}/probarbd`,
+        {
+          archivos: archivos.filter((a) => a.origen !== "planificado").map(({ ruta, contenido }) => ({ ruta, contenido })),
+          ...ficha.bd,
+        },
+        290_000
+      );
+      return NextResponse.json(
+        revisarPrueba(prueba, {
+          ...diseno,
+          diagramaER: diseno.diagrama_er,
+          estructura: proyecto.estructura_implementacion,
+          ficha,
+          contenidos: archivos.filter((a) => a.paso === "impl_bd"),
+        })
+      );
+    }
 
     if (accion === "logs") {
       const consulta = servicio ? `?servicio=${encodeURIComponent(servicio)}` : "";

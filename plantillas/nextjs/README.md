@@ -20,6 +20,7 @@ Panel web en Next.js 16 (App Router), compilado con `output: "standalone"` y eje
 | `web/app/layout.js` | Estructura común y menú principal (del árbol de navegación, vista Web) |
 | `web/app/<ruta>/page.js` | Una página por pantalla Web del prototipo |
 | `web/app/**/<Componente>.js` | Componentes de cliente (`"use client"`) y piezas compartidas |
+| `web/proxy.js` | Solo si hace falta revisar cada petición antes de la página (sesión, redirección por rol) |
 
 ## Reglas para el código generado
 
@@ -28,4 +29,5 @@ Panel web en Next.js 16 (App Router), compilado con `output: "standalone"` y eje
 - **Supabase desde el servidor:** `supabaseServidor(accessToken)` de `web/lib/supabase/servidor.js`. Usa la red interna; `localhost` dentro del contenedor no es la PC.
 - Las páginas que consultan datos en cada petición llaman a `await connection()` (de `next/server`) antes de leer.
 - Solo las variables `NEXT_PUBLIC_*` llegan al navegador, y quedan fijas al compilar.
+- **Proxy, no middleware:** Next.js 16 reemplazó `middleware.js` por `web/proxy.js`, que exporta `proxy(request)` (y `config` con `matcher` si aplica). No generar `middleware.js`. El proxy solo redirige; los permisos reales los aplica el backend (con Supabase, las políticas RLS).
 - No modificar los archivos fijos.

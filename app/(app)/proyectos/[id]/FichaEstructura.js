@@ -5,7 +5,7 @@ import { PALETA } from "../../../estilos";
 // Ficha del paso "Estructura de carpetas": la cobertura del diseño (pantallas, tablas, módulos y
 // RF) y, por pieza, cada archivo con su tipo, propósito, requerimientos y lo que cubre.
 
-function Cobertura({ etiqueta, valor }) {
+export function Cobertura({ etiqueta, valor }) {
   if (!valor || !valor[1]) return null;
   const completa = valor[0] === valor[1];
   return (

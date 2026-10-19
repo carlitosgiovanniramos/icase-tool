@@ -382,6 +382,100 @@ async function detener(id, { borrarDatos = false, eliminar = false } = {}) {
   }
 }
 
+// --- Prueba de la base de datos -------------------------------------------------------------
+
+// Un error de PostgreSQL al aplicar un archivo (no de Docker): "ERROR:  ..." o "psql:archivo:N: ERROR".
+const ERROR_SQL = /(^|\s|\|)ERROR:\s/m;
+
+// Lo que quedó en la base: cada tabla de public con su RLS, políticas, filas y si la API
+// (rol authenticated, si existe) puede leerla.
+const CONSULTA_TABLAS = `select coalesce(json_agg(t order by t.tabla), '[]') from (
+  select c.relname as tabla, c.relrowsecurity as rls,
+    (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)::int as politicas,
+    (xpath('/row/n/text()', query_to_xml(format('select count(*) as n from public.%I', c.relname), false, true, '')))[1]::text::int as filas,
+    case when exists (select 1 from pg_roles where rolname = 'authenticated')
+      then has_table_privilege('authenticated', c.oid, 'select') end as api
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind in ('r', 'p')) t`;
+// Solo existen con algunas piezas (Supabase): si fallan, quedan en null.
+const CONSULTAS_OPCIONALES = {
+  buckets: "select coalesce(json_agg(id order by id), '[]') from storage.buckets",
+  realtime: "select coalesce(json_agg(tablename order by tablename), '[]') from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public'",
+  usuarios: "select count(*) from auth.users",
+};
+
+// Prueba la base en un proyecto aparte (icase_<id>-bd), con su propia carpeta y sus volúmenes:
+// aplica las migraciones y los datos de prueba desde cero y lee lo que quedó. No toca el proyecto
+// del usuario ni sus datos, y al terminar se borra.
+//   servicio, modo: "tarea" (servicio de un solo uso que aplica los archivos, como migraciones de
+//     Supabase) o "servicio" (la base aplica sus scripts al crearse, como PostgreSQL)
+//   conexion: { usuario, baseDatos }, con ${VARIABLE} del .env si hace falta
+async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {} }) {
+  if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
+  if (!SERVICIO_VALIDO.test(String(servicio))) throw new ErrorRunner(400, "Servicio no válido.");
+  if (!["tarea", "servicio"].includes(modo)) throw new ErrorRunner(400, "Modo de prueba no válido.");
+  const idPrueba = `${id}-bd`;
+  const carpeta = carpetaDe(idPrueba);
+  const estado = estadoDe(idPrueba);
+  if (estado.operacion) throw new ErrorRunner(409, "Ya hay una prueba de la base en curso para este proyecto.");
+  estado.operacion = "probando";
+
+  const borrar = async () => {
+    if (existsSync(path.join(carpeta, "docker-compose.yml"))) {
+      await compose(idPrueba, ["down", "-v", "--remove-orphans"], { espera: ESPERA_LARGA_MS }).catch(() => {});
+    }
+    await rm(carpeta, { recursive: true, force: true });
+  };
+
+  try {
+    await borrar();
+    await mkdir(carpeta, { recursive: true });
+    for (const a of archivos) {
+      const destino = rutaSegura(carpeta, a.ruta);
+      await mkdir(path.dirname(destino), { recursive: true });
+      await writeFile(destino, String(a.contenido ?? ""), "utf8");
+    }
+    const ejemplo = leerVariables(archivos.find((a) => a.ruta === ".env.example")?.contenido);
+    const variables = await asignarPuertos(completarVariables(ejemplo, {}), false);
+    await writeFile(path.join(carpeta, ".env"), escribirVariables(variables), "utf8");
+
+    // Con "servicio", la base reinicia sola si un script falla y vuelve a arrancar sin
+    // aplicarlos: el error se busca siempre en sus logs.
+    let salida = "";
+    try {
+      salida =
+        modo === "tarea"
+          ? await compose(idPrueba, ["run", "--rm", "-T", servicio], { espera: ESPERA_LARGA_MS })
+          : await compose(idPrueba, ["up", "-d", "--wait", servicio], { espera: ESPERA_LARGA_MS });
+    } catch (err) {
+      salida = err.salida || "";
+      if (modo === "tarea" && !ERROR_SQL.test(salida)) throw err;
+    }
+    if (modo === "servicio") {
+      salida += "\n" + (await compose(idPrueba, ["logs", "--no-color", servicio]).catch(() => ""));
+    }
+    if (ERROR_SQL.test(salida)) return { ok: false, salida: salida.slice(-MAX_SALIDA) };
+
+    const reemplazar = (v) => String(v || "").replace(/\$\{(\w+)\}/g, (m, k) => variables[k] ?? "");
+    const psql = (consulta) =>
+      compose(idPrueba, [
+        "exec", "-T", "db", "psql", "-X", "-At", "-v", "ON_ERROR_STOP=1",
+        "-U", reemplazar(conexion.usuario) || "postgres",
+        "-d", reemplazar(conexion.baseDatos) || "postgres",
+        "-c", consulta,
+      ]).then((s) => JSON.parse(s.trim()));
+
+    const resumen = { ok: true, salida: salida.slice(-20_000), tablas: await psql(CONSULTA_TABLAS) };
+    for (const [clave, consulta] of Object.entries(CONSULTAS_OPCIONALES)) {
+      resumen[clave] = await psql(consulta).catch(() => null);
+    }
+    return resumen;
+  } finally {
+    await borrar().catch(() => {});
+    estado.operacion = null;
+  }
+}
+
 // Apaga los proyectos que este runner levantó y nadie consulta hace rato.
 setInterval(async () => {
   for (const [id, estado] of proyectos) {
@@ -447,6 +541,7 @@ const servidor = http.createServer(async (req, res) => {
     if (ruta === "GET logs") return responder(res, 200, await logs(id, url.searchParams.get("servicio")));
     if (ruta === "POST detener") return responder(res, 200, await detener(id, await leerCuerpo(req)));
     if (ruta === "POST eliminar") return responder(res, 200, await detener(id, { eliminar: true }));
+    if (ruta === "POST probarbd") return responder(res, 200, await probarBaseDatos(id, await leerCuerpo(req)));
     throw new ErrorRunner(404, "Ruta no encontrada.");
   } catch (err) {
     if (!(err instanceof ErrorRunner)) console.error(err);

@@ -6,6 +6,7 @@
 //   columna:    columna de proyectos donde se guarda el artefacto
 //   diagrama:   el artefacto es código de diagrama que se renderiza como SVG (Mermaid en el
 //               navegador o PlantUML con Kroki, según el código; ver lib/diagramas.js)
+//   archivos:   el paso escribe código en archivos_proyecto (paso = clave), que se borra con él
 export const PASOS = [
   {
     clave: "analisis",
@@ -95,6 +96,18 @@ export const PASOS = [
     aprobacion: "impl_estructura",
     columna: "estructura_implementacion",
     ruta: "/api/generar-estructura",
+  },
+  // Migraciones y datos de prueba de la estructura, probados en contenedores. El código de cada
+  // archivo va en archivos_proyecto (archivos: el paso los borra al eliminarse); la columna
+  // guarda la lista y el resultado de la prueba.
+  {
+    clave: "impl_bd",
+    fase: "implementacion",
+    nombre: "Base de datos",
+    aprobacion: "impl_bd",
+    columna: "bd_implementacion",
+    ruta: "/api/generar-bd",
+    archivos: true,
   },
 ];
 
