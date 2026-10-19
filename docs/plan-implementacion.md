@@ -321,6 +321,18 @@ Además, en el prompt:
 - "avisos" es solo para lo que el usuario debe decidir o no se puede implementar.
 
 La ficha de Supabase aclara que es autoalojado (no el servicio en la nube) y sin alta disponibilidad propia.
+
+**Edición manual de la ficha.** Como en los requerimientos, con botones en cada fila:
+
+| Parte | Edición |
+|---|---|
+| Librerías | Agregar, editar y eliminar. Las librerías base de una pieza no se eliminan: las exige la pieza |
+| Servicios externos | Editar y eliminar |
+| Avisos | Descartar |
+| Piezas, opcionales, alta disponibilidad | No se editan: salen del diseño aprobado. Para cambiarlas se cambia la arquitectura |
+| Contenedores y componentes | No se editan: los calcula el código |
+
+Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y sin costo (`/api/revisar-stack`, `revisarStack` en `lib/stack.js`). Como toda edición, el paso pierde su aprobación. Lo que la validación encuentra queda guardado en la ficha (`revision`) y se muestra en "Revisar antes de aprobar" hasta que se resuelve.
 3. **Los contenedores salen del armador real**, no de la IA.
 4. **Se guarda** en `proyectos.stack_implementacion` (`supabase/stack_implementacion.sql`). De ahí lo toman el armador y el runner. Si las piezas cambian, el runner borra los contenedores, datos e imágenes del stack anterior antes de levantar.
 5. **Las claves de los servicios externos** van vacías a `.env.example` y como variables de entorno a los servicios que las usan.

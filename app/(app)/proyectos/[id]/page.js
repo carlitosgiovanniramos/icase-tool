@@ -847,9 +847,10 @@ export default function WorkspaceProyecto() {
       return { valor: analisis, modelo, advertencias };
     }
     if (clave === "impl_stack") {
-      // Lo que la validación no pudo corregir se muestra para revisar antes de aprobar.
+      // Lo que la validación no pudo corregir queda en la ficha ("revision") para revisarlo antes
+      // de aprobar, y también se muestra al generar.
       const { advertencias = [], ...stack } = resto;
-      return { valor: stack, modelo, advertencias };
+      return { valor: { ...stack, revision: advertencias }, modelo, advertencias };
     }
     // Se guarda ya limpio, para que los pasos siguientes reciban código válido. Cada ruta devuelve
     // diagrama_plantuml o diagrama_mermaid según el motor del paso. Si la IA devolvió una
@@ -1444,17 +1445,41 @@ export default function WorkspaceProyecto() {
   async function ampliarStack(instruccion) {
     setCargando({ paso: "ampliar:impl_stack" });
     try {
-      // Contenedores y componentes los calcula el código, no la IA: no se le envían.
-      const { contenedores, componentes, titulos, ...actual } = artefactosRef.current.impl_stack;
+      // Contenedores, componentes y la revisión los calcula el código, no la IA: no se le envían.
+      const { contenedores, componentes, titulos, revision, ...actual } = artefactosRef.current.impl_stack;
       const data = await pedirIA(PASO.impl_stack.ruta, { ...cuerpoStack(), actual, instruccion });
       if (data.error) throw new Error(data.error);
       const { modelo_ia: modelo, advertencias = [], ...stack } = data;
-      await guardarArtefacto("impl_stack", stack);
+      await guardarArtefacto("impl_stack", { ...stack, revision: advertencias });
       await marcarCambio("impl_stack", {}, modelo);
       if (advertencias.length) mostrarInfo(textoAdvertencias(advertencias), "Stack técnico: revisa antes de aprobar");
       return true;
     } catch (err) {
       mostrarError(err.message, "No se pudo modificar: Stack técnico");
+      return false;
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // Edición manual de la ficha del stack (librerías, servicios externos, avisos): pasa por las
+  // mismas validaciones que la generada, sin IA, y como toda edición quita la aprobación del paso.
+  async function guardarStackManual(nuevo) {
+    setCargando({ paso: "editar:impl_stack" });
+    try {
+      const { contenedores, componentes, titulos, revision, ...stack } = nuevo;
+      const data = await pedirJson("/api/revisar-stack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cuerpoStack(), stack }),
+      });
+      if (data.error) throw new Error(data.error);
+      const { advertencias = [], ...revisado } = data;
+      await guardarArtefacto("impl_stack", { ...revisado, revision: advertencias });
+      await marcarCambio("impl_stack");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo guardar: Stack técnico");
       return false;
     } finally {
       setCargando(null);
@@ -2154,7 +2179,14 @@ export default function WorkspaceProyecto() {
               )}
             </ControlesPaso>
 
-            {artefactos.impl_stack && <FichaStack stack={artefactos.impl_stack} />}
+            {artefactos.impl_stack && (
+              <FichaStack
+                stack={artefactos.impl_stack}
+                editable={trabajable("impl_stack") && !bloqueado("impl_stack") && !ocupado}
+                guardando={generando("editar:impl_stack")}
+                onGuardar={guardarStackManual}
+              />
+            )}
 
             {artefactos.impl_stack && trabajable("impl_stack") && !bloqueado("impl_stack") && (
               <AmpliarConIA
