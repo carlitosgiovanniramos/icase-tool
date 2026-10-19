@@ -4,23 +4,16 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 ## Estado actual (19 de octubre de 2026)
 
-**Estamos cerrando la Etapa 4 (paso "Stack técnico").** La siguiente es la Etapa 5 (Estructura de carpetas).
+**Estamos en la Etapa 5 (paso "Estructura de carpetas").** La Etapa 4 quedó terminada con la ficha de stack técnico de bomberos aprobada.
 
 | Etapa | Estado |
 |---|---|
 | 1. Proyecto de referencia hecho a mano | Terminada |
 | 2. Base de la fase dentro de icase-tool | Terminada |
 | 3. Piezas del catálogo | Terminada |
-| **4. Paso "Stack técnico"** | **Construida. Falta que el usuario apruebe en la interfaz la ficha de bomberos** |
-| 5. Paso "Estructura de carpetas" | Siguiente |
+| 4. Paso "Stack técnico" | Terminada |
+| **5. Paso "Estructura de carpetas"** | **En curso** |
 | 6 a 11 | Pendientes |
-
-Para cerrar la Etapa 4, en la ficha de bomberos:
-
-1. agregar a mano `geolocator` (Flutter, ubicación GPS, RF06) e `image_picker` (Flutter, adjuntar imágenes, RF24);
-2. corregir el detalle de Realtime, que todavía menciona el tablero web descartado;
-3. que "Revisar antes de aprobar" quede vacío;
-4. aprobar la ficha.
 
 ## 1. Contexto
 
@@ -302,7 +295,7 @@ Comportamientos conocidos:
 
 ---
 
-### Etapa 4. Paso "Stack técnico" · Construida, en cierre
+### Etapa 4. Paso "Stack técnico" · Terminada
 
 **Objetivo:** decidir las tecnologías, las piezas y los contenedores del proyecto a partir del diseño aprobado.
 
@@ -385,7 +378,7 @@ Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y 
 - **Bomberos:** se descartó el tablero de métricas en tiempo real (RF22). Se quitó del Análisis, de los casos de uso, del diagrama de sistemas y de la explicación de la arquitectura con una edición directa, sin cascada. RNF06 quedó solo para la consulta histórica de partes.
 - **Servicios externos:** solo los del diseño aprobado; no se agregan en Implementación.
 
-**Terminado cuando:** la ficha está aprobada y determina qué piezas, contenedores y pasos lleva el proyecto.
+**Terminado cuando:** la ficha está aprobada y determina qué piezas, contenedores y pasos lleva el proyecto. Cumplido con bomberos: la ficha final quedó sin advertencias y aprobada. Antes se corrigieron la arquitectura (alta disponibilidad del Panel Web con balanceador; Realtime solo para la app) y la asignación de requerimientos del diagrama de sistemas (RF14, RF15, RF19, RNF03 a RNF06).
 
 ---
 
@@ -421,6 +414,7 @@ Al guardar, la ficha pasa por las mismas validaciones que la generada, sin IA y 
    - Con Supabase, además: migraciones y políticas RLS por rol.
 2. Generar datos de prueba realistas que respeten las claves foráneas.
 3. Validar en el contenedor de la base de datos; si hay error, mostrarlo y corregirlo con "Ampliar con IA" o regenerando.
+4. Resolver el cifrado en reposo cuando un requerimiento lo pida (en bomberos, RNF05: AES-256). Un PostgreSQL autoalojado no lo trae activado: hay que decidir entre cifrar el volumen de datos o las columnas sensibles (por ejemplo con pgsodium o pgcrypto).
 
 **Terminado cuando:** la base arranca con todas las tablas del ER, sus permisos y los datos de prueba, sin errores en los logs.
 
