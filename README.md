@@ -47,7 +47,7 @@ ANTHROPIC_API_KEY=tu_api_key_de_anthropic
 
 # Opcional: orden de modelos a probar (separados por comas)
 # GEMINI_MODELOS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview
-# GROQ_MODELOS=openai/gpt-oss-120b,openai/gpt-oss-20b
+# GROQ_MODELOS=openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b
 
 # Fase de Implementación: runner que ejecuta Docker (npm run runner). RUNNER_TOKEN es una
 # clave larga y aleatoria que comparten icase-tool y el runner.
