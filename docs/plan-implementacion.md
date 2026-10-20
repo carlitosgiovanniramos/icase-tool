@@ -58,6 +58,7 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí.
 - Gemini: 3.8 Flash primero, el más nuevo con cuota gratis.
 - Groq: `gpt-oss-120b`, `qwen/qwen3.8-27b` y `gpt-oss-20b`.
 - Claude es el único de pago y solo responde con el interruptor "Usar Claude".
+- En el log, "Google cortó la respuesta (saturación)" y "Google está saturado (503)" no son errores de icase-tool: se pasa al siguiente modelo. Groq no sirve de respaldo para los pasos de Implementación, porque sus prompts superan el límite de tokens por minuto del plan gratuito.
 - El usuario rechazó usar modelos de pago de Gemini (Gemini 4 Argon, los Pro). Al actualizar modelos, verificar con una llamada real que respondan con la clave gratuita: un 429 `RESOURCE_EXHAUSTED` inmediato significa que no tienen cuota gratis.
 
 ### Mapa de archivos
@@ -613,6 +614,11 @@ Lógica en `lib/bd.js`, ruta `/api/generar-bd`.
 #### En la interfaz
 
 - El paso está en `PASOS` con `archivos: true`. Se habilita con la estructura aprobada. Tiene generar, regenerar, indicaciones, aprobar, rechazar, editar y cascada. Al eliminarlo o rechazarlo, también se borra su código.
+- **Si la generación se corta** (la IA no responde o se cierra la pestaña):
+  - el avance queda guardado después de cada archivo, en la ficha marcada `incompleto` y con su `total`;
+  - el botón pasa a "Continuar base de datos (n/total)" y sigue desde el archivo que faltaba, sin repetir ni volver a pagar los anteriores;
+  - "Empezar de cero" regenera todo;
+  - si el paso quedó desactualizado por un cambio anterior, empieza de cero.
 - "Ampliar con IA" elige un archivo, aplica la instrucción y prueba de nuevo.
 - "Probar de nuevo" vuelve a aplicar todo desde cero. Si tuvo que corregir algo, el paso pierde la aprobación.
 - Con Claude se avisa el costo antes de generar: unos 10 centavos por archivo, más las correcciones.

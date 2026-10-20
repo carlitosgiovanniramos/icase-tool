@@ -824,7 +824,7 @@ export default function WorkspaceProyecto() {
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
-    if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto);
+    if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "prototipo") {
       const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
       if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
@@ -1044,8 +1044,7 @@ export default function WorkspaceProyecto() {
   }
 
   // Costo estimado de generar la base de datos con Claude (un archivo por petición).
-  function costoBD() {
-    const cantidad = archivosDeBaseDatos(artefactosRef.current.impl_estructura).length;
+  function costoBD(cantidad = archivosDeBaseDatos(artefactosRef.current.impl_estructura).length) {
     return `Costo estimado con Claude: ~$${(cantidad * COSTO_ARCHIVO_BD_CLAUDE).toFixed(2)} (${cantidad} archivos), más las correcciones si la prueba falla.`;
   }
 
@@ -1278,9 +1277,12 @@ export default function WorkspaceProyecto() {
     return generarPaso(clave, { costoConfirmado: true });
   }
 
-  async function generarPaso(clave, { costoConfirmado } = {}) {
+  // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
+  async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
-      const continuar = await confirmar(costoBD(), "¿Generar con Claude?", "Generar");
+      const ficha = artefactosRef.current.impl_bd;
+      const faltan = retomar && ficha?.incompleto ? ficha.total - ficha.archivos.length : undefined;
+      const continuar = await confirmar(costoBD(faltan), "¿Generar con Claude?", "Generar");
       if (!continuar) return;
     }
     if (clave === "prototipo" && !costoConfirmado) {
@@ -1294,6 +1296,7 @@ export default function WorkspaceProyecto() {
       const { valor, modelo, fallidas, detenido, advertencias } = await pedirPaso(clave, {
         onProgreso: progresoPantallas(clave),
         onTexto: (detalle) => setCargando({ paso: clave, detalle }),
+        retomar,
       });
       await guardarArtefacto(clave, valor);
       await marcarCambio(clave, {}, modelo);
@@ -1311,7 +1314,11 @@ export default function WorkspaceProyecto() {
         );
       }
     } catch (err) {
-      mostrarError(err.message, `No se pudo generar: ${PASO[clave].nombre}`);
+      const guardado = clave === "impl_bd" && artefactosRef.current.impl_bd?.incompleto;
+      mostrarError(
+        err.message + (guardado ? '\n\nLos archivos ya generados quedaron guardados: "Continuar" sigue desde el que falló.' : ""),
+        `No se pudo generar: ${PASO[clave].nombre}`
+      );
     } finally {
       setCargando(null);
     }
@@ -1611,11 +1618,16 @@ export default function WorkspaceProyecto() {
   // Aplica los archivos de la base desde cero en un proyecto aparte (no toca el que está
   // encendido). Si Docker o el runner no responden, la prueba queda sin hacer (ok: null).
   async function probarBaseDatos() {
-    const data = await pedirJson("/api/implementacion", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ proyectoId: id, accion: "probar-bd" }),
-    });
+    let data;
+    try {
+      data = await pedirJson("/api/implementacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proyectoId: id, accion: "probar-bd" }),
+      });
+    } catch (err) {
+      data = { error: err.message };
+    }
     if (data.error) {
       return { ok: null, fecha: new Date().toISOString(), error: data.error, advertencias: [`La base no se probó: ${data.error}`] };
     }
@@ -1634,13 +1646,14 @@ export default function WorkspaceProyecto() {
       const i = lista.findIndex((a) => a.ruta === prueba.archivo);
       if (i === -1) break;
       avisar(`Corrigiendo ${prueba.archivo.split("/").pop()}...`);
+      // Si la IA no responde, queda el error de la prueba para corregirlo después.
       const data = await pedirIA(PASO.impl_bd.ruta, {
         ...cuerpoBD(),
         archivo: prueba.archivo,
         anteriores: lista,
         actual: lista[i].contenido,
         error: prueba.error,
-      });
+      }).catch((err) => ({ error: err.message }));
       if (data.error) break;
       await guardarArchivoGenerado("impl_bd", data.ruta, data.contenido);
       lista[i] = { ...lista[i], contenido: data.contenido, advertencias: data.advertencias || [], corregido: true };
@@ -1650,6 +1663,22 @@ export default function WorkspaceProyecto() {
       prueba = await probarBaseDatos();
     }
     return { archivos: lista, prueba, corregidos, modelo };
+  }
+
+  // Archivos de una generación cortada que se pueden conservar: los de la ficha incompleta, con su
+  // código guardado y en el mismo orden que el plan actual.
+  async function archivosYaGenerados(plan) {
+    const ficha = artefactosRef.current.impl_bd;
+    // Desactualizada: lo generado salió de una versión anterior de los pasos previos.
+    if (!ficha?.incompleto || fasesRef.current.pendientes?.impl_bd === "desactualizado") return [];
+    const guardados = await leerArchivosDePaso("impl_bd");
+    const conservados = [];
+    for (const [i, a] of (ficha.archivos || []).entries()) {
+      const contenido = guardados.find((g) => g.ruta === a.ruta)?.contenido;
+      if (plan[i]?.ruta !== a.ruta || contenido == null) break;
+      conservados.push({ ruta: a.ruta, contenido, advertencias: a.advertencias || [] });
+    }
+    return conservados;
   }
 
   // Ficha guardada en proyectos.bd_implementacion (el código va en archivos_proyecto).
@@ -1672,18 +1701,29 @@ export default function WorkspaceProyecto() {
 
   // Genera las migraciones y los datos de prueba de la estructura, uno por petición y en orden
   // (cada uno con el código de los anteriores), y los prueba en contenedores.
-  async function generarBaseDatos(avisar = () => {}) {
+  // retomar: si la generación anterior se cortó (ficha "incompleta"), sigue desde el archivo que
+  // faltaba y conserva los ya generados, que se pagaron. Solo si siguen siendo el comienzo del
+  // plan actual; si no (cambió la estructura), empieza de cero.
+  async function generarBaseDatos(avisar = () => {}, { retomar = false } = {}) {
     const plan = archivosDeBaseDatos(artefactosRef.current.impl_estructura);
     if (!plan.length) throw new Error("La estructura de carpetas no tiene migraciones.");
-    const generados = [];
+    const generados = retomar ? await archivosYaGenerados(plan) : [];
     let modelo;
+    let marcado = false;
     for (const [i, a] of plan.entries()) {
+      if (i < generados.length) continue;
       avisar(`Generando ${i + 1}/${plan.length}: ${a.ruta.split("/").pop()}...`);
       const data = await pedirIA(PASO.impl_bd.ruta, { ...cuerpoBD(), archivo: a.ruta, anteriores: generados });
       if (data.error) throw new Error(`${a.ruta}: ${data.error}`);
       await guardarArchivoGenerado("impl_bd", a.ruta, data.contenido);
       generados.push({ ruta: a.ruta, contenido: data.contenido, advertencias: data.advertencias || [] });
       modelo = data.modelo_ia;
+      // El avance queda guardado: si la siguiente petición falla, "Continuar" sigue desde ahí.
+      await guardarArtefacto("impl_bd", { ...fichaBD(generados, null), incompleto: true, total: plan.length });
+      if (!marcado) {
+        await marcarCambio("impl_bd", {}, modelo, { silencioso: true });
+        marcado = true;
+      }
     }
     await borrarArchivosDePaso("impl_bd", plan.map((a) => a.ruta));
 
@@ -2242,6 +2282,8 @@ export default function WorkspaceProyecto() {
     impl_bd: !!fasesAprobadas.impl_estructura,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
+  // La generación de la base se cortó: se ofrece seguir desde el archivo que faltaba.
+  const bdIncompleta = !!artefactos.impl_bd?.incompleto && pendientes.impl_bd !== "desactualizado";
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   const hayDiseno = PASOS.some((p) => p.fase === "diseno" && artefactos[p.clave]);
 
@@ -2626,16 +2668,35 @@ export default function WorkspaceProyecto() {
                   onEditar={desbloquearPaso}
                   onCancelarEdicion={cancelarEdicion}
                 >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("impl_bd")}
-                    secundario={!!artefactos.impl_bd}
-                    disabled={ocupado}
-                    cargando={generando("impl_bd")}
-                    textoCargando={cargando?.detalle || "Generando..."}
-                    color={PALETA.marron}
-                  >
-                    {artefactos.impl_bd ? "Regenerar" : "Generar"} base de datos
-                  </BotonGenerar>
+                  {bdIncompleta ? (
+                    <>
+                      <BotonGenerar
+                        onClick={() => generarPaso("impl_bd", { retomar: true })}
+                        disabled={ocupado}
+                        cargando={generando("impl_bd")}
+                        textoCargando={cargando?.detalle || "Generando..."}
+                        color={PALETA.marron}
+                      >
+                        Continuar base de datos ({artefactos.impl_bd.archivos.length}/{artefactos.impl_bd.total})
+                      </BotonGenerar>
+                      {!generando("impl_bd") && (
+                        <BotonGenerar onClick={() => regenerarPaso("impl_bd")} secundario disabled={ocupado} color={PALETA.marron}>
+                          Empezar de cero
+                        </BotonGenerar>
+                      )}
+                    </>
+                  ) : (
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("impl_bd")}
+                      secundario={!!artefactos.impl_bd}
+                      disabled={ocupado}
+                      cargando={generando("impl_bd")}
+                      textoCargando={cargando?.detalle || "Generando..."}
+                      color={PALETA.marron}
+                    >
+                      {artefactos.impl_bd ? "Regenerar" : "Generar"} base de datos
+                    </BotonGenerar>
+                  )}
 
                   {artefactos.impl_bd && (
                     <BotonEliminar
@@ -2649,13 +2710,13 @@ export default function WorkspaceProyecto() {
                 {artefactos.impl_bd && (
                   <FichaBD
                     bd={artefactos.impl_bd}
-                    onProbar={trabajable("impl_bd") && !bloqueado("impl_bd") ? reprobarBD : undefined}
+                    onProbar={trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta ? reprobarBD : undefined}
                     probando={generando("probar:impl_bd")}
                     deshabilitado={ocupado}
                   />
                 )}
 
-                {artefactos.impl_bd && trabajable("impl_bd") && !bloqueado("impl_bd") && (
+                {artefactos.impl_bd && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta && (
                   <AmpliarBD
                     archivos={artefactos.impl_bd.archivos || []}
                     onEnviar={ampliarBD}
@@ -2664,7 +2725,7 @@ export default function WorkspaceProyecto() {
                   />
                 )}
 
-                {artefactos.impl_bd && trabajable("impl_bd") && (
+                {artefactos.impl_bd && trabajable("impl_bd") && !bdIncompleta && (
                   <div className="mt-4 flex items-center gap-3 flex-wrap">
                     <BotonAprobar
                       aprobado={!!fasesAprobadas.impl_bd}

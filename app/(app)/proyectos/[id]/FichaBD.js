@@ -11,8 +11,11 @@ import { Cobertura } from "./FichaEstructura";
 const fechaLocal = (iso) => (iso ? new Date(iso).toLocaleString("es", { dateStyle: "short", timeStyle: "short" }) : "");
 const si = (valor) => (valor === true ? "Sí" : valor === false ? "No" : "—");
 
-function EstadoPrueba({ prueba, onProbar, probando, deshabilitado }) {
-  const texto = !prueba
+// incompleta: { hechos, total } si la generación se cortó antes de terminar.
+function EstadoPrueba({ prueba, incompleta, onProbar, probando, deshabilitado }) {
+  const texto = incompleta
+    ? { titulo: `Incompleta: ${incompleta.hechos} de ${incompleta.total} archivos generados`, color: PALETA.naranjaOscuro }
+    : !prueba
     ? { titulo: "Sin probar", color: "#6b7280" }
     : prueba.ok
     ? { titulo: `Probada en contenedores · ${fechaLocal(prueba.fecha)}`, color: PALETA.oliva }
@@ -61,7 +64,10 @@ export default function FichaBD({ bd, onProbar, probando, deshabilitado }) {
         </div>
       )}
 
-      <EstadoPrueba prueba={prueba} onProbar={onProbar} probando={probando} deshabilitado={deshabilitado} />
+      <EstadoPrueba
+        prueba={prueba}
+        incompleta={bd.incompleto ? { hechos: archivos.length, total: bd.total } : null}
+        onProbar={onProbar} probando={probando} deshabilitado={deshabilitado} />
 
       {prueba?.ok === false && prueba.error && (
         <pre className="bg-gray-900 text-gray-100 text-xs p-3 max-h-64 overflow-auto whitespace-pre-wrap">{prueba.error}</pre>
