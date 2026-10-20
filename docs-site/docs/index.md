@@ -75,7 +75,7 @@ flowchart LR
 | **Documentación de usuario**: propósito, roles, acceso, funcionalidades, flujo por fases, generar/revisar/editar/exportar, capturas, caso de estudio, buenas entradas, errores comunes | Sección **Manual de usuario** |
 | **Documentación de API**: endpoints, método, parámetros, respuestas, códigos, ejemplos, autenticación, claves, límites, errores, integraciones externas | Sección **API** y [Referencia OpenAPI](/api/referencia) |
 | **Ingeniería de prompts y componente de IA**: por fase, artefacto, modelo y versión, plantilla de prompt, entrada y salida | Sección **IA y prompts** |
-| **Documentación para desarrolladores en GitHub**: `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, `CHANGELOG.md`, `SECURITY.md`, `docs/` | Repositorio y sección **Desarrolladores** |
+| **Documentación para desarrolladores en GitHub**: `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, `CHANGELOG.md`, `SECURITY.md` y la carpeta de documentación técnica (`docs-site/`) | Repositorio y sección **Desarrolladores**, que incluye el [plan de implementación](./desarrolladores/plan-implementacion) |
 
 ## Evidencias
 

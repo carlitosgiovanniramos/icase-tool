@@ -23,6 +23,7 @@ Primera parte de la **fase de Implementación** y documentación del proyecto.
 - Pasos de Implementación y secciones del stack **plegables**.
 
 ### Cambiado
+- Una sola carpeta de documentación: el plan de implementación pasó de `docs/` a `docs-site/docs/desarrolladores/` y se publica en `/docs`.
 - El generador de arquitectura elige tecnologías del catálogo implementable.
 - Log de IA más claro: "Google cortó la respuesta (saturación)" y "Google está saturado (503)".
 - Guía de Supabase con reglas de seguridad:

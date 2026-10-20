@@ -96,8 +96,7 @@ lib/          lógica: IA, prompts y validación de cada paso, armador de proyec
 plantillas/   catálogo de piezas de Implementación (Supabase, Next.js, Flutter, Express, PostgreSQL…)
 runner/       proceso local que ejecuta Docker
 supabase/     scripts SQL de la base de I-CASE Tool
-docs/         documentos internos (plan de la fase de Implementación)
-docs-site/    documentación (Docusaurus), servida en /docs
+docs-site/    documentación (Docusaurus), servida en /docs; incluye el plan de implementación
 ```
 
 ## Capturas
