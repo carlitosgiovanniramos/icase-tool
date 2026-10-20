@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "runner": "node --env-file=.env.local runner/index.mjs",
+    "all": "concurrently -k -n web,runner -c blue,magenta \"npm:dev\" \"npm:runner\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -19,10 +21,12 @@
     "pdf-parse": "^2.4.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "concurrently": "^10.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4"

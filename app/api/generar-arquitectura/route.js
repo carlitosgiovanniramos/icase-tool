@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { generarContenido } from "@/lib/gemini";
 import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
 import { PLATAFORMAS_SERVICIO } from "@/lib/plataformas";
+import { catalogo } from "@/lib/implementacion";
+import { catalogoParaDiseno, revisarTecnologiasArquitectura } from "@/lib/stack";
 
 export const maxDuration = 300;
 
@@ -84,12 +86,12 @@ const EJEMPLO_MONOLITO = `flowchart TD
 
 const EJEMPLO_MICRO = `flowchart TD
     subgraph CLIENTES["Clientes"]
-        WEB["Portal Web<br/>Vue"]
+        WEB["Portal Web<br/>React"]
     end
 
     subgraph BACKEND["Backend — Microservicios"]
         GATEWAY["API Gateway<br/>JWT"]
-        PRESTAMOS["Préstamos<br/>Go"]
+        PRESTAMOS["Préstamos<br/>Node.js"]
         CATALOGO["Catálogo<br/>Node.js"]
         AVISOS["Avisos<br/>WebSocket"]
         BROKER["Broker de mensajes<br/>RabbitMQ"]
@@ -97,7 +99,7 @@ const EJEMPLO_MICRO = `flowchart TD
 
     subgraph DATOS["Datos"]
         DB_PRE[("PostgreSQL<br/>Préstamos")]
-        DB_CAT[("MongoDB<br/>Catálogo")]
+        DB_CAT[("PostgreSQL<br/>Catálogo")]
     end
 
     WEB -->|"HTTPS/REST · JWT"| GATEWAY
@@ -107,7 +109,7 @@ const EJEMPLO_MICRO = `flowchart TD
     PRESTAMOS -->|"Eventos"| BROKER
     BROKER -->|"Eventos"| AVISOS
     PRESTAMOS -->|"SQL"| DB_PRE
-    CATALOGO -->|"API de documentos"| DB_CAT
+    CATALOGO -->|"SQL"| DB_CAT
 
     ${ESTILOS}
     class WEB cliente
@@ -353,6 +355,10 @@ export async function POST(request) {
 
     const a = analisis || {};
     const micro = estilo === "microservicios";
+    // Tecnologías que la fase de Implementación sabe construir (plantillas/): el diseño se limita
+    // a ellas, salvo las que ya eligió el cliente.
+    const fichas = await catalogo();
+    const textoCatalogo = catalogoParaDiseno(fichas);
     const plataforma = micro ? null : detectarPlataformaServicio(tecnologias);
     const maxNodos = micro ? MAX_NODOS_MICRO : MAX_NODOS;
     const maxFlechas = micro ? MAX_FLECHAS_MICRO : MAX_FLECHAS;
@@ -423,9 +429,10 @@ ${bloqueDatos}
 4. EXTERNOS["Servicios Externos"], solo si los requerimientos los piden de forma explícita (mapas, notificaciones push, correo o SMS, firma electrónica, sistemas de otras instituciones). "Pagos" o "caja" NO implican una pasarela de pagos: inclúyela solo si piden cobro en línea o integración con un proveedor de pagos. Si hay duda, no lo incluyas.
 
 TECNOLOGÍAS
+- Catálogo de tecnologías que la herramienta sabe implementar en contenedores: ${textoCatalogo}. Toda tecnología que propongas para los clientes, el backend y la base de datos debe ser de este catálogo (los servicios externos y el almacenamiento local del dispositivo no cuentan).
 ${tecnologias?.trim()
-  ? `- Usa EXACTAMENTE las tecnologías elegidas por el cliente (${tecnologias.trim()}). Si una capa no tiene tecnología definida, completa con la opción más común y compatible con el resto, y en la ÚLTIMA línea de "explicacion" escribe: "Tecnologías sugeridas (no definidas por el cliente): ..." con solo las que completaste.`
-  : `- El cliente no definió tecnologías: propón un stack común y coherente con las plataformas, con nombres reales de productos (un framework web concreto, un servidor o runtime concreto, un motor de base de datos concreto). En la ÚLTIMA línea de "explicacion" escribe: "Tecnologías sugeridas (no definidas por el cliente): ...".`}
+  ? `- Usa EXACTAMENTE las tecnologías elegidas por el cliente (${tecnologias.trim()}), aunque alguna no esté en el catálogo: es su decisión. Si una capa no tiene tecnología definida, complétala SOLO con una del catálogo, compatible con el resto, y en la ÚLTIMA línea de "explicacion" escribe: "Tecnologías sugeridas (no definidas por el cliente): ..." con solo las que completaste.`
+  : `- El cliente no definió tecnologías: propón un stack coherente con las plataformas usando SOLO tecnologías del catálogo, con su nombre real. En la ÚLTIMA línea de "explicacion" escribe: "Tecnologías sugeridas (no definidas por el cliente): ...".`}
 - PROHIBIDO usar categorías como si fueran tecnologías: "Framework Web", "REST API", "Servicio Auth", "Base de datos relacional", "Servidor de aplicaciones". Cada subtítulo debe ser un nombre propio (React, Node.js / Express, PostgreSQL...) o un mecanismo concreto (JWT, WebSocket).
 - Si todo el backend usa la misma tecnología, ponla UNA sola vez en el título del subgraph BACKEND. En cada módulo pon como subtítulo solo lo que lo distingue (JWT, WebSocket, Edge Functions) o un alcance corto (ej. "Cupos y horarios"), sin repetir la tecnología del servidor.
 - Si el backend es una plataforma como servicio (Supabase, Firebase, Appwrite), NO hay servidor propio: dentro de BACKEND van solo los servicios de la plataforma con su nombre real (Auth, API de datos, Realtime, funciones), nunca módulos de negocio; su base de datos y su almacenamiento de archivos van una sola vez, en DATOS; y el título es solo "Backend — <plataforma>".
@@ -488,12 +495,21 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adiciona
 `;
 
     const limites = { maxNodos, maxFlechas };
+    // Reglas del diagrama más las tecnologías del catálogo. Lo que eligió el cliente fuera del
+    // catálogo no se corrige: se informa como advertencia.
+    const revisar = (codigo, explicacion) => {
+      const catalogoRevisado = revisarTecnologiasArquitectura(codigo, fichas, tecnologias);
+      return {
+        problemas: [...validarDiagrama(codigo, limites, explicacion), ...catalogoRevisado.problemas],
+        avisos: catalogoRevisado.avisos,
+      };
+    };
 
     const inicial = await generar(instrucciones, usarClaude);
     let resultado = inicial.resultado;
     let response = inicial.response;
     let diagrama = limpiarMermaid(resultado.diagrama_mermaid);
-    let problemas = validarDiagrama(diagrama, limites, resultado.explicacion);
+    let { problemas, avisos } = revisar(diagrama, resultado.explicacion);
     let costo = response.costoUsd;
 
     // Un solo reintento: se le muestran a la IA los problemas concretos y su diagrama anterior.
@@ -512,13 +528,13 @@ Corrígelo cumpliendo TODAS las reglas y responde de nuevo con el mismo JSON.`,
           usarClaude
         );
         const diagramaNuevo = limpiarMermaid(reintento.resultado.diagrama_mermaid);
-        const problemasNuevos = validarDiagrama(diagramaNuevo, limites, reintento.resultado.explicacion);
+        const revisionNueva = revisar(diagramaNuevo, reintento.resultado.explicacion);
         costo = sumar(costo, reintento.response.costoUsd);
-        if (problemasNuevos.length <= problemas.length) {
+        if (revisionNueva.problemas.length <= problemas.length) {
           resultado = reintento.resultado;
           response = reintento.response;
           diagrama = diagramaNuevo;
-          problemas = problemasNuevos;
+          ({ problemas, avisos } = revisionNueva);
         }
       } catch {
         // Si el reintento falla, se conserva el primer resultado.
@@ -528,7 +544,7 @@ Corrígelo cumpliendo TODAS las reglas y responde de nuevo con el mismo JSON.`,
     return NextResponse.json({
       ...resultado,
       diagrama_mermaid: diagrama,
-      advertencias: problemas,
+      advertencias: [...problemas, ...avisos],
       modelo_ia: response.modelVersion,
       costo_ia: costo,
     });

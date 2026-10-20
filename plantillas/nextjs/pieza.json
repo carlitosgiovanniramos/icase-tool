@@ -1,0 +1,36 @@
+{
+  "nombre": "nextjs",
+  "titulo": "Next.js",
+  "capa": "web",
+  "reconoce": [
+    "next.js",
+    "nextjs"
+  ],
+  "servicios": {
+    "web": "Panel web (Next.js)"
+  },
+  "integraciones": [
+    "supabase"
+  ],
+  "altaDisponibilidad": {
+    "servicio": "web",
+    "puerto": 3000,
+    "variablePuerto": "WEB_PORT"
+  },
+  "variables": {
+    "WEB_PORT": "3000"
+  },
+  "enlaces": {
+    "WEB_PORT": "Web"
+  },
+  "registro": "npm",
+  "librerias": {
+    "supabase": [
+      {
+        "nombre": "@supabase/supabase-js",
+        "motivo": "Cliente de Supabase: API de datos, Auth, Realtime y Storage (lo usan los archivos fijos de la pieza)"
+      }
+    ]
+  },
+  "carpeta": "web"
+}

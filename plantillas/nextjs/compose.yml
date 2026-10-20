@@ -1,0 +1,16 @@
+# Panel web en Next.js (salida standalone). La app debe responder GET /api/salud (archivo fijo de
+# la pieza): lo usan el healthcheck y, con alta disponibilidad, el balanceador.
+services:
+  web:
+    build:
+      context: ./web
+    restart: unless-stopped
+    environment:
+      INSTANCIA: web
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/salud || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${WEB_PORT:-3000}:3000"

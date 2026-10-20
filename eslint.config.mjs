@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Archivos de los proyectos generados: no forman parte de la app de icase-tool.
+    "plantillas/**",
   ]),
 ]);
 

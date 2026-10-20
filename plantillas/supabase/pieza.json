@@ -1,0 +1,77 @@
+{
+  "nombre": "supabase",
+  "titulo": "Supabase",
+  "capa": "backend",
+  "reconoce": [
+    "supabase",
+    "postgrest",
+    "gotrue",
+    "edge functions",
+    "supabase storage",
+    "supabase realtime"
+  ],
+  "incluye": [
+    "postgres"
+  ],
+  "descripcion": "Supabase autoalojado: corre en los contenedores del proyecto, no es el servicio en la nube de Supabase. No tiene alta disponibilidad propia. Las Edge Functions corren en Deno.",
+  "servicios": {
+    "db": "PostgreSQL de Supabase",
+    "api-gw": "Puerta de entrada (Envoy)",
+    "rest": "API de datos (PostgREST)",
+    "migraciones": "Tarea de un solo uso: aplica las tablas del proyecto",
+    "auth": "Autenticación (GoTrue)",
+    "realtime": "Realtime (WebSocket)",
+    "storage": "Storage (archivos)",
+    "functions": "Edge Functions (Deno)"
+  },
+  "opcionales": {
+    "auth": [
+      "auth",
+      "autenticacion",
+      "jwt",
+      "gotrue",
+      "inicio de sesion"
+    ],
+    "realtime": [
+      "realtime",
+      "websocket",
+      "tiempo real"
+    ],
+    "storage": [
+      "storage",
+      "archivos",
+      "adjuntos"
+    ],
+    "functions": [
+      "edge functions",
+      "functions",
+      "funciones",
+      "deno"
+    ]
+  },
+  "variables": {
+    "POSTGRES_PASSWORD": "{{secreto:hex:16}}",
+    "JWT_SECRET": "{{secreto:base64:30}}",
+    "ANON_KEY": "{{jwt:anon}}",
+    "SERVICE_ROLE_KEY": "{{jwt:service_role}}",
+    "SECRET_KEY_BASE": "{{secreto:base64:48}}",
+    "REALTIME_DB_ENC_KEY": "{{secreto:hex:8}}",
+    "DASHBOARD_PASSWORD": "{{secreto:hex:16}}",
+    "SUPABASE_PORT": "8000"
+  },
+  "enlaces": {
+    "SUPABASE_PORT": "API de Supabase"
+  },
+  "registro": "deno",
+  "incompatibles": {
+    "firebase-admin": "es para Node.js; en Deno, llama a la API HTTP v1 de Firebase con fetch y firma el token de la cuenta de servicio (por ejemplo con jsr:@panva/jose)"
+  },
+  "carpeta": "supabase",
+  "bd": {
+    "servicio": "migraciones",
+    "modo": "tarea",
+    "rls": true,
+    "usuarios": "auth.users",
+    "conexion": { "usuario": "postgres", "baseDatos": "postgres" }
+  }
+}

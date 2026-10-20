@@ -1,0 +1,9 @@
+# Vista previa web de la app Flutter, compilada con la imagen oficial de Flutter y servida por
+# nginx. La app real se ejecuta en el celular o el emulador con flutter run (ver README).
+services:
+  movil:
+    build:
+      context: ./movil
+    restart: unless-stopped
+    ports:
+      - "${MOVIL_PORT:-8090}:80"

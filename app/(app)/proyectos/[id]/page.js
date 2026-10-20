@@ -31,6 +31,11 @@ import ArbolNavegacion from "./ArbolNavegacion";
 import InformeProyecto from "./InformeProyecto";
 import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
+import ImplementacionFase from "./ImplementacionFase";
+import FichaStack from "./FichaStack";
+import FichaEstructura from "./FichaEstructura";
+import FichaBD from "./FichaBD";
+import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
@@ -289,6 +294,36 @@ function AmpliarPrototipo({ pantallas, plataformas, onModificar, onAgregar, carg
   );
 }
 
+// "Ampliar con IA" de la base de datos: cambia el archivo elegido y lo prueba de nuevo.
+function AmpliarBD({ archivos, onEnviar, cargando, deshabilitado }) {
+  const [ruta, setRuta] = useState("");
+  const elegida = archivos.some((a) => a.ruta === ruta) ? ruta : archivos[0]?.ruta;
+  return (
+    <AmpliarConIA
+      descripcion="Elige el archivo y describe qué agregar o cambiar. Al aplicarlo se prueba de nuevo."
+      ejemplo="Ej: agrega un índice por fecha y permite al administrador ver todos los registros"
+      onEnviar={(instruccion) => onEnviar(elegida, instruccion)}
+      cargando={cargando}
+      deshabilitado={deshabilitado}
+      incompleto={!elegida}
+      extra={
+        <select
+          value={elegida || ""}
+          onChange={(e) => setRuta(e.target.value)}
+          disabled={deshabilitado}
+          className="h-9 mb-2 max-w-full border border-gray-300 bg-white px-2 text-sm font-mono text-gray-800 focus:outline-none focus:border-gray-900"
+        >
+          {archivos.map((a) => (
+            <option key={a.ruta} value={a.ruta}>
+              {a.ruta}
+            </option>
+          ))}
+        </select>
+      }
+    />
+  );
+}
+
 // Ejemplo del recuadro "Ampliar con IA" de cada diagrama.
 const EJEMPLO_AMPLIAR = {
   casos_uso: "Ej: agrega el caso de uso Exportar reporte para el Administrador",
@@ -535,6 +570,11 @@ async function renderizar(codigo) {
 
 const SIN_ARTEFACTOS = Object.fromEntries(PASOS.map((p) => [p.clave, null]));
 
+// Base de datos: correcciones automáticas tras la prueba en contenedores (cada una muestra el
+// error siguiente) y costo estimado por archivo con Claude, para avisar antes de generar.
+const CORRECCIONES_BD = 3;
+const COSTO_ARCHIVO_BD_CLAUDE = 0.1;
+
 // Plataformas por defecto del prototipo: las del contexto del análisis que aplican (Web/Móvil).
 function plataformasDePrototipo(contexto) {
   const aplicables = (contexto?.plataformas || []).filter((p) => p === "Web" || p === "Móvil");
@@ -564,7 +604,7 @@ export default function WorkspaceProyecto() {
   const [fasesAprobadas, setFasesAprobadas] = useState({});
   const [cargando, setCargando] = useState(null); // { paso, modo } generación manual en curso
   const [progreso, setProgreso] = useState(null); // { indice, total, nombre } cascada en curso
-  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "informe"
+  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "implementacion" | "informe"
 
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
@@ -730,9 +770,61 @@ export default function WorkspaceProyecto() {
 
   // ---------- Generación ----------
 
+  // Lo que recibe el paso "Stack técnico": el diseño aprobado (arquitectura y sistemas) y las
+  // tecnologías y plataformas del contexto.
+  function cuerpoStack() {
+    const a = artefactosRef.current;
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      diagramaArquitectura: a.arquitectura,
+      diagramaSistema: a.sistema,
+      tecnologias: contextoRef.current.tecnologias,
+      plataformas: contextoRef.current.prototipo?.plataformas || plataformasDePrototipo(contextoRef.current),
+    };
+  }
+
+  // Lo que recibe el paso "Estructura de carpetas": el stack aprobado y todo el diseño. Del
+  // prototipo van solo el nombre, la plataforma y los RF de cada pantalla, no su HTML.
+  function cuerpoEstructura() {
+    const a = artefactosRef.current;
+    const { contenedores, componentes, titulos, revision, ...stack } = a.impl_stack || {};
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      stack,
+      diagramaER: a.er,
+      diagramaClases: a.clases,
+      arbol: a.arbol,
+      diagramaSistema: a.sistema,
+      pantallas: (a.prototipo || []).map((p) => ({ nombre: p.nombre, plataforma: p.plataforma || "Web", rfs: p.rfs || [] })),
+    };
+  }
+
+  // Lo que recibe cada archivo del paso "Base de datos": el stack, el diseño de los datos y, de la
+  // estructura, solo los archivos de la base (migraciones y datos de prueba).
+  function cuerpoBD() {
+    const a = artefactosRef.current;
+    const { contenedores, componentes, titulos, revision, ...stack } = a.impl_stack || {};
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      stack,
+      estructura: { archivos: archivosDeBaseDatos(a.impl_estructura) },
+      diagramaER: a.er,
+      diagramaClases: a.clases,
+      indicaciones: contextoRef.current.indicaciones?.impl_bd,
+    };
+  }
+
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
+  // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
+    if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "prototipo") {
       const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
       if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
@@ -817,6 +909,8 @@ export default function WorkspaceProyecto() {
         // Las áreas de presentación salen de las pantallas reales de cada plataforma.
         arbolNavegacion: a.arbol,
       },
+      impl_stack: cuerpoStack(),
+      impl_estructura: cuerpoEstructura(),
     };
 
     const data = await pedirIA(PASO[clave].ruta, { ...cuerpos[clave], indicaciones });
@@ -827,6 +921,12 @@ export default function WorkspaceProyecto() {
       // Las advertencias de la revisión se muestran, pero no forman parte del análisis guardado.
       const { advertencias = [], ...analisis } = resto;
       return { valor: analisis, modelo, advertencias };
+    }
+    if (clave === "impl_stack" || clave === "impl_estructura") {
+      // Lo que la validación no pudo corregir queda en la ficha ("revision") para revisarlo antes
+      // de aprobar, y también se muestra al generar.
+      const { advertencias = [], ...ficha } = resto;
+      return { valor: { ...ficha, revision: advertencias }, modelo, advertencias };
     }
     // Se guarda ya limpio, para que los pasos siguientes reciban código válido. Cada ruta devuelve
     // diagrama_plantuml o diagrama_mermaid según el motor del paso. Si la IA devolvió una
@@ -941,6 +1041,11 @@ export default function WorkspaceProyecto() {
       "¿Generar con Claude?",
       "Generar"
     );
+  }
+
+  // Costo estimado de generar la base de datos con Claude (un archivo por petición).
+  function costoBD(cantidad = archivosDeBaseDatos(artefactosRef.current.impl_estructura).length) {
+    return `Costo estimado con Claude: ~$${(cantidad * COSTO_ARCHIVO_BD_CLAUDE).toFixed(2)} (${cantidad} archivos), más las correcciones si la prueba falla.`;
   }
 
   // lote: generación de varias pantallas (muestra el botón "Detener").
@@ -1105,11 +1210,13 @@ export default function WorkspaceProyecto() {
         delete f.fasesPrevias;
         delete f.aprobacionesPrevias;
       }
-      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno };
-      // Un cambio en una subfase quita también la aprobación general de su fase. El Diseño
-      // depende de todo lo anterior, así que cualquier cambio le quita la aprobación.
-      if (!clave || PASO[clave].fase === "analisis") f.analisis = false;
-      f.diseno = false;
+      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno, implementacion: !!f.implementacion };
+      // Un cambio en una subfase quita también la aprobación general de su fase y de las que
+      // vienen después (cada fase depende de las anteriores, nunca de las siguientes).
+      const fase = clave ? PASO[clave].fase : "analisis";
+      if (fase === "analisis") f.analisis = false;
+      if (fase !== "implementacion") f.diseno = false;
+      f.implementacion = false;
       for (const p of clave ? pasosDespuesDe(clave) : PASOS) {
         if (artefactosRef.current[p.clave] && f.pendientes[p.clave] !== "desactualizado") {
           // Sin valor registrado: en el Análisis cuenta la fase (proyectos anteriores a las
@@ -1164,12 +1271,20 @@ export default function WorkspaceProyecto() {
         `\n\nCosto estimado con Claude: ~$${(cantidad * porPantalla).toFixed(2)} (${cantidad} pantallas).`
       );
     }
+    if (clave === "impl_bd" && claudeActivo()) partes.push(`\n\n${costoBD()}`);
 
     if (!(await confirmar(partes.join(" "), `¿Regenerar ${nombre}?`, "Regenerar"))) return;
     return generarPaso(clave, { costoConfirmado: true });
   }
 
-  async function generarPaso(clave, { costoConfirmado } = {}) {
+  // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
+  async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
+    if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
+      const ficha = artefactosRef.current.impl_bd;
+      const faltan = retomar && ficha?.incompleto ? ficha.total - ficha.archivos.length : undefined;
+      const continuar = await confirmar(costoBD(faltan), "¿Generar con Claude?", "Generar");
+      if (!continuar) return;
+    }
     if (clave === "prototipo" && !costoConfirmado) {
       const cantidad = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo)
         .length;
@@ -1180,6 +1295,8 @@ export default function WorkspaceProyecto() {
     try {
       const { valor, modelo, fallidas, detenido, advertencias } = await pedirPaso(clave, {
         onProgreso: progresoPantallas(clave),
+        onTexto: (detalle) => setCargando({ paso: clave, detalle }),
+        retomar,
       });
       await guardarArtefacto(clave, valor);
       await marcarCambio(clave, {}, modelo);
@@ -1197,7 +1314,11 @@ export default function WorkspaceProyecto() {
         );
       }
     } catch (err) {
-      mostrarError(err.message, `No se pudo generar: ${PASO[clave].nombre}`);
+      const guardado = clave === "impl_bd" && artefactosRef.current.impl_bd?.incompleto;
+      mostrarError(
+        err.message + (guardado ? '\n\nLos archivos ya generados quedaron guardados: "Continuar" sigue desde el que falló.' : ""),
+        `No se pudo generar: ${PASO[clave].nombre}`
+      );
     } finally {
       setCargando(null);
     }
@@ -1220,12 +1341,15 @@ export default function WorkspaceProyecto() {
                 nombre: `${p.nombre} (pantalla ${j + 1}/${total}: ${pantalla})`,
                 detenible: true,
               }),
+            onTexto: (texto) =>
+              setProgreso({ indice: i, total: pasos.length, nombre: `${p.nombre} (${texto.replace(/.+$/, "")})` }),
           });
           await guardarArtefacto(p.clave, valor);
           await guardarFases((f) => {
             f[p.aprobacion] = false;
             if (p.fase === "analisis") f.analisis = false;
-            f.diseno = false;
+            if (p.fase !== "implementacion") f.diseno = false;
+            f.implementacion = false;
             f.pendientes[p.clave] = "revision";
             if (modelo) f.modelos[p.clave] = modelo;
             return f;
@@ -1404,12 +1528,317 @@ export default function WorkspaceProyecto() {
     await actualizarEnCascada(PASOS.filter((p) => p.fase === "diseno"));
   }
 
-  // Aprobación general de la fase de Diseño: requiere todas sus subfases aprobadas.
+  // Aprobación general de la fase de Diseño: requiere todas sus subfases aprobadas y habilita la
+  // Implementación (actualizándola en cascada si quedó desactualizada).
   async function aprobarFaseDiseno() {
     await guardarFases((f) => {
       f.diseno = true;
       return f;
     });
+    await actualizarEnCascada(PASOS.filter((p) => p.fase === "implementacion"));
+  }
+
+  // "Ampliar con IA" del stack técnico: la IA modifica la ficha actual según la instrucción.
+  async function ampliarStack(instruccion) {
+    setCargando({ paso: "ampliar:impl_stack" });
+    try {
+      // Contenedores, componentes y la revisión los calcula el código, no la IA: no se le envían.
+      const { contenedores, componentes, titulos, revision, ...actual } = artefactosRef.current.impl_stack;
+      const data = await pedirIA(PASO.impl_stack.ruta, { ...cuerpoStack(), actual, instruccion });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia: modelo, advertencias = [], ...stack } = data;
+      await guardarArtefacto("impl_stack", { ...stack, revision: advertencias });
+      await marcarCambio("impl_stack", {}, modelo);
+      if (advertencias.length) mostrarInfo(textoAdvertencias(advertencias), "Stack técnico: revisa antes de aprobar");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar: Stack técnico");
+      return false;
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // "Ampliar con IA" de la estructura de carpetas: cada pieza aplica la instrucción a su lista.
+  async function ampliarEstructura(instruccion) {
+    setCargando({ paso: "ampliar:impl_estructura" });
+    try {
+      const actual = { archivos: artefactosRef.current.impl_estructura?.archivos || [] };
+      const data = await pedirIA(PASO.impl_estructura.ruta, { ...cuerpoEstructura(), actual, instruccion });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia: modelo, advertencias = [], ...estructura } = data;
+      await guardarArtefacto("impl_estructura", { ...estructura, revision: advertencias });
+      await marcarCambio("impl_estructura", {}, modelo);
+      if (advertencias.length) mostrarInfo(textoAdvertencias(advertencias), "Estructura de carpetas: revisa antes de aprobar");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar: Estructura de carpetas");
+      return false;
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // ---------- Base de datos ----------
+
+  // Código generado de un paso con archivos (archivos_proyecto): se guarda cada archivo apenas
+  // se genera, así un corte no pierde lo que ya se pagó.
+  // estado: "generado" (por la IA) o "editado" (a mano en el explorador).
+  async function guardarArchivoGenerado(clave, ruta, contenido, estado = "generado") {
+    const { error } = await supabase.from("archivos_proyecto").upsert(
+      { proyecto_id: id, ruta, contenido, paso: clave, estado, hash: hashCodigo(contenido), actualizado_en: new Date().toISOString() },
+      { onConflict: "proyecto_id,ruta" }
+    );
+    if (error) {
+      throw new Error(
+        /archivos_proyecto/.test(error.message)
+          ? "Falta la tabla archivos_proyecto: ejecuta supabase/archivos_proyecto.sql en el SQL Editor."
+          : `No se pudo guardar ${ruta}: ${error.message}`
+      );
+    }
+  }
+
+  // Borra el código de un paso, salvo las rutas de "conservar".
+  async function borrarArchivosDePaso(clave, conservar = []) {
+    let consulta = supabase.from("archivos_proyecto").delete().eq("proyecto_id", id).eq("paso", clave);
+    if (conservar.length) consulta = consulta.not("ruta", "in", `(${conservar.map((r) => `"${r}"`).join(",")})`);
+    const { error } = await consulta;
+    if (error) console.warn(`No se pudieron borrar los archivos de ${clave}:`, error.message);
+  }
+
+  async function leerArchivosDePaso(clave) {
+    const { data, error } = await supabase
+      .from("archivos_proyecto")
+      .select("ruta, contenido")
+      .eq("proyecto_id", id)
+      .eq("paso", clave);
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Aplica los archivos de la base desde cero en un proyecto aparte (no toca el que está
+  // encendido). Si Docker o el runner no responden, la prueba queda sin hacer (ok: null).
+  async function probarBaseDatos() {
+    let data;
+    try {
+      data = await pedirJson("/api/implementacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proyectoId: id, accion: "probar-bd" }),
+      });
+    } catch (err) {
+      data = { error: err.message };
+    }
+    // Una prueba hecha trae "ok" (y, si falló, su "error" de PostgreSQL); sin "ok", no se pudo probar.
+    if (data.ok === undefined) {
+      const error = data.error || "El servidor respondió sin resultado.";
+      return { ok: null, fecha: new Date().toISOString(), error, advertencias: [`La base no se probó: ${error}`] };
+    }
+    return data;
+  }
+
+  // Prueba y, si un archivo falla al aplicarse, lo corrige con el error (hasta CORRECCIONES_BD
+  // veces: cada corrección deja ver el error siguiente). archivos: [{ ruta, contenido, ... }].
+  async function probarYCorregir(archivos, avisar = () => {}) {
+    const lista = [...archivos];
+    let corregidos = 0;
+    let modelo;
+    avisar("Probando en contenedores...");
+    let prueba = await probarBaseDatos();
+    while (prueba.ok === false && prueba.archivo && corregidos < CORRECCIONES_BD) {
+      const i = lista.findIndex((a) => a.ruta === prueba.archivo);
+      if (i === -1) break;
+      avisar(`Corrigiendo ${prueba.archivo.split("/").pop()}...`);
+      // Si la IA no responde, queda el error de la prueba para corregirlo después.
+      const data = await pedirIA(PASO.impl_bd.ruta, {
+        ...cuerpoBD(),
+        archivo: prueba.archivo,
+        anteriores: lista,
+        actual: lista[i].contenido,
+        error: prueba.error,
+      }).catch((err) => ({ error: err.message }));
+      if (data.error) break;
+      await guardarArchivoGenerado("impl_bd", data.ruta, data.contenido);
+      lista[i] = { ...lista[i], contenido: data.contenido, advertencias: data.advertencias || [], corregido: true };
+      modelo = data.modelo_ia;
+      corregidos++;
+      avisar("Probando en contenedores...");
+      prueba = await probarBaseDatos();
+    }
+    return { archivos: lista, prueba, corregidos, modelo };
+  }
+
+  // Archivos de una generación cortada que se pueden conservar: los de la ficha incompleta, con su
+  // código guardado y en el mismo orden que el plan actual.
+  async function archivosYaGenerados(plan) {
+    const ficha = artefactosRef.current.impl_bd;
+    // Desactualizada: lo generado salió de una versión anterior de los pasos previos.
+    if (!ficha?.incompleto || fasesRef.current.pendientes?.impl_bd === "desactualizado") return [];
+    const guardados = await leerArchivosDePaso("impl_bd");
+    const conservados = [];
+    for (const [i, a] of (ficha.archivos || []).entries()) {
+      const contenido = guardados.find((g) => g.ruta === a.ruta)?.contenido;
+      if (plan[i]?.ruta !== a.ruta || contenido == null) break;
+      conservados.push({ ruta: a.ruta, contenido, advertencias: a.advertencias || [] });
+    }
+    return conservados;
+  }
+
+  // Ficha guardada en proyectos.bd_implementacion (el código va en archivos_proyecto).
+  function fichaBD(archivos, prueba) {
+    const plan = archivosDeBaseDatos(artefactosRef.current.impl_estructura);
+    const lista = archivos.map(({ ruta, contenido, advertencias = [], corregido, editado }) => ({
+      ruta,
+      lineas: contenido.trimEnd().split("\n").length,
+      tablas: plan.find((a) => a.ruta === ruta)?.tablas || [],
+      advertencias,
+      ...(corregido ? { corregido } : {}),
+      ...(editado ? { editado } : {}),
+    }));
+    return {
+      archivos: lista,
+      prueba,
+      revision: [...lista.flatMap((a) => a.advertencias.map((x) => `${a.ruta}: ${x}`)), ...(prueba?.advertencias || [])],
+      actualizado: new Date().toISOString(),
+    };
+  }
+
+  // Genera las migraciones y los datos de prueba de la estructura, uno por petición y en orden
+  // (cada uno con el código de los anteriores), y los prueba en contenedores.
+  // retomar: si la generación anterior se cortó (ficha "incompleta"), sigue desde el archivo que
+  // faltaba y conserva los ya generados, que se pagaron. Solo si siguen siendo el comienzo del
+  // plan actual; si no (cambió la estructura), empieza de cero.
+  async function generarBaseDatos(avisar = () => {}, { retomar = false } = {}) {
+    const plan = archivosDeBaseDatos(artefactosRef.current.impl_estructura);
+    if (!plan.length) throw new Error("La estructura de carpetas no tiene migraciones.");
+    const generados = retomar ? await archivosYaGenerados(plan) : [];
+    let modelo;
+    let marcado = false;
+    for (const [i, a] of plan.entries()) {
+      if (i < generados.length) continue;
+      avisar(`Generando ${i + 1}/${plan.length}: ${a.ruta.split("/").pop()}...`);
+      const data = await pedirIA(PASO.impl_bd.ruta, { ...cuerpoBD(), archivo: a.ruta, anteriores: generados });
+      if (data.error) throw new Error(`${a.ruta}: ${data.error}`);
+      await guardarArchivoGenerado("impl_bd", a.ruta, data.contenido);
+      generados.push({ ruta: a.ruta, contenido: data.contenido, advertencias: data.advertencias || [] });
+      modelo = data.modelo_ia;
+      // El avance queda guardado: si la siguiente petición falla, "Continuar" sigue desde ahí.
+      await guardarArtefacto("impl_bd", { ...fichaBD(generados, null), incompleto: true, total: plan.length });
+      if (!marcado) {
+        await marcarCambio("impl_bd", {}, modelo, { silencioso: true });
+        marcado = true;
+      }
+    }
+    await borrarArchivosDePaso("impl_bd", plan.map((a) => a.ruta));
+
+    const resultado = await probarYCorregir(generados, avisar);
+    const valor = fichaBD(resultado.archivos, resultado.prueba);
+    return { valor, modelo: resultado.modelo || modelo, advertencias: valor.revision };
+  }
+
+  // "Probar de nuevo": aplica los archivos actuales desde cero. Si tuvo que corregir alguno, es
+  // un cambio del paso (pierde la aprobación); si no, solo se actualiza el resultado.
+  async function reprobarBD() {
+    setCargando({ paso: "probar:impl_bd" });
+    try {
+      const guardados = await leerArchivosDePaso("impl_bd");
+      const actuales = (artefactosRef.current.impl_bd?.archivos || [])
+        .map((a) => ({ ...a, contenido: guardados.find((g) => g.ruta === a.ruta)?.contenido }))
+        .filter((a) => a.contenido != null);
+      const { archivos, prueba, corregidos, modelo } = await probarYCorregir(actuales);
+      const valor = fichaBD(archivos, prueba);
+      await guardarArtefacto("impl_bd", valor);
+      if (corregidos) await marcarCambio("impl_bd", {}, modelo);
+      if (valor.revision.length) mostrarInfo(textoAdvertencias(valor.revision), "Base de datos: revisa antes de aprobar");
+    } catch (err) {
+      mostrarError(err.message, "No se pudo probar: Base de datos");
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // Edición a mano de un archivo de la base desde el explorador. Como toda edición, el paso pierde
+  // la aprobación; la prueba anterior ya no vale y queda pendiente ("Probar de nuevo").
+  async function guardarArchivoEditado(archivo, contenido) {
+    try {
+      const ficha = artefactosRef.current.impl_bd;
+      if (archivo.paso !== "impl_bd" || !ficha) throw new Error("Este archivo no se puede editar.");
+      await guardarArchivoGenerado("impl_bd", archivo.ruta, contenido, "editado");
+      const archivos = ficha.archivos.map((a) =>
+        a.ruta === archivo.ruta ? { ...a, lineas: contenido.trimEnd().split("\n").length, advertencias: [], editado: true } : a
+      );
+      const aviso = "Hay cambios hechos a mano sin probar: pulsa Probar de nuevo.";
+      await guardarArtefacto("impl_bd", {
+        ...ficha,
+        archivos,
+        prueba: { ok: null, fecha: new Date().toISOString(), error: "cambios sin probar", advertencias: [aviso] },
+        revision: [...archivos.flatMap((a) => (a.advertencias || []).map((x) => `${a.ruta}: ${x}`)), aviso],
+        actualizado: new Date().toISOString(),
+      });
+      await marcarCambio("impl_bd");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, `No se pudo guardar ${archivo.ruta}`);
+      return false;
+    }
+  }
+
+  // "Ampliar con IA" de la base de datos: la IA modifica el archivo elegido y se prueba de nuevo.
+  async function ampliarBD(ruta, instruccion) {
+    setCargando({ paso: "ampliar:impl_bd" });
+    try {
+      const guardados = await leerArchivosDePaso("impl_bd");
+      const actuales = (artefactosRef.current.impl_bd?.archivos || [])
+        .map((a) => ({ ...a, contenido: guardados.find((g) => g.ruta === a.ruta)?.contenido }))
+        .filter((a) => a.contenido != null);
+      const i = actuales.findIndex((a) => a.ruta === ruta);
+      if (i === -1) throw new Error(`No se encontró el código de ${ruta}: genera la base de datos de nuevo.`);
+      const data = await pedirIA(PASO.impl_bd.ruta, {
+        ...cuerpoBD(),
+        archivo: ruta,
+        anteriores: actuales,
+        actual: actuales[i].contenido,
+        instruccion,
+      });
+      if (data.error) throw new Error(data.error);
+      await guardarArchivoGenerado("impl_bd", ruta, data.contenido);
+      actuales[i] = { ...actuales[i], contenido: data.contenido, advertencias: data.advertencias || [], corregido: false };
+      const resultado = await probarYCorregir(actuales);
+      const valor = fichaBD(resultado.archivos, resultado.prueba);
+      await guardarArtefacto("impl_bd", valor);
+      await marcarCambio("impl_bd", {}, resultado.modelo || data.modelo_ia);
+      if (valor.revision.length) mostrarInfo(textoAdvertencias(valor.revision), "Base de datos: revisa antes de aprobar");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar: Base de datos");
+      return false;
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // Edición manual de la ficha del stack (librerías, servicios externos, avisos): pasa por las
+  // mismas validaciones que la generada, sin IA, y como toda edición quita la aprobación del paso.
+  async function guardarStackManual(nuevo) {
+    setCargando({ paso: "editar:impl_stack" });
+    try {
+      const { contenedores, componentes, titulos, revision, ...stack } = nuevo;
+      const data = await pedirJson("/api/revisar-stack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cuerpoStack(), stack }),
+      });
+      if (data.error) throw new Error(data.error);
+      const { advertencias = [], ...revisado } = data;
+      await guardarArtefacto("impl_stack", { ...revisado, revision: advertencias });
+      await marcarCambio("impl_stack");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo guardar: Stack técnico");
+      return false;
+    } finally {
+      setCargando(null);
+    }
   }
 
   // ---------- Datos del proyecto ----------
@@ -1491,6 +1920,8 @@ export default function WorkspaceProyecto() {
         );
       f.analisis = (f.fasesPrevias?.analisis ?? true) && faseCompleta("analisis");
       f.diseno = (f.fasesPrevias?.diseno ?? true) && faseCompleta("diseno");
+      // La Implementación solo vuelve a quedar aprobada si ya lo estaba (su aprobación general es explícita).
+      f.implementacion = !!f.fasesPrevias?.implementacion && faseCompleta("implementacion");
       delete f.aprobacionesPrevias;
       delete f.fasesPrevias;
       return f;
@@ -1521,6 +1952,7 @@ export default function WorkspaceProyecto() {
 
     borrar.push(...siguientes.map((p) => p.clave));
     for (const c of borrar) await guardarArtefacto(c, null);
+    for (const c of borrar) if (PASO[c].archivos) await borrarArchivosDePaso(c);
 
     // Lo borrado deja de tener modelo, estado y aprobación; ya no queda nada que marcar como
     // desactualizado, así que no hay aviso.
@@ -1875,8 +2307,13 @@ export default function WorkspaceProyecto() {
     arbol: !!fasesAprobadas.diseno_prototipo,
     arquitectura: !!fasesAprobadas.diseno_arbol,
     sistema: !!fasesAprobadas.diseno_arquitectura,
+    impl_stack: !!fasesAprobadas.diseno,
+    impl_estructura: !!fasesAprobadas.impl_stack,
+    impl_bd: !!fasesAprobadas.impl_estructura,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
+  // La generación de la base se cortó: se ofrece seguir desde el archivo que faltaba.
+  const bdIncompleta = !!artefactos.impl_bd?.incompleto && pendientes.impl_bd !== "desactualizado";
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   const hayDiseno = PASOS.some((p) => p.fase === "diseno" && artefactos[p.clave]);
 
@@ -1892,7 +2329,13 @@ export default function WorkspaceProyecto() {
       ? !!fasesAprobadas.diseno_arquitectura
       : !!fasesAprobadas.diseno;
 
-  const faseActual = !fasesAprobadas.analisis ? "analisis" : !disenoAprobado ? "diseno" : null;
+  const faseActual = !fasesAprobadas.analisis
+    ? "analisis"
+    : !disenoAprobado
+    ? "diseno"
+    : !fasesAprobadas.implementacion
+    ? "implementacion"
+    : null;
 
   // Recuadro "Ampliar con IA" bajo un diagrama ya generado que se puede trabajar.
   const recuadroAmpliar = (clave) =>
@@ -2035,6 +2478,311 @@ export default function WorkspaceProyecto() {
         ) : (
           <p className="text-sm text-gray-600">
             El informe se habilita cuando las fases de Análisis y Diseño están aprobadas.
+          </p>
+        ))}
+
+      {/* ===================== IMPLEMENTACIÓN ===================== */}
+      {vista === "implementacion" &&
+        (disenoAprobado || artefactos.impl_stack ? (
+          <ImplementacionFase
+            proyectoId={id}
+            onVolver={() => setVista("resumen")}
+            // Se edita el código que generó un paso mientras ese paso se puede trabajar.
+            editable={(a) =>
+              a.origen === "generado" && a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta && !ocupado
+            }
+            onGuardarArchivo={guardarArchivoEditado}
+            // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
+            recarga={JSON.stringify([
+              artefactos.impl_stack?.piezas,
+              artefactos.impl_stack?.altaDisponibilidad,
+              artefactos.impl_stack?.externos,
+              (artefactos.impl_estructura?.archivos || []).map((a) => a.ruta),
+              artefactos.impl_bd?.actualizado,
+            ])}
+          >
+            <TituloPaso
+              color={PALETA.marron}
+              estado={pendientes.impl_stack}
+              modelo={modelos.impl_stack}
+              onActualizar={trabajable("impl_stack") ? () => actualizarPaso("impl_stack") : undefined}
+              deshabilitado={ocupado}
+              separador={false}
+            >
+              Stack técnico
+            </TituloPaso>
+
+            {trabajable("impl_stack") && !bloqueado("impl_stack") && (
+              <CampoIndicaciones
+                clave="impl_stack"
+                valor={contexto.indicaciones?.impl_stack}
+                onChange={cambiarIndicaciones}
+                deshabilitado={ocupado}
+                ejemplo="Ej: para el tablero de métricas usa la librería recharts"
+              />
+            )}
+
+            <ControlesPaso
+              clave="impl_stack"
+              esperando={!trabajable("impl_stack")}
+              bloqueado={bloqueado("impl_stack")}
+              enEdicion={enEdicion("impl_stack")}
+              deshabilitado={ocupado}
+              onEditar={desbloquearPaso}
+              onCancelarEdicion={cancelarEdicion}
+            >
+              <BotonGenerar
+                onClick={() => regenerarPaso("impl_stack")}
+                secundario={!!artefactos.impl_stack}
+                disabled={ocupado}
+                cargando={generando("impl_stack")}
+                color={PALETA.marron}
+              >
+                {artefactos.impl_stack ? "Regenerar" : "Generar"} stack técnico
+              </BotonGenerar>
+
+              {artefactos.impl_stack && (
+                <BotonEliminar
+                  onClick={() => eliminarPaso("impl_stack", "¿Eliminar el stack técnico?")}
+                  disabled={ocupado}
+                  title="Eliminar stack técnico"
+                />
+              )}
+            </ControlesPaso>
+
+            {artefactos.impl_stack && (
+              <FichaStack
+                stack={artefactos.impl_stack}
+                editable={trabajable("impl_stack") && !bloqueado("impl_stack") && !ocupado}
+                guardando={generando("editar:impl_stack")}
+                onGuardar={guardarStackManual}
+              />
+            )}
+
+            {artefactos.impl_stack && trabajable("impl_stack") && !bloqueado("impl_stack") && (
+              <AmpliarConIA
+                descripcion="Describe qué agregar o cambiar. La IA ajusta la ficha actual sin generarla de nuevo."
+                ejemplo="Ej: agrega la librería de gráficos para el tablero de métricas"
+                onEnviar={ampliarStack}
+                cargando={generando("ampliar:impl_stack")}
+                deshabilitado={ocupado}
+              />
+            )}
+
+            {artefactos.impl_stack && trabajable("impl_stack") && (
+              <div className="mt-4 flex items-center gap-3 flex-wrap">
+                <BotonAprobar
+                  aprobado={!!fasesAprobadas.impl_stack}
+                  onClick={() => aprobarPaso("impl_stack")}
+                  etiqueta="Stack técnico"
+                  disabled={ocupado}
+                />
+                {!fasesAprobadas.impl_stack && (
+                  <BotonRechazar
+                    etiqueta="Stack técnico"
+                    disabled={ocupado}
+                    onClick={() => rechazarPaso("impl_stack", "¿Rechazar el stack técnico?")}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* --- Estructura de carpetas --- */}
+            {visible("impl_estructura") && (
+              <>
+                <TituloPaso
+                  color={PALETA.marron}
+                  estado={pendientes.impl_estructura}
+                  modelo={modelos.impl_estructura}
+                  onActualizar={trabajable("impl_estructura") ? () => actualizarPaso("impl_estructura") : undefined}
+                  deshabilitado={ocupado}
+                >
+                  Estructura de carpetas
+                </TituloPaso>
+
+                {trabajable("impl_estructura") && !bloqueado("impl_estructura") && (
+                  <CampoIndicaciones
+                    clave="impl_estructura"
+                    valor={contexto.indicaciones?.impl_estructura}
+                    onChange={cambiarIndicaciones}
+                    deshabilitado={ocupado}
+                    ejemplo="Ej: agrupa los componentes de la web por módulo del panel"
+                  />
+                )}
+
+                <ControlesPaso
+                  clave="impl_estructura"
+                  esperando={!trabajable("impl_estructura")}
+                  bloqueado={bloqueado("impl_estructura")}
+                  enEdicion={enEdicion("impl_estructura")}
+                  deshabilitado={ocupado}
+                  onEditar={desbloquearPaso}
+                  onCancelarEdicion={cancelarEdicion}
+                >
+                  <BotonGenerar
+                    onClick={() => regenerarPaso("impl_estructura")}
+                    secundario={!!artefactos.impl_estructura}
+                    disabled={ocupado}
+                    cargando={generando("impl_estructura")}
+                    textoCargando="Generando (una pieza a la vez puede tardar unos minutos)..."
+                    color={PALETA.marron}
+                  >
+                    {artefactos.impl_estructura ? "Regenerar" : "Generar"} estructura de carpetas
+                  </BotonGenerar>
+
+                  {artefactos.impl_estructura && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("impl_estructura", "¿Eliminar la estructura de carpetas?")}
+                      disabled={ocupado}
+                      title="Eliminar estructura de carpetas"
+                    />
+                  )}
+                </ControlesPaso>
+
+                {artefactos.impl_estructura && <FichaEstructura estructura={artefactos.impl_estructura} />}
+
+                {artefactos.impl_estructura && trabajable("impl_estructura") && !bloqueado("impl_estructura") && (
+                  <AmpliarConIA
+                    descripcion="Describe qué agregar o cambiar. La IA ajusta la lista actual de cada pieza sin generarla de nuevo."
+                    ejemplo="Ej: separa el formulario de parte de la web en un componente por sección"
+                    onEnviar={ampliarEstructura}
+                    cargando={generando("ampliar:impl_estructura")}
+                    deshabilitado={ocupado}
+                  />
+                )}
+
+                {artefactos.impl_estructura && trabajable("impl_estructura") && (
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.impl_estructura}
+                      onClick={() => aprobarPaso("impl_estructura")}
+                      etiqueta="Estructura de carpetas"
+                      disabled={ocupado}
+                    />
+                    {!fasesAprobadas.impl_estructura && (
+                      <BotonRechazar
+                        etiqueta="Estructura de carpetas"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("impl_estructura", "¿Rechazar la estructura de carpetas?")}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* --- Base de datos --- */}
+            {visible("impl_bd") && (
+              <>
+                <TituloPaso
+                  color={PALETA.marron}
+                  estado={pendientes.impl_bd}
+                  modelo={modelos.impl_bd}
+                  onActualizar={trabajable("impl_bd") ? () => actualizarPaso("impl_bd") : undefined}
+                  deshabilitado={ocupado}
+                >
+                  Base de datos
+                </TituloPaso>
+
+                {trabajable("impl_bd") && !bloqueado("impl_bd") && (
+                  <CampoIndicaciones
+                    clave="impl_bd"
+                    valor={contexto.indicaciones?.impl_bd}
+                    onChange={cambiarIndicaciones}
+                    deshabilitado={ocupado}
+                    ejemplo="Ej: en los datos de prueba usa nombres y direcciones de la ciudad del cliente"
+                  />
+                )}
+
+                <ControlesPaso
+                  clave="impl_bd"
+                  esperando={!trabajable("impl_bd")}
+                  bloqueado={bloqueado("impl_bd")}
+                  enEdicion={enEdicion("impl_bd")}
+                  deshabilitado={ocupado}
+                  onEditar={desbloquearPaso}
+                  onCancelarEdicion={cancelarEdicion}
+                >
+                  {bdIncompleta ? (
+                    <>
+                      <BotonGenerar
+                        onClick={() => generarPaso("impl_bd", { retomar: true })}
+                        disabled={ocupado}
+                        cargando={generando("impl_bd")}
+                        textoCargando={cargando?.detalle || "Generando..."}
+                        color={PALETA.marron}
+                      >
+                        Continuar base de datos ({artefactos.impl_bd.archivos.length}/{artefactos.impl_bd.total})
+                      </BotonGenerar>
+                      {!generando("impl_bd") && (
+                        <BotonGenerar onClick={() => regenerarPaso("impl_bd")} secundario disabled={ocupado} color={PALETA.marron}>
+                          Empezar de cero
+                        </BotonGenerar>
+                      )}
+                    </>
+                  ) : (
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("impl_bd")}
+                      secundario={!!artefactos.impl_bd}
+                      disabled={ocupado}
+                      cargando={generando("impl_bd")}
+                      textoCargando={cargando?.detalle || "Generando..."}
+                      color={PALETA.marron}
+                    >
+                      {artefactos.impl_bd ? "Regenerar" : "Generar"} base de datos
+                    </BotonGenerar>
+                  )}
+
+                  {artefactos.impl_bd && (
+                    <BotonEliminar
+                      onClick={() => eliminarPaso("impl_bd", "¿Eliminar la base de datos?")}
+                      disabled={ocupado}
+                      title="Eliminar base de datos"
+                    />
+                  )}
+                </ControlesPaso>
+
+                {artefactos.impl_bd && (
+                  <FichaBD
+                    bd={artefactos.impl_bd}
+                    onProbar={trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta ? reprobarBD : undefined}
+                    probando={generando("probar:impl_bd")}
+                    deshabilitado={ocupado}
+                  />
+                )}
+
+                {artefactos.impl_bd && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta && (
+                  <AmpliarBD
+                    archivos={artefactos.impl_bd.archivos || []}
+                    onEnviar={ampliarBD}
+                    cargando={generando("ampliar:impl_bd")}
+                    deshabilitado={ocupado}
+                  />
+                )}
+
+                {artefactos.impl_bd && trabajable("impl_bd") && !bdIncompleta && (
+                  <div className="mt-4 flex items-center gap-3 flex-wrap">
+                    <BotonAprobar
+                      aprobado={!!fasesAprobadas.impl_bd}
+                      onClick={() => aprobarPaso("impl_bd")}
+                      etiqueta="Base de datos"
+                      disabled={ocupado}
+                    />
+                    {!fasesAprobadas.impl_bd && (
+                      <BotonRechazar
+                        etiqueta="Base de datos"
+                        disabled={ocupado}
+                        onClick={() => rechazarPaso("impl_bd", "¿Rechazar la base de datos?")}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </ImplementacionFase>
+        ) : (
+          <p className="text-sm text-gray-600">
+            La implementación se habilita cuando la fase de Diseño está aprobada.
           </p>
         ))}
 
@@ -2310,10 +3058,10 @@ export default function WorkspaceProyecto() {
             <div className="flex items-center gap-4">
               {fasesAprobadas.analisis && disenoAprobado && (
                 <button
-                  onClick={() => setVista("informe")}
+                  onClick={() => setVista("implementacion")}
                   className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
                 >
-                  Continuar al Informe →
+                  Continuar a Implementación →
                 </button>
               )}
               <button
@@ -2899,17 +3647,17 @@ export default function WorkspaceProyecto() {
                     <p className="text-sm font-bold text-gray-900">Fase de Diseño</p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {disenoAprobado
-                        ? "Aprobada. Proyecto completado."
+                        ? "Aprobada."
                         : "Clases, entidad-relación, prototipo, árbol, arquitectura y sistema aprobados."}
                     </p>
                   </div>
                   {disenoAprobado ? (
                     <button
-                      onClick={() => setVista("informe")}
+                      onClick={() => setVista("implementacion")}
                       style={{ backgroundColor: PALETA.navy }}
                       className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
                     >
-                      Continuar al Informe →
+                      Continuar a Implementación →
                     </button>
                   ) : (
                     <button

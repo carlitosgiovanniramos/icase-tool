@@ -6,6 +6,7 @@
 //   columna:    columna de proyectos donde se guarda el artefacto
 //   diagrama:   el artefacto es código de diagrama que se renderiza como SVG (Mermaid en el
 //               navegador o PlantUML con Kroki, según el código; ver lib/diagramas.js)
+//   archivos:   el paso escribe código en archivos_proyecto (paso = clave), que se borra con él
 export const PASOS = [
   {
     clave: "analisis",
@@ -78,9 +79,51 @@ export const PASOS = [
     ruta: "/api/generar-diagrama-sistema",
     diagrama: true,
   },
+  // Implementación: con qué piezas del catálogo (plantillas/) se construye el diseño aprobado.
+  {
+    clave: "impl_stack",
+    fase: "implementacion",
+    nombre: "Stack técnico",
+    aprobacion: "impl_stack",
+    columna: "stack_implementacion",
+    ruta: "/api/generar-stack",
+  },
+  // Lista de archivos de cada pieza, con su propósito y lo que cubre del diseño, antes del código.
+  {
+    clave: "impl_estructura",
+    fase: "implementacion",
+    nombre: "Estructura de carpetas",
+    aprobacion: "impl_estructura",
+    columna: "estructura_implementacion",
+    ruta: "/api/generar-estructura",
+  },
+  // Migraciones y datos de prueba de la estructura, probados en contenedores. El código de cada
+  // archivo va en archivos_proyecto (archivos: el paso los borra al eliminarse); la columna
+  // guarda la lista y el resultado de la prueba.
+  {
+    clave: "impl_bd",
+    fase: "implementacion",
+    nombre: "Base de datos",
+    aprobacion: "impl_bd",
+    columna: "bd_implementacion",
+    ruta: "/api/generar-bd",
+    archivos: true,
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));
+
+// Pasos de la fase de Implementación (ver docs/plan-implementacion.md). Los que ya tienen
+// generador están también en PASOS; los demás solo se listan como pendientes: cada uno pasa a
+// PASOS cuando tenga su generador, porque antes la cascada intentaría generarlos.
+export const PASOS_IMPLEMENTACION = [
+  { clave: "impl_stack", nombre: "Stack técnico" },
+  { clave: "impl_estructura", nombre: "Estructura de carpetas" },
+  { clave: "impl_bd", nombre: "Base de datos" },
+  { clave: "impl_contrato", nombre: "Contrato de API" },
+  { clave: "impl_backend", nombre: "Backend" },
+  { clave: "impl_frontend", nombre: "Frontend" },
+];
 
 export function pasosDespuesDe(clave) {
   const i = PASOS.findIndex((p) => p.clave === clave);
