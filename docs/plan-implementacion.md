@@ -4,10 +4,13 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 ## Estado actual (20 de octubre de 2026)
 
-**Estamos en la Etapa 6 (paso "Base de datos"), el primer paso que escribe código.**
-- El paso está construido y probado con IA real, fuera de la interfaz: bomberos y el taller pasan la prueba en contenedores.
-- La estructura de bomberos está aprobada: 76 archivos, ya sin los cálculos de hash del cliente.
-- La base de bomberos ya se generó desde la interfaz con Gemini. Tiene errores que se están corrigiendo a mano (ver "Pendientes inmediatos").
+**La Etapa 6 (Base de datos) está terminada. Sigue la Etapa 7: el paso "Contrato / API", que hay que construir.**
+- **Bomberos:**
+  - estructura aprobada (76 archivos);
+  - base generada con Gemini y corregida a mano (`0001`, `0004`, `0006` y `seed.sql`);
+  - prueba en contenedores con 22 de 22 tablas, todas con RLS, políticas y datos de prueba, y 3 usuarios;
+  - la prueba ya ejecuta las firmas con hash, el cierre de partes y la entrega de bitácoras.
+- **El taller** pasó la prueba fuera de la interfaz. Falta generar su base desde la interfaz como segundo proyecto.
 
 | Etapa | Estado |
 |---|---|
@@ -16,17 +19,16 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 3. Piezas del catálogo | Terminada |
 | 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada) |
 | 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada) |
-| **6. Paso "Base de datos"** | **Construida. Base de bomberos generada, en corrección y revisión** |
-| 7. Paso "Contrato / API" | Siguiente |
+| 6. Paso "Base de datos" | Terminada (base de bomberos probada 22/22) |
+| **7. Paso "Contrato / API"** | **Siguiente: por construir** |
 | 8 a 11 | Pendientes |
 
 Pendientes inmediatos:
 
-1. **Base de bomberos.** La generó Gemini en la interfaz. Se revisaron los 7 archivos y se entregaron completos y corregidos cuatro: `0001`, `0004`, `0006` y `seed.sql` (detalle en la Etapa 6). `0002`, `0003` y `0005` quedan como están.
-   - Falta: pegarlos en el editor del explorador, apagar "Usar Claude" y pulsar "Probar de nuevo". Esperado: 22/22 en tablas, en RLS y en datos de prueba, con 3 usuarios.
-   - Después: revisar y aprobar.
-2. **Comparar con Claude, si el usuario lo decide:** regenerar la base con "Usar Claude" cuesta unos $0,65 a $0,80 en bomberos (ver la Etapa 6). Ya están aplicadas las reglas nuevas de la guía de `supabase` y las validaciones (rol, datos en todas las tablas, correcciones sin borrar datos).
-3. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
+1. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
+2. **Etapa 7 (Contrato / API):** construir el paso con la receta. Antes, decidir con el usuario lo que propone la sección de la Etapa 7.
+3. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
+4. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
    - **Docker apagado:** el panel consulta el estado cada 10 segundos y deja un `POST /api/implementacion 500` por consulta. Se propuso mostrar "Docker Desktop no está encendido" con un botón Reintentar, dejar de consultar hasta entonces y responder 503 en vez de 500.
    - **"Levantar" con Supabase:** `docker compose up --wait` termina con error cuando la tarea `migraciones` sale con código 0. El proyecto queda funcionando, pero el panel muestra "Docker devolvió un error.". Se propuso tratar como éxito la salida 0 de las tareas de un solo uso.
    - **"Levantar" con solo la base generada:** desde la Etapa 6 hay código, así que el botón se habilita, pero la web y la app todavía no tienen archivos y su compilación falla. Se propuso levantar solo los servicios de las piezas que ya tienen código.
@@ -125,7 +127,7 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
 
 | Proyecto | Id | Estado |
 |---|---|---|
-| Cuerpo de Bomberos Baños de Agua Santa | `10784326-7058-4a78-ac13-d0470623a5d5` | Análisis y Diseño aprobados. Stack aprobado (Next.js + Flutter + Supabase con Auth, Realtime, Storage y Edge Functions + alta disponibilidad; 12 servicios). Estructura aprobada (76 archivos). Base de datos generada con Gemini, en corrección (ver "Estado actual"). Cambios de esta fase: se descartó RF22 (tablero de métricas) con una edición directa en Supabase; se corrigieron la arquitectura (alta disponibilidad del Panel Web con balanceador; Realtime solo para la app) y el diagrama de sistemas (RF14, RF15, RF19 y RNF03 a RNF06 bien asignados) |
+| Cuerpo de Bomberos Baños de Agua Santa | `10784326-7058-4a78-ac13-d0470623a5d5` | Análisis y Diseño aprobados. Stack aprobado (Next.js + Flutter + Supabase con Auth, Realtime, Storage y Edge Functions + alta disponibilidad; 12 servicios). Estructura aprobada (76 archivos). Base de datos corregida y probada: 22/22 tablas con RLS y datos, 3 usuarios de prueba. Cambios de esta fase: se descartó RF22 (tablero de métricas) con una edición directa en Supabase; se corrigieron la arquitectura (alta disponibilidad del Panel Web con balanceador; Realtime solo para la app) y el diagrama de sistemas (RF14, RF15, RF19 y RNF03 a RNF06 bien asignados) |
 | Órdenes de servicio de un taller mecánico | `d124d4ec-9560-4055-af05-0fc038ac79b6` | Análisis y Diseño aprobados. Sirve de segundo proyecto: Next.js + Supabase (Auth), 6 servicios, sin móvil |
 
 Carpetas de trabajo en `C:\icase-workspaces\`:
@@ -599,7 +601,7 @@ Lógica en `lib/estructura.js`, ruta `/api/generar-estructura`.
 
 ---
 
-### Etapa 6. Paso "Base de datos" · Construida, base de bomberos en revisión
+### Etapa 6. Paso "Base de datos" · Terminada
 
 **Objetivo:** generar la base de datos y comprobar que funciona en su contenedor.
 
@@ -732,7 +734,16 @@ Se entregaron completos los archivos corregidos `0001`, `0004`, `0006` y `seed.s
   - la corrección automática completa las tablas vacías.
 - **Mezcla de modelos:** la saturación de Google hizo que modelos distintos generaran archivos distintos, con convenciones distintas. Conviene elegir un solo modelo en el selector antes de generar la base.
 
-**Falta:** pegar los cuatro archivos corregidos, "Probar de nuevo" (esperado 22/22 en tablas, RLS y datos), revisar y aprobar la base de bomberos.
+**Resultado final de bomberos:** con los cuatro archivos corregidos, la prueba dio 22 de 22 tablas, todas con RLS, políticas y datos de prueba, y 3 usuarios. Los 7 archivos se ven en la ficha y en el explorador; `0005` (Realtime) y `seed.sql` no crean tablas, y está bien.
+
+**Funciones de la base que usarán los pasos siguientes** (las RPC del contrato):
+- `firmar_parte(parte, rol, archivo)`;
+- `firmar_bitacora_vehicular(bitacora, tipo, archivo)`;
+- `cerrar_y_entregar_bitacora_guardia(bitacora, archivo)`;
+- `registrar_firma(...)`, `verificar_integridad_firma(...)` y las `obtener_contenido_*_json(...)`;
+- `rol_actual()`.
+
+El cierre de un parte es un `update` de `estado_cierre`, que valida la base.
 
 **Queda para la Etapa 8:**
 - los disparadores que llaman a la Edge Function de notificaciones (asignación, cierre);
@@ -757,6 +768,19 @@ Necesitan la función ya escrita.
    - con Supabase, el mapa de tablas y vistas expuestas por PostgREST, las funciones RPC y las Edge Functions, con sus permisos.
 2. Para cada operación, indicar los roles que pueden usarla y el requerimiento que cumple.
 3. Validar que cada acción de las pantallas del prototipo tenga su operación.
+
+#### Propuesta para construirlo (por decidir con el usuario)
+
+1. **Inventario de la base sin IA.** Con Supabase, el contrato parte de lo que existe de verdad. El runner lo lee de la base probada, igual que la prueba de la Etapa 6:
+   - las tablas expuestas por la API, con sus columnas;
+   - las políticas por operación (`select`, `insert`, `update`, `delete`) y los permisos;
+   - las funciones RPC con sus argumentos: `firmar_parte`, `firmar_bitacora_vehicular`, `cerrar_y_entregar_bitacora_guardia`...
+
+   Así el contrato no inventa operaciones que la base no tiene.
+2. **La IA hace el mapa.** Para cada pantalla del prototipo, toma sus acciones (botones y formularios, de su HTML) y sus RF, y le asigna la operación que la cumple: tabla y operación, una RPC o una Edge Function. Con Express, genera el `openapi.yaml`.
+3. **Lo que falta se detecta, no se inventa.** Una acción sin operación queda marcada. Ejemplo en bomberos: crear cuentas de usuario (RF01) no se puede hacer desde el navegador, porque exige la clave de servicio de Auth, y necesita una Edge Function. Lo que falta se anota para la Etapa 8.
+4. **Prueba de permisos real.** En el proyecto de prueba, el runner llama a la API como cada usuario de prueba (Administrador, Jefe de guardia, Bombero) y comprueba que cada operación se permite o se rechaza según el contrato. Por ejemplo, el Bombero no puede avalar un parte ni crear vehículos. Es la parte de seguridad que la prueba de la Etapa 6 no veía.
+5. **Resultado:** una ficha en `proyectos.contrato_implementacion` con las operaciones por pantalla, sus roles y RF, lo que falta, y el resultado de la prueba de permisos.
 
 **Terminado cuando:** el contrato está aprobado y cubre todas las acciones del prototipo.
 
