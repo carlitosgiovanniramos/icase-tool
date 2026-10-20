@@ -38,6 +38,12 @@ yarn-error.log*
 # respaldos de la base de datos (prototipos, análisis): pesan varios MB y son datos del proyecto
 /respaldos/
 
+# documentación (docs-site/): dependencias y sitio generado (npm run docs:build lo deja en public/docs)
+/docs-site/node_modules
+/docs-site/.docusaurus
+/docs-site/build
+/public/docs/
+
 # vercel
 .vercel
 

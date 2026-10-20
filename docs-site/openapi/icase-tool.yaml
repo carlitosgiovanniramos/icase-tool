@@ -1,0 +1,748 @@
+openapi: 3.0.3
+info:
+  title: API de I-CASE Tool
+  version: "1.0.0"
+  description: |
+    Rutas propias de I-CASE Tool (Next.js, `app/api/*/route.js`). Cada paso del ciclo de vida tiene
+    su ruta: recibe los artefactos aprobados de los pasos anteriores, llama al modelo de IA, valida
+    la respuesta y la devuelve. Las rutas no guardan: el navegador guarda el resultado en Supabase
+    con la sesión del usuario.
+
+    **Autenticación:** cookie de sesión de Supabase. Sin sesión, `proxy.js` responde 307 hacia `/login`.
+
+    **Preferencia de modelo (`usarClaude`):** `true` = solo Claude (de pago); un id de modelo gratuito
+    (ej. `gemini-3.8-flash`, `groq:openai/gpt-oss-120b`) = solo ese modelo; `false` u omitido =
+    automático (Gemini y luego Groq).
+servers:
+  - url: http://localhost:3000
+    description: Local
+security:
+  - sesionSupabase: []
+tags:
+  - name: Análisis
+  - name: Diseño
+  - name: Implementación
+  - name: General
+  - name: Solo desarrollo
+
+paths:
+  /api/procesar-documento:
+    post:
+      tags: [Análisis]
+      summary: Extrae el texto de un documento del proyecto
+      description: Descarga de Storage un PDF, Word o Excel y devuelve su texto, que se usa como contexto de la IA.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, description: URL del archivo en Supabase Storage }
+      responses:
+        "200":
+          description: Texto extraído
+          content:
+            application/json:
+              schema: { type: object, properties: { texto: { type: string } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-preguntas:
+    post:
+      tags: [Análisis]
+      summary: Preguntas de la entrevista de elicitación
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string, description: Descripción del proyecto }
+                documentoTexto: { type: string, nullable: true }
+                contexto: { $ref: "#/components/schemas/Contexto" }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Preguntas generadas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      preguntas:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            pregunta: { type: string }
+                            motivo: { type: string }
+              example:
+                preguntas:
+                  - pregunta: "¿La firma electrónica debe ser certificada o basta con trazarla en pantalla?"
+                    motivo: Determina si hace falta integrarse con una entidad de certificación.
+                modelo_ia: gemini-3.8-flash
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-analisis:
+    post:
+      tags: [Análisis]
+      summary: Actores y requerimientos funcionales y no funcionales
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string }
+                documentoTexto: { type: string, nullable: true }
+                imagenUrl: { type: string, nullable: true }
+                contexto: { $ref: "#/components/schemas/Contexto" }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Análisis generado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Analisis"
+                  - $ref: "#/components/schemas/MetaIA"
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/ampliar-analisis:
+    post:
+      tags: [Análisis]
+      summary: Modifica el análisis según una instrucción
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analisis, instruccion]
+              properties:
+                prompt: { type: string }
+                documentoTexto: { type: string, nullable: true }
+                contexto: { $ref: "#/components/schemas/Contexto" }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                instruccion: { type: string, example: "Agrega un requerimiento para exportar el parte a PDF" }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Análisis modificado (lo nuevo o cambiado viene marcado)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Analisis"
+                  - $ref: "#/components/schemas/MetaIA"
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-casos-uso:
+    post:
+      tags: [Análisis]
+      summary: Diagrama de casos de uso (Mermaid)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analisis]
+              properties:
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200": { $ref: "#/components/responses/DiagramaMermaid" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-diagrama-clases:
+    post:
+      tags: [Diseño]
+      summary: Diagrama de clases (Mermaid)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analisis]
+              properties:
+                nombre: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                casosUso: { type: string, description: Código del diagrama de casos de uso aprobado }
+                diagramaEr: { type: string, nullable: true }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200": { $ref: "#/components/responses/DiagramaMermaid" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-diagrama-er:
+    post:
+      tags: [Diseño]
+      summary: Diagrama entidad-relación (Mermaid)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analisis, diagramaClases]
+              properties:
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                casosUso: { type: string }
+                diagramaClases: { type: string }
+                tecnologias: { type: string, description: Tecnologías ya decididas (ej. con un servicio de autenticación no se guardan contraseñas) }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200": { $ref: "#/components/responses/DiagramaMermaid" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/proponer-pantallas:
+    post:
+      tags: [Diseño]
+      summary: Lista de pantallas del prototipo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analisis]
+              properties:
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaEr: { type: string }
+                plataformas: { type: array, items: { type: string, enum: [Web, Móvil] } }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Pantallas propuestas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      pantallas:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            nombre: { type: string }
+                            plataforma: { type: string }
+                            actores: { type: array, items: { type: string } }
+                            rfs: { type: array, items: { type: string } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-mockups:
+    post:
+      tags: [Diseño]
+      summary: Genera una pantalla del prototipo (HTML)
+      description: Se llama una vez por pantalla, con el mismo estilo para todas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pantalla, analisis]
+              properties:
+                nombre: { type: string, description: Nombre del producto }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaEr: { type: string }
+                pantalla: { type: object, description: "{ nombre, plataforma, actores, rfs }" }
+                pantallas: { type: array, items: { type: object }, description: Plan completo, para la navegación }
+                estilo:
+                  type: object
+                  properties:
+                    modo: { type: string }
+                    color: { type: string, example: "#1e293b" }
+                    tema: { type: string, enum: [claro, oscuro] }
+                    logoUrl: { type: string }
+                    referencias: { type: array, items: { type: string } }
+                    detalle: { type: string, enum: [economico, detallado] }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Pantalla generada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties: { html: { type: string } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/modificar-pantalla:
+    post:
+      tags: [Diseño]
+      summary: Cambia una pantalla según una instrucción
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [html, instruccion]
+              properties:
+                nombre: { type: string }
+                html: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaEr: { type: string }
+                instruccion: { type: string, example: "Agrega un filtro por fecha y un botón Exportar" }
+                detalle: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Pantalla modificada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties: { html: { type: string } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-arbol-navegacion:
+    post:
+      tags: [Diseño]
+      summary: Árbol de navegación (Mermaid)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre: { type: string }
+                descripcion: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                plataformas: { type: array, items: { type: string } }
+                pantallas:
+                  type: array
+                  description: Pantallas generadas con sus menús y botones reales
+                  items: { type: object }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200": { $ref: "#/components/responses/DiagramaMermaid" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-arquitectura:
+    post:
+      tags: [Diseño]
+      summary: Diagrama de arquitectura (Mermaid)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre: { type: string }
+                descripcion: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaEr: { type: string }
+                arbolNavegacion: { type: string }
+                plataformas: { type: array, items: { type: string } }
+                tecnologias: { type: string }
+                calidad: { type: array, items: { type: string } }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200": { $ref: "#/components/responses/DiagramaMermaid" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-diagrama-sistema:
+    post:
+      tags: [Diseño]
+      summary: Diagrama de sistemas (PlantUML WBS)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nombre: { type: string }
+                descripcion: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                plataformas: { type: array, items: { type: string } }
+                tecnologias: { type: string }
+                diagramaArquitectura: { type: string }
+                arbolNavegacion: { type: string }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Diagrama generado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      diagrama_plantuml: { type: string, example: "@startwbs\n* Sistema\n** Subsistema de Presentación\n@endwbs" }
+                      explicacion: { type: string }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/modificar-diagrama:
+    post:
+      tags: [Diseño]
+      summary: Cambia cualquier diagrama según una instrucción (Ampliar con IA)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [codigo, instruccion]
+              properties:
+                nombre: { type: string, example: Diagrama entidad-relación }
+                codigo: { type: string, description: Código Mermaid o PlantUML actual }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                instruccion: { type: string, example: "Agrega la entidad PROVEEDOR relacionada con INSUMO" }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Diagrama modificado, en el mismo lenguaje
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties: { codigo: { type: string } }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/renderizar-diagrama:
+    post:
+      tags: [Diseño]
+      summary: Dibuja un diagrama PlantUML como SVG (Kroki)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [codigo]
+              properties:
+                codigo: { type: string }
+      responses:
+        "200":
+          description: SVG
+          content:
+            application/json:
+              schema: { type: object, properties: { svg: { type: string } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+
+  /api/generar-stack:
+    post:
+      tags: [Implementación]
+      summary: Stack técnico (piezas, contenedores, librerías)
+      description: Con `{ actual, instruccion }` modifica la ficha actual (Ampliar con IA).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [diagramaArquitectura, diagramaSistema]
+              properties:
+                nombre: { type: string }
+                descripcion: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaArquitectura: { type: string }
+                diagramaSistema: { type: string }
+                tecnologias: { type: string }
+                plataformas: { type: array, items: { type: string } }
+                actual: { type: object, description: Ficha actual (solo para modificarla) }
+                instruccion: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Ficha del stack
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FichaConAdvertencias" }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/revisar-stack:
+    post:
+      tags: [Implementación]
+      summary: Revalida una ficha del stack editada a mano (sin IA)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stack]
+              properties:
+                stack: { type: object }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaArquitectura: { type: string }
+                diagramaSistema: { type: string }
+                tecnologias: { type: string }
+      responses:
+        "200":
+          description: Ficha revisada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FichaConAdvertencias" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/generar-estructura:
+    post:
+      tags: [Implementación]
+      summary: Estructura de carpetas (archivos de cada pieza y su cobertura)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stack]
+              properties:
+                nombre: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                stack: { type: object }
+                diagramaER: { type: string }
+                diagramaClases: { type: string }
+                arbol: { type: string }
+                diagramaSistema: { type: string }
+                pantallas: { type: array, items: { type: object } }
+                actual: { type: object }
+                instruccion: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Estructura
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/FichaConAdvertencias"
+                  - type: object
+                    properties:
+                      archivos: { type: array, items: { type: object } }
+                      cobertura:
+                        type: object
+                        example: { pantallas: [36, 36], tablas: [22, 22], modulos: [14, 14], requerimientos: [29, 29] }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-bd:
+    post:
+      tags: [Implementación]
+      summary: Genera un archivo SQL de la base (migración o datos de prueba)
+      description: |
+        Un archivo por petición, en el orden en que se aplican; cada uno recibe el código de los
+        anteriores. Con `{ actual, instruccion }` lo modifica, con `{ actual, error }` lo corrige con
+        el error de PostgreSQL y con `{ actual, vacias }` completa las tablas sin datos de prueba.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stack, estructura, archivo]
+              properties:
+                stack: { type: object }
+                estructura: { type: object }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                diagramaER: { type: string }
+                diagramaClases: { type: string }
+                archivo: { type: string, example: supabase/migrations/0001_auth_usuarios_personal.sql }
+                anteriores: { type: array, items: { type: object, properties: { ruta: { type: string }, contenido: { type: string } } } }
+                actual: { type: string }
+                instruccion: { type: string }
+                error: { type: string }
+                vacias: { type: array, items: { type: string } }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Archivo generado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      ruta: { type: string }
+                      contenido: { type: string, description: SQL }
+                      advertencias: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/implementacion:
+    post:
+      tags: [Implementación]
+      summary: Archivos del proyecto, ejecución en contenedores y prueba de la base
+      description: |
+        Puente con el runner local. Acciones:
+        `archivos` (lista de archivos fijos, generados y planificados), `levantar`, `estado`, `logs`,
+        `detener` y `probar-bd` (aplica la base desde cero en un proyecto aparte).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proyectoId, accion]
+              properties:
+                proyectoId: { type: string, format: uuid }
+                accion: { type: string, enum: [archivos, levantar, estado, logs, detener, probar-bd] }
+                servicio: { type: string, description: Solo para logs }
+                borrarDatos: { type: boolean, description: Solo para detener }
+      responses:
+        "200":
+          description: Resultado de la acción
+          content:
+            application/json:
+              example:
+                ok: true
+                usuarios: 3
+                vacias: []
+                cobertura: { tablas: [22, 22], rls: [22, 22], datos: [22, 22] }
+                advertencias: []
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/modelos-ia:
+    get:
+      tags: [General]
+      summary: Modelos gratuitos disponibles
+      responses:
+        "200":
+          description: Modelos y los que están en pausa por falta de cuota
+          content:
+            application/json:
+              example:
+                modelos:
+                  - { id: gemini-3.8-flash, proveedor: Gemini, nombre: gemini-3.8-flash, pausaHasta: null }
+                  - { id: "groq:openai/gpt-oss-120b", proveedor: Groq, nombre: openai/gpt-oss-120b, pausaHasta: null }
+
+  /api/exportar-diseno:
+    get:
+      tags: [Solo desarrollo]
+      summary: Guarda una copia local de los diseños (respaldos/diseno/)
+      parameters:
+        - { name: id, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: "{ ok, guardados }" }
+        "404": { description: No disponible fuera de desarrollo }
+
+  /api/importar-prototipo:
+    get:
+      tags: [Solo desarrollo]
+      summary: Restaura un prototipo desde un respaldo local
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Restaurado }
+        "403": { description: No se actualizó ninguna fila }
+        "404": { description: No disponible fuera de desarrollo }
+
+components:
+  securitySchemes:
+    sesionSupabase:
+      type: apiKey
+      in: cookie
+      name: sb-<proyecto>-auth-token
+      description: Cookie de sesión que deja el inicio de sesión de Supabase.
+  responses:
+    Error:
+      description: Error con mensaje legible
+      content:
+        application/json:
+          schema: { type: object, properties: { error: { type: string } } }
+          example: { error: "Ningún modelo de Gemini ni de Groq pudo responder. Suele ser saturación temporal: intenta de nuevo en unos minutos." }
+    DiagramaMermaid:
+      description: Diagrama generado
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/MetaIA"
+              - type: object
+                properties:
+                  diagrama_mermaid: { type: string, example: "classDiagram\n    class Paciente" }
+                  explicacion: { type: string }
+                  advertencias: { type: array, items: { type: string } }
+  schemas:
+    PreferenciaIA:
+      description: "true = solo Claude; id de un modelo gratuito = solo ese; false = automático"
+      oneOf:
+        - type: boolean
+        - type: string
+          example: gemini-3.8-flash
+    MetaIA:
+      type: object
+      properties:
+        modelo_ia: { type: string, example: gemini-3.8-flash }
+        costo_ia: { type: number, nullable: true, description: Costo estimado en dólares (solo Claude) }
+    Contexto:
+      type: object
+      properties:
+        problema: { type: string }
+        usuarios: { type: string }
+        incluye: { type: string }
+        no_incluye: { type: string }
+        reglas: { type: string }
+        tecnologias: { type: string }
+        plataformas: { type: array, items: { type: string } }
+        calidad: { type: array, items: { type: string } }
+        entrevista:
+          type: array
+          items: { type: object, properties: { pregunta: { type: string }, motivo: { type: string }, respuesta: { type: string } } }
+    Requerimiento:
+      type: object
+      properties:
+        codigo: { type: string, example: RF02 }
+        nombre: { type: string }
+        descripcion: { type: string }
+        actores: { type: array, items: { type: string } }
+        prioridad: { type: string, enum: [alta, media, baja] }
+        dependencias: { type: array, items: { type: string } }
+        precondiciones: { type: string }
+        postcondiciones: { type: string }
+        metodo_verificacion: { type: string }
+        categoria: { type: string, description: "Solo RNF: característica ISO/IEC 25010" }
+        subcategoria: { type: string }
+    Analisis:
+      type: object
+      properties:
+        actores:
+          type: array
+          items: { type: object, properties: { nombre: { type: string }, descripcion: { type: string } } }
+        requerimientos_funcionales: { type: array, items: { $ref: "#/components/schemas/Requerimiento" } }
+        requerimientos_no_funcionales: { type: array, items: { $ref: "#/components/schemas/Requerimiento" } }
+        advertencias: { type: array, items: { type: string } }
+    FichaConAdvertencias:
+      allOf:
+        - $ref: "#/components/schemas/MetaIA"
+        - type: object
+          properties:
+            advertencias: { type: array, items: { type: string }, description: "Lo que va a \"Revisar antes de aprobar\"" }
