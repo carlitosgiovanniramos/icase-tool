@@ -58,6 +58,11 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí.
 - Gemini: 3.8 Flash primero, el más nuevo con cuota gratis.
 - Groq: `gpt-oss-120b`, `qwen/qwen3.8-27b` y `gpt-oss-20b`.
 - Claude es el único de pago y solo responde con el interruptor "Usar Claude".
+- Con Claude apagado, el selector "Modelo gratuito" de la barra lateral elige qué modelo responde:
+  - "Automático" (Gemini y luego Groq) o un modelo concreto;
+  - el modelo elegido responde solo, sin pasar a otros; si falla, el mensaje dice por qué;
+  - la lista sale de `/api/modelos-ia` y marca los que están sin cuota;
+  - la preferencia viaja en `usarClaude` (`true`, el id del modelo o `false`).
 - En el log, "Google cortó la respuesta (saturación)" y "Google está saturado (503)" no son errores de icase-tool: se pasa al siguiente modelo. Groq no sirve de respaldo para los pasos de Implementación, porque sus prompts superan el límite de tokens por minuto del plan gratuito.
 - El usuario rechazó usar modelos de pago de Gemini (Gemini 4 Argon, los Pro). Al actualizar modelos, verificar con una llamada real que respondan con la clave gratuita: un 429 `RESOURCE_EXHAUSTED` inmediato significa que no tienen cuota gratis.
 
