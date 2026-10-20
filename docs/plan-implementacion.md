@@ -4,7 +4,7 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 ## Estado actual (20 de octubre de 2026)
 
-**La Etapa 6 (Base de datos) está terminada. Sigue la Etapa 7: el paso "Contrato / API", que hay que construir.**
+**La Etapa 6 (Base de datos) está terminada. Sigue la Etapa 7: el paso "Contrato / API", que hay que construir.** La Etapa 7 quedó en pausa mientras se hacía la **documentación del proyecto** para el taller de clase (punto 1, "Herramientas de documentación"). La documentación ya está construida: ver "Documentación del proyecto".
 - **Bomberos:**
   - estructura aprobada (76 archivos);
   - base generada con Gemini y corregida a mano (`0001`, `0004`, `0006` y `seed.sql`);
@@ -25,10 +25,22 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 Pendientes inmediatos:
 
-1. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
-2. **Etapa 7 (Contrato / API):** construir el paso con la receta. Antes, decidir con el usuario lo que propone la sección de la Etapa 7.
-3. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
-4. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
+1. **Documentación (taller de clase).** Construida y publicada en `/docs`. Faltan cosas del usuario:
+   - las **12 capturas** de la aplicación real, en `docs-site/static/img/capturas/`, con los nombres que indican los recuadros "Captura pendiente":
+     - `01-inicio-sesion`, `02-barra-lateral`, `03-crear-proyecto`, `04-paso-aprobado`;
+     - `05-contexto-entrevista`, `06-requerimientos`, `07-diagrama-expandido`, `08-prototipo`;
+     - `09-explorador`, `10-informe`, `11-bomberos-stack` y `12-bomberos-base`;
+     - todas `.png`; la 07 y la 12 también aparecen en el README.
+
+     Después se reemplazan los recuadros por las imágenes.
+   - pasar `develop` a `main` y hacer push: los enlaces de la documentación a los archivos de GitHub apuntan a `main`;
+   - dar acceso al docente si el repositorio es privado;
+   - confirmar la licencia (se puso MIT a nombre de CCAJ Software Solutions).
+2. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
+3. **Etapa 7 (Contrato / API):** construir el paso con la receta. Antes, decidir con el usuario lo que propone la sección de la Etapa 7. Se le presentó la propuesta y no respondió todavía, porque pidió hacer la documentación primero.
+4. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
+5. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
+6. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
    - **Docker apagado:** el panel consulta el estado cada 10 segundos y deja un `POST /api/implementacion 500` por consulta. Se propuso mostrar "Docker Desktop no está encendido" con un botón Reintentar, dejar de consultar hasta entonces y responder 503 en vez de 500.
    - **"Levantar" con Supabase:** `docker compose up --wait` termina con error cuando la tarea `migraciones` sale con código 0. El proyecto queda funcionando, pero el panel muestra "Docker devolvió un error.". Se propuso tratar como éxito la salida 0 de las tareas de un solo uso.
    - **"Levantar" con solo la base generada:** desde la Etapa 6 hay código, así que el botón se habilita, pero la web y la app todavía no tienen archivos y su compilación falla. Se propuso levantar solo los servicios de las piezas que ya tienen código.
@@ -42,6 +54,10 @@ Pendientes inmediatos:
 1. Abrir **Docker Desktop** y esperar "Engine running". Solo hace falta para levantar contenedores: generar el stack o la estructura no lo usa.
 2. En la raíz del repo: `npm run all`. Enciende icase-tool (`[web]`, puerto 3000) y el runner (`[runner]`, puerto 4100) en una terminal. También existen por separado `npm run dev` y `npm run runner`.
 3. Abrir http://localhost:3000 e iniciar sesión.
+4. **Documentación:**
+   - `npm run docs` la abre en http://localhost:3001/docs/ y se recarga al guardar;
+   - para verla dentro de la app con `npm run dev` (enlace "Documentación"), hay que generarla una vez con `npm run docs:build`;
+   - `npm run build` la genera siempre antes de compilar la app.
 
 ### Base de datos de icase-tool (Supabase)
 
@@ -65,6 +81,10 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
   - "Continuar base de datos".
 
   El build incluye `plantillas/` en las rutas que la leen (comprobado en sus `.nft.json`).
+- **Documentación:**
+  - el comando de build de Vercel es `npm run build`, que instala las dependencias de `docs-site/`, genera el sitio en `public/docs` y compila la app;
+  - `/docs` es pública: `proxy.js` la excluye de la sesión;
+  - no hace falta configurar nada más en Vercel.
 - **No funciona en Vercel:**
   - el runner y Docker: Levantar, Detener, Ver logs y "Probar de nuevo" de la base;
   - el motivo: el runner corre en la PC del usuario y escucha en `127.0.0.1`, y Vercel no tiene Docker ni llega a esa dirección;
@@ -113,6 +133,10 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
 | `app/(app)/proyectos/[id]/page.js` | Página del proyecto: generación, aprobación, cascada y el bloque de cada paso |
 | `ImplementacionFase.js`, `FichaStack.js`, `FichaEstructura.js`, `FichaBD.js` | Fase 03: explorador de archivos (ver, expandir y editar el código generado), panel de ejecución y fichas de cada paso |
 | `app/api/exportar-diseno/route.js` | Solo desarrollo: guarda los diagramas de los proyectos en `respaldos/diseno/` |
+| `docs-site/` | Documentación (Docusaurus 3): `docs/` (páginas en Markdown por sección), `openapi/icase-tool.yaml` (referencia de la API), `static/img/capturas/`, `docusaurus.config.js` (`baseUrl: /docs/`) y `sidebars.js` |
+| `next.config.mjs`, `proxy.js` | Sirven la documentación en `/docs` (cada página `/docs/x` es `/docs/x.html`) y la dejan pública |
+| `app/SidebarNav.js` | Barra lateral, con el enlace "Documentación" |
+| `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, `LICENSE` | Documentación para desarrolladores en GitHub (punto 1D del taller) |
 
 ### Probar sin la interfaz
 
@@ -147,6 +171,12 @@ Carpetas de trabajo en `C:\icase-workspaces\`:
 - **Interfaz:** textos mínimos, sin emojis, avisos y confirmaciones con `app/AlertProvider.js`.
 - **Costo:** avisar el costo antes de generar con Claude. Ningún modelo de pago fuera de Claude.
 - **Al cerrar cada etapa:** actualizar "Estado actual" y la sección de la etapa en este plan, y hacer commit.
+- **Documentación al día:** si cambia una funcionalidad, se actualiza en el mismo commit:
+  - su página en `docs-site/docs/` (manual, API o IA);
+  - si es una ruta nueva o cambiada, `docs-site/openapi/icase-tool.yaml`;
+  - una línea en `CHANGELOG.md`.
+
+  Ejemplo: la Etapa 7 agregará al manual una página del paso y, a la API, su ruta.
 
 ### Receta para construir un paso nuevo de Implementación
 
@@ -169,7 +199,31 @@ Así se hicieron "Stack técnico" y "Estructura de carpetas":
    - el bloque visible con título, indicaciones, generar, eliminar, ficha, "Ampliar con IA", aprobar y rechazar;
    - la función de ampliar.
 6. **Un componente `Ficha<Paso>.js`**, con "Revisar antes de aprobar" arriba.
-7. **Probar con IA real** con bomberos y el taller, leer la salida completa, revisar con lint (`--rule '{"no-undef":"error"}'`) y `next build`, actualizar este plan y hacer commit.
+7. **Probar con IA real** con bomberos y el taller, leer la salida completa, revisar con lint (`--rule '{"no-undef":"error"}'`) y `npm run build`, actualizar este plan y hacer commit.
+8. **Documentar:**
+   - una página del paso en `docs-site/docs/manual/`;
+   - la ruta en `docs-site/openapi/icase-tool.yaml` y en la tabla de `docs-site/docs/api/guia.md`;
+   - su fila en `docs-site/docs/ia/prompts-por-fase.md`;
+   - una entrada en `CHANGELOG.md`.
+
+## Documentación del proyecto (taller de clase, 20 de octubre de 2026)
+
+El taller "Herramientas de documentación, pruebas y evaluación de software" pidió, en su punto 1, cuatro entregables y al menos una herramienta de documentación justificada. Se cubrió así:
+
+| Entregable | Dónde |
+|---|---|
+| Herramienta y justificación | **Docusaurus 3**, con Mermaid y OpenAPI (Redocusaurus). Justificación en *Desarrolladores → Por qué Docusaurus* |
+| A. Documentación de usuario | *Manual de usuario*, 9 páginas: primeros pasos (roles y acceso), flujo de trabajo, una página por fase, informe y exportación, caso de estudio de bomberos con datos reales, buenas entradas para la IA y errores comunes |
+| B. Documentación de la API | *API*, 5 páginas: arquitectura con diagramas, guía con las 23 rutas, códigos y ejemplos, integraciones, claves y seguridad, y formatos. Además, la **referencia OpenAPI** (`/docs/api/referencia`) |
+| C. Ingeniería de prompts y componente de IA | *IA y prompts*: modelos y versiones, selección del modelo, plantilla de prompt con un ejemplo real, y una tabla por fase con prompt, entrada, salida y validaciones |
+| D. Documentación para desarrolladores en GitHub | `README.md` reescrito, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md` (desde Beta 1.0 hasta Beta 2.3), `LICENSE` (MIT) y la sección *Desarrolladores* |
+
+- **Publicación:** en `/docs` de la misma aplicación. Así hay un solo despliegue y una sola URL, y el enlace "Documentación" de la barra lateral la abre. La portada tiene la tabla de correspondencia con el punto 1, siguiendo un ejemplo de otro grupo que el usuario mostró (`app-secure.github.io/icase`, hecho con MkDocs).
+- **Capturas:** no se usan capturas simuladas. Cada página indica con un recuadro "Captura pendiente" el nombre del archivo que la reemplazará. Faltan las 12 capturas (ver "Pendientes inmediatos").
+- **Comprobado:**
+  - el sitio compila sin enlaces rotos (`onBrokenLinks: "throw"`);
+  - `npm run build` genera la documentación y la app;
+  - con `next start`, `/docs` y sus páginas responden 200 sin sesión y la app sigue exigiendo login.
 
 ## 1. Contexto
 
@@ -894,6 +948,8 @@ Por comparación, el taller mecánico (Next.js + Supabase con Auth y API de dato
   - el panel de Ejecución: Docker apagado, la salida 0 de `migraciones` con `--wait` y levantar solo las piezas con código;
   - el aviso claro en Vercel;
   - el costo estimado de la base según el tamaño del diseño.
+- **Documentación del taller:** capturas, licencia definitiva y el paso a `main` (ver "Estado actual").
+- **Script del esquema base de Supabase** (`proyectos` desde cero), para que una instalación nueva no dependa del panel.
 - **README del proyecto generado (Etapa 11):** cómo levantarlo, usuarios de prueba y que el cifrado en reposo se resuelve en el disco del servidor.
 - **Edición manual de la estructura de carpetas:** como en la ficha del stack.
 - **Réplica de la base de datos** en los diseños con alta disponibilidad: hoy se duplica el servidor web; replicar la base y su cambio automático (Patroni) queda como mejora posterior.
