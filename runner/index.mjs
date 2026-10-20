@@ -402,6 +402,11 @@ const CONSULTAS_OPCIONALES = {
   buckets: "select coalesce(json_agg(id order by id), '[]') from storage.buckets",
   realtime: "select coalesce(json_agg(tablename order by tablename), '[]') from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public'",
   usuarios: "select count(*) from auth.users",
+  // Usuarios que Auth no encontrará (instance_id distinto de ceros) y con el rol donde el propio
+  // usuario puede cambiarlo.
+  revisionUsuarios: `select json_build_object(
+    'instancia', count(*) filter (where instance_id is distinct from '00000000-0000-0000-0000-000000000000'),
+    'rolEnUsuario', count(*) filter (where raw_user_meta_data ?| array['rol', 'role'])) from auth.users`,
 };
 
 // Prueba la base en un proyecto aparte (icase_<id>-bd), con su propia carpeta y sus volúmenes:

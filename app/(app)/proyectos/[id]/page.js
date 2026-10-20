@@ -1653,25 +1653,37 @@ export default function WorkspaceProyecto() {
     return data;
   }
 
-  // Prueba y, si un archivo falla al aplicarse, lo corrige con el error (hasta CORRECCIONES_BD
-  // veces: cada corrección deja ver el error siguiente). archivos: [{ ruta, contenido, ... }].
+  // Prueba y corrige con la IA, hasta CORRECCIONES_BD veces en total:
+  //   - si un archivo falla al aplicarse, ese archivo con el error de PostgreSQL;
+  //   - si todo se aplica pero quedan tablas sin datos de prueba, los datos de prueba con esa lista.
+  // Si un intento termina peor (la base ya no se aplica), se vuelve a la mejor versión que sí se
+  // aplicaba. archivos: [{ ruta, contenido, ... }].
   async function probarYCorregir(archivos, avisar = () => {}) {
-    const lista = [...archivos];
+    let lista = [...archivos];
     let corregidos = 0;
     let modelo;
+    let mejor = null; // última versión que se aplicó completa: { lista, prueba }
+    const rutaDatos = archivosDeBaseDatos(artefactosRef.current.impl_estructura).find((a) => a.tipo === "datos")?.ruta;
     avisar("Probando en contenedores...");
     let prueba = await probarBaseDatos();
-    while (prueba.ok === false && prueba.archivo && corregidos < CORRECCIONES_BD) {
-      const i = lista.findIndex((a) => a.ruta === prueba.archivo);
+
+    while (corregidos < CORRECCIONES_BD) {
+      if (prueba.ok) mejor = { lista: [...lista], prueba };
+      const fallo = prueba.ok === false && prueba.archivo;
+      const vacias = prueba.ok && rutaDatos && prueba.vacias?.length ? prueba.vacias : null;
+      if (!fallo && !vacias) break;
+
+      const ruta = fallo ? prueba.archivo : rutaDatos;
+      const i = lista.findIndex((a) => a.ruta === ruta);
       if (i === -1) break;
-      avisar(`Corrigiendo ${prueba.archivo.split("/").pop()}...`);
-      // Si la IA no responde, queda el error de la prueba para corregirlo después.
+      avisar(fallo ? `Corrigiendo ${ruta.split("/").pop()}...` : `Completando datos de prueba (${vacias.length} tablas vacías)...`);
+      // Si la IA no responde, queda lo que mostró la prueba para corregirlo después.
       const data = await pedirIA(PASO.impl_bd.ruta, {
         ...cuerpoBD(),
-        archivo: prueba.archivo,
+        archivo: ruta,
         anteriores: lista,
         actual: lista[i].contenido,
-        error: prueba.error,
+        ...(fallo ? { error: prueba.error } : { vacias }),
       }).catch((err) => ({ error: err.message }));
       if (data.error) break;
       await guardarArchivoGenerado("impl_bd", data.ruta, data.contenido);
@@ -1680,6 +1692,16 @@ export default function WorkspaceProyecto() {
       corregidos++;
       avisar("Probando en contenedores...");
       prueba = await probarBaseDatos();
+    }
+
+    // Completar datos no puede dejar una base que antes se aplicaba y ahora no.
+    if (prueba.ok === false && mejor) {
+      for (const a of mejor.lista) {
+        const actual = lista.find((x) => x.ruta === a.ruta);
+        if (actual?.contenido !== a.contenido) await guardarArchivoGenerado("impl_bd", a.ruta, a.contenido);
+      }
+      lista = mejor.lista;
+      prueba = mejor.prueba;
     }
     return { archivos: lista, prueba, corregidos, modelo };
   }

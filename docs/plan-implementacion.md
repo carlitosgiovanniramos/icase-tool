@@ -22,20 +22,11 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 Pendientes inmediatos:
 
-1. **Base de bomberos.** La generó Gemini en la interfaz y la prueba falló en `0001_auth_usuarios_personal.sql`. Se entregaron a mano dos archivos corregidos:
-   - **`0001`:**
-     - el `end if;` del bloque `begin … exception` pasa a ser `end;`;
-     - el trigger sobre `auth.users` era una **escalada de privilegios**: tomaba el rol de `raw_user_meta_data`, que el propio usuario puede cambiar desde la app. Ahora el rol sale de `raw_app_meta_data`, el alta es solo `after insert` y la actualización solo sincroniza el email.
-   - **`seed.sql`:**
-     - `setval` leía `max(id)` de una secuencia, que no tiene columna `id`;
-     - cada parte y cada bitácora ahora tiene su propia firma (antes se repetían);
-     - `rol_firmante` usa los roles de los actores;
-     - el rol de los usuarios de prueba queda solo en `raw_app_meta_data`.
-
-   Falta: pegarlos en el editor del explorador, pulsar "Probar de nuevo", revisar el resto del SQL (sobre todo cómo se calcula el hash de las firmas en `0003` y `0004`) y aprobar.
-2. **Comparar con Claude, si el usuario lo decide:** regenerar la base con "Usar Claude" cuesta unos $0,65 a $0,80 en bomberos (ver la Etapa 6). Antes conviene aplicar la regla de seguridad de la propuesta siguiente.
+1. **Base de bomberos.** La generó Gemini en la interfaz. Se revisaron los 7 archivos y se entregaron completos y corregidos cuatro: `0001`, `0004`, `0006` y `seed.sql` (detalle en la Etapa 6). `0002`, `0003` y `0005` quedan como están.
+   - Falta: pegarlos en el editor del explorador, apagar "Usar Claude" y pulsar "Probar de nuevo". Esperado: 22/22 en tablas, en RLS y en datos de prueba, con 3 usuarios.
+   - Después: revisar y aprobar.
+2. **Comparar con Claude, si el usuario lo decide:** regenerar la base con "Usar Claude" cuesta unos $0,65 a $0,80 en bomberos (ver la Etapa 6). Ya están aplicadas las reglas nuevas de la guía de `supabase` y las validaciones (rol, datos en todas las tablas, correcciones sin borrar datos).
 3. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
-   - **Regla de seguridad en el README de `supabase`:** el rol nunca se toma de `raw_user_meta_data`, y el trigger sobre `auth.users` es solo de inserción. La prueba en contenedores no detecta este tipo de error.
    - **Docker apagado:** el panel consulta el estado cada 10 segundos y deja un `POST /api/implementacion 500` por consulta. Se propuso mostrar "Docker Desktop no está encendido" con un botón Reintentar, dejar de consultar hasta entonces y responder 503 en vez de 500.
    - **"Levantar" con Supabase:** `docker compose up --wait` termina con error cuando la tarea `migraciones` sale con código 0. El proyecto queda funcionando, pero el panel muestra "Docker devolvió un error.". Se propuso tratar como éxito la salida 0 de las tareas de un solo uso.
    - **"Levantar" con solo la base generada:** desde la Etapa 6 hay código, así que el botón se habilita, pero la web y la app todavía no tienen archivos y su compilación falla. Se propuso levantar solo los servicios de las piezas que ya tienen código.
@@ -642,12 +633,19 @@ Lógica en `lib/bd.js`, ruta `/api/generar-bd`.
    - al terminar se borra. No toca el proyecto del usuario ni sus puertos. Tarda de 20 a 50 segundos.
 
    Cómo se prueba lo declara cada pieza en `bd` de su `pieza.json`.
-4. **Corrección automática:** si un archivo falla, se identifica en la salida, se regenera con el error de PostgreSQL y se prueba de nuevo, hasta 3 veces.
+4. **Corrección automática**, hasta 3 intentos en total:
+   - si un archivo falla, se identifica en la salida, se regenera con el error de PostgreSQL y se prueba de nuevo;
+   - si todo se aplica pero quedan tablas sin datos de prueba, se completa `seed.sql` con la lista de las vacías;
+   - una corrección no puede quitar datos para que el error desaparezca: el código compara las filas de `seed.sql` antes y después, y si bajan lo marca como problema y pide otra corrección;
+   - si completar datos deja una base que ya no se aplica, se vuelve a la última versión que sí se aplicaba.
 5. **Revisión del resultado** (`revisarPrueba`):
    - entidades del ER sin tabla y tablas fuera del ER;
    - tablas sin RLS, sin políticas o sin acceso desde la API;
-   - datos de prueba vacíos y menos usuarios que actores;
+   - tablas sin datos de prueba (cada tabla debe tener al menos una fila) y menos usuarios que actores;
+   - usuarios de prueba con `instance_id` distinto de ceros (no podrán iniciar sesión) o con el rol en `raw_user_meta_data`. Lo consulta el runner en `auth.users`;
    - un requerimiento que pide un resumen criptográfico sin `digest` en la base.
+
+   Al validar cada archivo, el código también marca el rol tomado de `raw_user_meta_data` (`->> 'rol'`), que es una escalada de privilegios.
 
    Lo que queda va a "Revisar antes de aprobar".
 6. **Usuarios de prueba:** uno por actor, `<actor>@prueba.local` con la contraseña `Prueba123!` (`CONTRASENA_PRUEBA` en `lib/archivosBD.js`). Se verificó que inician sesión en Auth y leen su fila por la API con RLS.
@@ -710,9 +708,31 @@ El aviso de la interfaz (10 centavos por archivo) acierta en bomberos y exagera 
 - **`seed.sql`:** `setval` sobre una secuencia, firmas repetidas en varios registros y roles de firmante que no son actores.
 - Las versiones corregidas de los dos archivos se le entregaron al usuario para pegarlas en el editor (ver "Estado actual").
 
-**Falta:**
-- pegar los dos archivos corregidos, "Probar de nuevo", revisar el resto del SQL y aprobar la base de bomberos;
-- decidir la regla de seguridad del README de `supabase` (rol fuera de `raw_user_meta_data`).
+**Revisión completa de los 7 archivos de bomberos (20 de octubre).** Además de lo anterior, se encontraron:
+- `firmar_parte()` sin comprobar quién firma (es `security definer` y se salta la RLS);
+- firmas de la bitácora vehicular enlazables a mano sin verificación;
+- bitácora de guardia que se podía entregar sin firma;
+- `jsonb_agg` sin `order by` en el contenido que se firma;
+- notificaciones editables por su dueño;
+- un seed sin partes, con lo que ninguna regla de `0004` se ejecutaba en la prueba.
+
+Se entregaron completos los archivos corregidos `0001`, `0004`, `0006` y `seed.sql` (5 partes, firmas y cierres hechos con las funciones de la base, bitácoras firmadas y entregadas, notificaciones por trigger).
+
+**Por qué pasó y qué se cambió, para cualquier proyecto:**
+- **Guía de `supabase`,** cinco reglas nuevas:
+  - el rol sale de `raw_app_meta_data` y el trigger sobre `auth.users` es solo de inserción;
+  - toda función `security definer` comprueba quién la llama;
+  - toda firma enlazada se verifica con un trigger;
+  - el contenido firmado va ordenado;
+  - hay datos de prueba en todas las tablas, con las funciones ejecutadas como cada usuario mediante `request.jwt.claims`.
+- **Prompt de `lib/bd.js`:** pide al menos una fila en cada tabla del ER y ejecutar los flujos con las funciones de la base. Al corregir, prohíbe quitar inserciones.
+- **Código:**
+  - la validación marca el rol tomado de `raw_user_meta_data` y las correcciones que quitan filas;
+  - la revisión de la prueba lista las tablas vacías y revisa los usuarios de prueba;
+  - la corrección automática completa las tablas vacías.
+- **Mezcla de modelos:** la saturación de Google hizo que modelos distintos generaran archivos distintos, con convenciones distintas. Conviene elegir un solo modelo en el selector antes de generar la base.
+
+**Falta:** pegar los cuatro archivos corregidos, "Probar de nuevo" (esperado 22/22 en tablas, RLS y datos), revisar y aprobar la base de bomberos.
 
 **Queda para la Etapa 8:**
 - los disparadores que llaman a la Edge Function de notificaciones (asignación, cierre);
@@ -847,7 +867,6 @@ Por comparación, el taller mecánico (Next.js + Supabase con Auth y API de dato
 ## 14. Pendientes por decidir
 
 - **Propuestas sin respuesta del usuario** (detalle en "Estado actual"):
-  - la regla de seguridad del rol en el README de `supabase`;
   - el panel de Ejecución: Docker apagado, la salida 0 de `migraciones` con `--wait` y levantar solo las piezas con código;
   - el aviso claro en Vercel;
   - el costo estimado de la base según el tamaño del diseño.
