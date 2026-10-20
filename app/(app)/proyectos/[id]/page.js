@@ -414,18 +414,33 @@ const ESTADOS_PASO = {
 
 // onActualizar: si el paso está desactualizado y se puede trabajar, botón para regenerarlo ahí
 // mismo con los datos nuevos.
-function TituloPaso({ color, estado, modelo, separador = true, onActualizar, deshabilitado, children }) {
+// onAlternar: el paso se pliega (fase de Implementación); abierto dice cómo está y resumen es lo
+// que se ve de él mientras está plegado.
+function TituloPaso({ color, estado, modelo, separador = true, onActualizar, deshabilitado, onAlternar, abierto, resumen, children }) {
   const e = ESTADOS_PASO[estado];
-  return (
-    <div
-      className={`${
-        separador ? "mt-8 pt-6 border-t-2 border-gray-200 " : ""
-      }flex items-center gap-2 mb-3 flex-wrap`}
-    >
+  const titulo = (
+    <>
+      {onAlternar && <span className="inline-block w-3 text-gray-400 text-xs">{abierto ? "▾" : "▸"}</span>}
       <span className="w-2 h-2 shrink-0" style={{ backgroundColor: color }} />
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
         {children}
       </h3>
+    </>
+  );
+  return (
+    <div
+      className={`${
+        separador ? "mt-8 pt-6 border-t-2 border-gray-200 " : ""
+      }flex items-center gap-2 ${onAlternar && !abierto ? "" : "mb-3"} flex-wrap`}
+    >
+      {onAlternar ? (
+        <button type="button" onClick={onAlternar} aria-expanded={abierto} className="flex items-center gap-2 hover:opacity-75">
+          {titulo}
+        </button>
+      ) : (
+        titulo
+      )}
+      {onAlternar && !abierto && resumen && <span className="text-xs text-gray-500">{resumen}</span>}
       {e && (
         <span
           className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
@@ -609,6 +624,7 @@ export default function WorkspaceProyecto() {
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
   const [desbloqueados, setDesbloqueados] = useState([]); // pasos aprobados abiertos para editar
+  const [plegados, setPlegados] = useState({}); // pasos de Implementación: clave -> true (plegado) o false, elegido por el usuario
   const [deteniendo, setDeteniendo] = useState(false); // se pidió detener la generación de pantallas
   const [contexto, setContexto] = useState({}); // contexto de elicitación (proyectos.contexto)
   const [estadoContexto, setEstadoContexto] = useState(null); // pendiente | guardando | guardado | error
@@ -2314,6 +2330,29 @@ export default function WorkspaceProyecto() {
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   // La generación de la base se cortó: se ofrece seguir desde el archivo que faltaba.
   const bdIncompleta = !!artefactos.impl_bd?.incompleto && pendientes.impl_bd !== "desactualizado";
+
+  // Pasos de Implementación plegables: por defecto se ve abierto solo el que se está trabajando
+  // (el primero sin aprobar) y los demás muestran un resumen; el usuario abre o pliega cualquiera.
+  const PASOS_PLEGABLES = ["impl_stack", "impl_estructura", "impl_bd"];
+  const pasoEnCurso = PASOS_PLEGABLES.find((c) => visible(c) && !aprobado(c));
+  const pasoAbierto = (clave) => (plegados[clave] === undefined ? clave === pasoEnCurso || generando(clave) : !plegados[clave]);
+  const alternarPaso = (clave) => setPlegados((p) => ({ ...p, [clave]: pasoAbierto(clave) }));
+  function resumenPaso(clave) {
+    const a = artefactos[clave];
+    if (!a) return "Sin generar";
+    const partes = aprobado(clave) ? ["Aprobado"] : [];
+    if (clave === "impl_stack") {
+      partes.push((a.piezas || []).map((p) => a.titulos?.[p.pieza] || p.pieza).join(", "));
+      partes.push(`${(a.contenedores || []).length} contenedores`);
+    }
+    if (clave === "impl_estructura") partes.push(`${(a.archivos || []).length} archivos`);
+    if (clave === "impl_bd") {
+      partes.push(bdIncompleta ? `${a.archivos.length} de ${a.total} archivos` : `${(a.archivos || []).length} archivos`);
+      if (!bdIncompleta) partes.push(a.prueba?.ok ? "probada" : a.prueba?.ok === false ? "con errores" : "sin probar");
+    }
+    if (a.revision?.length) partes.push(`${a.revision.length} por revisar`);
+    return partes.filter(Boolean).join(" · ");
+  }
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   const hayDiseno = PASOS.some((p) => p.fase === "diseno" && artefactos[p.clave]);
 
@@ -2508,10 +2547,15 @@ export default function WorkspaceProyecto() {
               onActualizar={trabajable("impl_stack") ? () => actualizarPaso("impl_stack") : undefined}
               deshabilitado={ocupado}
               separador={false}
+              onAlternar={() => alternarPaso("impl_stack")}
+              abierto={pasoAbierto("impl_stack")}
+              resumen={resumenPaso("impl_stack")}
             >
               Stack técnico
             </TituloPaso>
 
+            {pasoAbierto("impl_stack") && (
+              <>
             {trabajable("impl_stack") && !bloqueado("impl_stack") && (
               <CampoIndicaciones
                 clave="impl_stack"
@@ -2587,6 +2631,9 @@ export default function WorkspaceProyecto() {
               </div>
             )}
 
+              </>
+            )}
+
             {/* --- Estructura de carpetas --- */}
             {visible("impl_estructura") && (
               <>
@@ -2596,9 +2643,15 @@ export default function WorkspaceProyecto() {
                   modelo={modelos.impl_estructura}
                   onActualizar={trabajable("impl_estructura") ? () => actualizarPaso("impl_estructura") : undefined}
                   deshabilitado={ocupado}
+                  onAlternar={() => alternarPaso("impl_estructura")}
+                  abierto={pasoAbierto("impl_estructura")}
+                  resumen={resumenPaso("impl_estructura")}
                 >
                   Estructura de carpetas
                 </TituloPaso>
+
+                {pasoAbierto("impl_estructura") && (
+                  <>
 
                 {trabajable("impl_estructura") && !bloqueado("impl_estructura") && (
                   <CampoIndicaciones
@@ -2668,6 +2721,8 @@ export default function WorkspaceProyecto() {
                     )}
                   </div>
                 )}
+                  </>
+                )}
               </>
             )}
 
@@ -2680,9 +2735,15 @@ export default function WorkspaceProyecto() {
                   modelo={modelos.impl_bd}
                   onActualizar={trabajable("impl_bd") ? () => actualizarPaso("impl_bd") : undefined}
                   deshabilitado={ocupado}
+                  onAlternar={() => alternarPaso("impl_bd")}
+                  abierto={pasoAbierto("impl_bd")}
+                  resumen={resumenPaso("impl_bd")}
                 >
                   Base de datos
                 </TituloPaso>
+
+                {pasoAbierto("impl_bd") && (
+                  <>
 
                 {trabajable("impl_bd") && !bloqueado("impl_bd") && (
                   <CampoIndicaciones
@@ -2776,6 +2837,8 @@ export default function WorkspaceProyecto() {
                       />
                     )}
                   </div>
+                )}
+                  </>
                 )}
               </>
             )}
