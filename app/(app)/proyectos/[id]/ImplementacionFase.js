@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PALETA } from "../../../estilos";
 import { useAlert } from "../../../AlertProvider";
 import { PASO, PASOS_IMPLEMENTACION } from "./pasos";
@@ -121,10 +121,15 @@ function BotonCodigo({ onClick, disabled, children, principal }) {
   );
 }
 
+// Recuadro del código: ocupa el alto disponible (expandido) o hasta 520 px y se desplaza dentro,
+// igual al leer que al editar.
+const recuadroCodigo = (expandido) =>
+  `flex-1 min-h-0 overflow-auto ${expandido ? "" : "max-h-[520px]"} text-xs leading-5 font-mono`;
+
 // Código con número de línea, de solo lectura.
-function CodigoLectura({ contenido, alto }) {
+function CodigoLectura({ contenido, expandido }) {
   return (
-    <pre className={`flex-1 overflow-auto ${alto} text-xs leading-5 font-mono p-0 m-0`}>
+    <pre className={`${recuadroCodigo(expandido)} p-0 m-0`}>
       <code className="grid" style={{ gridTemplateColumns: "auto 1fr" }}>
         {contenido.split("\n").map((linea, i) => (
           <span key={i} className="contents">
@@ -137,11 +142,12 @@ function CodigoLectura({ contenido, alto }) {
   );
 }
 
-// Editor de código: área de texto con los números de línea al costado (se desplazan juntos).
+// Editor de código en el mismo recuadro que la lectura: el área de texto mide lo que el código
+// (no tiene barra propia) y el recuadro la desplaza junto con los números de línea.
 // Tab inserta dos espacios; Ctrl+S guarda.
-function CodigoEditable({ valor, onCambiar, onGuardar, alto }) {
-  const numerosRef = useRef(null);
-  const lineas = valor.split("\n").length;
+function CodigoEditable({ valor, onCambiar, onGuardar, expandido }) {
+  const lineas = valor.split("\n");
+  const ancho = Math.max(...lineas.map((l) => l.length)) + 4;
 
   function alTecla(e) {
     if (e.key === "Tab") {
@@ -157,45 +163,35 @@ function CodigoEditable({ valor, onCambiar, onGuardar, alto }) {
   }
 
   return (
-    <div className={`flex-1 flex min-h-0 ${alto}`}>
-      <div ref={numerosRef} className="select-none overflow-hidden text-right text-gray-400 bg-gray-50 text-xs leading-5 font-mono py-0 pl-3 pr-3">
-        {Array.from({ length: lineas }, (_, i) => (
-          <div key={i}>{i + 1}</div>
-        ))}
+    <div className={recuadroCodigo(expandido)}>
+      <div className="flex w-max min-w-full">
+        <div className="sticky left-0 z-10 select-none text-right text-gray-400 bg-gray-50 pl-3 pr-3">
+          {lineas.map((_, i) => (
+            <div key={i}>{i + 1}</div>
+          ))}
+        </div>
+        <textarea
+          value={valor}
+          onChange={(e) => onCambiar(e.target.value)}
+          onKeyDown={alTecla}
+          spellCheck={false}
+          wrap="off"
+          rows={lineas.length}
+          style={{ width: `${ancho}ch`, height: `${lineas.length * 1.25}rem` }}
+          className="block grow resize-none overflow-hidden outline-none bg-white p-0 pr-4 font-mono text-xs leading-5 whitespace-pre"
+        />
       </div>
-      <textarea
-        value={valor}
-        onChange={(e) => onCambiar(e.target.value)}
-        onKeyDown={alTecla}
-        onScroll={(e) => numerosRef.current && (numerosRef.current.scrollTop = e.target.scrollTop)}
-        spellCheck={false}
-        wrap="off"
-        className="flex-1 resize-none outline-none text-xs leading-5 font-mono p-0 pr-4 whitespace-pre overflow-auto"
-      />
     </div>
   );
 }
 
-// Panel del archivo elegido: ver, expandir a pantalla completa y, si el paso que lo generó se
-// puede trabajar, editarlo. Lo mismo se ve dentro del explorador o expandido.
+// Panel del archivo elegido: verlo y, si el paso que lo generó se puede trabajar, editarlo.
+// expandido / onExpandir: el explorador entero a pantalla completa (lo maneja ExploradorArchivos).
 // onGuardar(archivo, contenido) devuelve true si se guardó.
-function PanelArchivo({ archivo, editable, onGuardar }) {
-  const [expandido, setExpandido] = useState(false);
+function PanelArchivo({ archivo, editable, onGuardar, expandido, onExpandir }) {
   const [borrador, setBorrador] = useState(null); // texto en edición, o null si solo se ve
   const [guardando, setGuardando] = useState(false);
   const cambiado = borrador !== null && borrador !== archivo.contenido;
-
-  useEffect(() => {
-    if (!expandido) return;
-    const alTecla = (e) => e.key === "Escape" && setExpandido(false);
-    window.addEventListener("keydown", alTecla);
-    const overflowPrevio = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", alTecla);
-      document.body.style.overflow = overflowPrevio;
-    };
-  }, [expandido]);
 
   async function guardar() {
     if (!cambiado || guardando) return;
@@ -208,10 +204,9 @@ function PanelArchivo({ archivo, editable, onGuardar }) {
   }
 
   const planificado = archivo.origen === "planificado";
-  const alto = expandido ? "" : "max-h-[520px]";
 
   return (
-    <div className={expandido ? "fixed inset-0 z-50 bg-white flex flex-col" : "flex-1 min-w-0 flex flex-col"}>
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-300 flex-wrap">
         <span className="text-sm font-mono text-gray-800 truncate">{archivo.ruta}</span>
         {archivo.origen === "plantilla" && (
@@ -237,7 +232,12 @@ function PanelArchivo({ archivo, editable, onGuardar }) {
             ) : (
               editable && <BotonCodigo onClick={() => setBorrador(archivo.contenido)}>Editar</BotonCodigo>
             )}
-            <BotonCodigo onClick={() => setExpandido((e) => !e)}>{expandido ? "Cerrar ✕" : "Expandir"}</BotonCodigo>
+            <BotonCodigo onClick={onExpandir}>{expandido ? "Cerrar ✕" : "Expandir"}</BotonCodigo>
+          </div>
+        )}
+        {planificado && (
+          <div className="ml-auto">
+            <BotonCodigo onClick={onExpandir}>{expandido ? "Cerrar ✕" : "Expandir"}</BotonCodigo>
           </div>
         )}
       </div>
@@ -254,20 +254,35 @@ function PanelArchivo({ archivo, editable, onGuardar }) {
           {archivo.modulo && <p className="text-xs text-gray-500">Módulo: {archivo.modulo}</p>}
         </div>
       ) : borrador !== null ? (
-        <CodigoEditable valor={borrador} onCambiar={setBorrador} onGuardar={guardar} alto={expandido ? "" : "h-[520px]"} />
+        <CodigoEditable valor={borrador} onCambiar={setBorrador} onGuardar={guardar} expandido={expandido} />
       ) : (
-        <CodigoLectura contenido={archivo.contenido} alto={alto} />
+        <CodigoLectura contenido={archivo.contenido} expandido={expandido} />
       )}
     </div>
   );
 }
 
 // editable(archivo): si se puede editar (código generado de un paso que se puede trabajar).
+// Expandido, el explorador entero (árbol y código) pasa a pantalla completa; Esc lo cierra.
 function ExploradorArchivos({ archivos, editable, onGuardar }) {
   const arbol = useMemo(() => armarArbol(archivos), [archivos]);
   const [abiertas, setAbiertas] = useState(() => new Set(Object.keys(arbol.carpetas)));
   const [seleccionado, setSeleccionado] = useState(null);
+  const [expandido, setExpandido] = useState(false);
   const archivo = archivos.find((a) => a.ruta === seleccionado);
+
+  useEffect(() => {
+    if (!expandido) return;
+    const alTecla = (e) => e.key === "Escape" && setExpandido(false);
+    window.addEventListener("keydown", alTecla);
+    // El fondo no se desplaza mientras el explorador ocupa la pantalla.
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", alTecla);
+      document.body.style.overflow = overflowPrevio;
+    };
+  }, [expandido]);
 
   const alternar = useCallback((ruta) => {
     setAbiertas((actual) => {
@@ -279,8 +294,18 @@ function ExploradorArchivos({ archivos, editable, onGuardar }) {
   }, []);
 
   return (
-    <div className="border border-gray-300 flex flex-col md:flex-row min-h-[420px]">
-      <div className="md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-gray-300 py-2 max-h-[560px] overflow-y-auto bg-gray-50">
+    <div
+      className={
+        expandido
+          ? "fixed inset-0 z-50 bg-white flex flex-col md:flex-row"
+          : "border border-gray-300 flex flex-col md:flex-row min-h-[420px]"
+      }
+    >
+      <div
+        className={`md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-gray-300 py-2 overflow-y-auto bg-gray-50 ${
+          expandido ? "max-h-[40vh] md:max-h-none" : "max-h-[560px]"
+        }`}
+      >
         <NodoCarpeta
           nodo={arbol}
           ruta=""
@@ -293,7 +318,14 @@ function ExploradorArchivos({ archivos, editable, onGuardar }) {
       </div>
       {archivo ? (
         // key: al cambiar de archivo se descarta lo que se estaba editando en el anterior.
-        <PanelArchivo key={archivo.ruta} archivo={archivo} editable={!!editable?.(archivo)} onGuardar={onGuardar} />
+        <PanelArchivo
+          key={archivo.ruta}
+          archivo={archivo}
+          editable={!!editable?.(archivo)}
+          onGuardar={onGuardar}
+          expandido={expandido}
+          onExpandir={() => setExpandido((e) => !e)}
+        />
       ) : (
         <div className="flex-1 min-w-0 flex">
           <p className="m-auto text-sm text-gray-500">Selecciona un archivo.</p>

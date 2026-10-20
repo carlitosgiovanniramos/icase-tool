@@ -2,9 +2,15 @@
 
 Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada.
 
-## Estado actual (19 de octubre de 2026)
+## Estado actual (20 de octubre de 2026)
 
-**Estamos en la Etapa 6 (paso "Base de datos"), el primer paso que escribe código.** Está construida y probada con IA real fuera de la interfaz: bomberos y el taller pasan la prueba en contenedores. **Falta generarla, revisarla y aprobarla desde la interfaz.**
+**La Etapa 6 (Base de datos) está terminada. Sigue la Etapa 7: el paso "Contrato / API", que hay que construir.**
+- **Bomberos:**
+  - estructura aprobada (76 archivos);
+  - base generada con Gemini y corregida a mano (`0001`, `0004`, `0006` y `seed.sql`);
+  - prueba en contenedores con 22 de 22 tablas, todas con RLS, políticas y datos de prueba, y 3 usuarios;
+  - la prueba ya ejecuta las firmas con hash, el cierre de partes y la entrega de bitácoras.
+- **El taller** pasó la prueba fuera de la interfaz. Falta generar su base desde la interfaz como segundo proyecto.
 
 | Etapa | Estado |
 |---|---|
@@ -12,20 +18,22 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 2. Base de la fase dentro de icase-tool | Terminada |
 | 3. Piezas del catálogo | Terminada |
 | 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada) |
-| 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos revisada y corregida) |
-| **6. Paso "Base de datos"** | **Construida. Falta generarla y aprobarla desde la interfaz** |
-| 7. Paso "Contrato / API" | Siguiente |
+| 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada) |
+| 6. Paso "Base de datos" | Terminada (base de bomberos probada 22/22) |
+| **7. Paso "Contrato / API"** | **Siguiente: por construir** |
 | 8 a 11 | Pendientes |
 
 Pendientes inmediatos:
 
-1. **Antes de usar el paso:** ejecutar `supabase/bd_implementacion.sql` en el SQL Editor y reiniciar `npm run all`, para que el runner tenga la prueba de la base.
-2. **Estructura de bomberos:** quitar con "Ampliar con IA" `web/lib/seguridad/hashParte.js` y `movil/lib/servicios/cripto_servicio.dart` (el hash lo calcula la base) y aprobarla, si no está aprobada.
-3. **Base de bomberos:** generarla desde la interfaz, revisar el SQL (sobre todo cómo se calcula el hash de las firmas) y aprobarla.
-4. **Propuestas sin respuesta del usuario** (panel de Ejecución). **No están aplicadas:** esperar el sí.
+1. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
+2. **Etapa 7 (Contrato / API):** construir el paso con la receta. Antes, decidir con el usuario lo que propone la sección de la Etapa 7.
+3. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
+4. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
    - **Docker apagado:** el panel consulta el estado cada 10 segundos y deja un `POST /api/implementacion 500` por consulta. Se propuso mostrar "Docker Desktop no está encendido" con un botón Reintentar, dejar de consultar hasta entonces y responder 503 en vez de 500.
    - **"Levantar" con Supabase:** `docker compose up --wait` termina con error cuando la tarea `migraciones` sale con código 0. El proyecto queda funcionando, pero el panel muestra "Docker devolvió un error.". Se propuso tratar como éxito la salida 0 de las tareas de un solo uso.
    - **"Levantar" con solo la base generada:** desde la Etapa 6 hay código, así que el botón se habilita, pero la web y la app todavía no tienen archivos y su compilación falla. Se propuso levantar solo los servicios de las piezas que ya tienen código.
+   - **En Vercel:** cambiar "Falta RUNNER_TOKEN en .env.local" por "La ejecución en contenedores solo funciona con icase-tool en local" y dejar de consultar el estado (ver "Despliegue en Vercel").
+   - **Costo estimado de la base con Claude:** hoy son 10 centavos por archivo, que acierta en bomberos pero duplica el costo real en el taller. Se propuso calcularlo con el tamaño del ER, las clases, los requerimientos y las tablas de cada archivo.
 
 ## Guía para retomar el trabajo
 
@@ -45,9 +53,27 @@ Scripts de `supabase/` que deben estar ejecutados en el SQL Editor, cada uno una
 | `archivos_proyecto.sql` | Tabla del código generado (Etapa 2) |
 | `stack_implementacion.sql` | Columna del paso "Stack técnico" (Etapa 4) |
 | `estructura_implementacion.sql` | Columna del paso "Estructura de carpetas" (Etapa 5) |
-| `bd_implementacion.sql` | Columna del paso "Base de datos" (Etapa 6). **Falta ejecutarlo** |
+| `bd_implementacion.sql` | Columna del paso "Base de datos" (Etapa 6) |
 
-Cada paso nuevo de Implementación con columna propia agrega su script aquí.
+Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si Vercel y la PC usan el mismo proyecto de Supabase, cada script se ejecuta una sola vez para los dos.
+
+### Despliegue en Vercel
+
+- **Funciona sin variables nuevas:**
+  - todos los pasos con IA, incluida la generación de la base de datos;
+  - el selector de modelo gratuito;
+  - "Continuar base de datos".
+
+  El build incluye `plantillas/` en las rutas que la leen (comprobado en sus `.nft.json`).
+- **No funciona en Vercel:**
+  - el runner y Docker: Levantar, Detener, Ver logs y "Probar de nuevo" de la base;
+  - el motivo: el runner corre en la PC del usuario y escucha en `127.0.0.1`, y Vercel no tiene Docker ni llega a esa dirección;
+  - lo que se ve: "Falta RUNNER_TOKEN en .env.local".
+
+  Eso se usa en local, con `npm run all`.
+- **Para usar contenedores desde la versión desplegada**, haría falta un equipo con Docker y el runner expuesto por HTTPS (por ejemplo, un túnel de Cloudflare), con `RUNNER_URL` y `RUNNER_TOKEN` en Vercel. No se recomienda por ahora: el runner ejecuta Docker y quedaría en internet protegido solo por el token.
+- **La marca "sin cuota" del selector puede no ser exacta en Vercel:** cada instancia del servidor recuerda sus propios fallos.
+- **`git push origin develop`** sube el trabajo. `.env.local` no se sube: `.gitignore` excluye `.env*`.
 
 ### Variables de `.env.local`
 
@@ -78,13 +104,14 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí.
 | `lib/estructura.js` | Paso "Estructura de carpetas": una generación por pieza y la validación de cobertura |
 | `lib/bd.js` | Paso "Base de datos": prompt y validación de cada archivo SQL, y revisión de la prueba en contenedores (`revisarPrueba`) |
 | `lib/archivosBD.js` | Archivos de la base dentro de la estructura, archivo que falló y error de la prueba; se usa también en el navegador |
-| `lib/gemini.js`, `lib/groq.js`, `lib/claude.js` | Llamadas a la IA: Gemini, después Groq; solo Claude con el interruptor |
+| `lib/gemini.js`, `lib/groq.js`, `lib/claude.js` | Llamadas a la IA: Gemini, después Groq; solo Claude con el interruptor; solo el modelo elegido si hay uno (`generarSoloCon`, `modelosGratuitos`) |
+| `lib/preferenciaClaude.js`, `app/InterruptorClaude.js`, `app/api/modelos-ia` | Preferencia de IA del navegador ("Usar Claude", modelo gratuito elegido, gasto estimado), el interruptor y el selector de la barra lateral, y la lista de modelos gratuitos |
 | `runner/index.mjs` | Runner: el único proceso que ejecuta Docker. `probarbd` prueba la base en un proyecto aparte |
 | `app/api/implementacion/route.js` | Puente entre la interfaz y el runner; arma los archivos del proyecto (fijos, generados y planificados); acción `probar-bd` |
 | `app/api/generar-stack`, `revisar-stack`, `generar-estructura`, `generar-bd` | Rutas finas de cada paso; la lógica está en `lib/` |
 | `app/(app)/proyectos/[id]/pasos.js` | `PASOS` (la cadena con aprobación y cascada) y `PASOS_IMPLEMENTACION` (los pendientes que se listan) |
 | `app/(app)/proyectos/[id]/page.js` | Página del proyecto: generación, aprobación, cascada y el bloque de cada paso |
-| `ImplementacionFase.js`, `FichaStack.js`, `FichaEstructura.js`, `FichaBD.js` | Fase 03: explorador, panel de ejecución y fichas de cada paso |
+| `ImplementacionFase.js`, `FichaStack.js`, `FichaEstructura.js`, `FichaBD.js` | Fase 03: explorador de archivos (ver, expandir y editar el código generado), panel de ejecución y fichas de cada paso |
 | `app/api/exportar-diseno/route.js` | Solo desarrollo: guarda los diagramas de los proyectos en `respaldos/diseno/` |
 
 ### Probar sin la interfaz
@@ -100,7 +127,7 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí.
 
 | Proyecto | Id | Estado |
 |---|---|---|
-| Cuerpo de Bomberos Baños de Agua Santa | `10784326-7058-4a78-ac13-d0470623a5d5` | Análisis y Diseño aprobados. Stack aprobado (Next.js + Flutter + Supabase con Auth, Realtime, Storage y Edge Functions + alta disponibilidad; 12 servicios). Estructura generada, pendiente de aprobar. Cambios de esta fase: se descartó RF22 (tablero de métricas) con una edición directa en Supabase; se corrigieron la arquitectura (alta disponibilidad del Panel Web con balanceador; Realtime solo para la app) y el diagrama de sistemas (RF14, RF15, RF19 y RNF03 a RNF06 bien asignados) |
+| Cuerpo de Bomberos Baños de Agua Santa | `10784326-7058-4a78-ac13-d0470623a5d5` | Análisis y Diseño aprobados. Stack aprobado (Next.js + Flutter + Supabase con Auth, Realtime, Storage y Edge Functions + alta disponibilidad; 12 servicios). Estructura aprobada (76 archivos). Base de datos corregida y probada: 22/22 tablas con RLS y datos, 3 usuarios de prueba. Cambios de esta fase: se descartó RF22 (tablero de métricas) con una edición directa en Supabase; se corrigieron la arquitectura (alta disponibilidad del Panel Web con balanceador; Realtime solo para la app) y el diagrama de sistemas (RF14, RF15, RF19 y RNF03 a RNF06 bien asignados) |
 | Órdenes de servicio de un taller mecánico | `d124d4ec-9560-4055-af05-0fc038ac79b6` | Análisis y Diseño aprobados. Sirve de segundo proyecto: Next.js + Supabase (Auth), 6 servicios, sin móvil |
 
 Carpetas de trabajo en `C:\icase-workspaces\`:
@@ -114,6 +141,8 @@ Carpetas de trabajo en `C:\icase-workspaces\`:
 - **Reglas generales:** las reglas, los prompts y las validaciones deben servir para cualquier sistema, no solo para bomberos.
 - **Revisar la salida real:** antes de dar algo por bueno, leer lo que generó la IA, no solo las cifras. Así se encontró el tablero de métricas que reapareció en la estructura.
 - **Lo importante lo valida el código, no el prompt.** La IA propone; el código comprueba contra el catálogo y el diseño; un reintento con los problemas; lo que quede, en "Revisar antes de aprobar".
+- **La prueba en contenedores no ve la seguridad.** Encuentra errores de sintaxis y de datos, pero no permisos mal pensados. Al revisar código generado, leer a mano los triggers y las políticas, por ejemplo de dónde sale el rol de un usuario.
+- **El usuario corrige código a mano** en el explorador cuando hace falta. Al proponer una corrección, darle el archivo completo para pegar.
 - **Consistencia con lo aprobado:** la implementación no agrega tecnologías, servicios externos ni funciones que el diseño no tenga. Para cambiarlos se cambia el diseño.
 - **Interfaz:** textos mínimos, sin emojis, avisos y confirmaciones con `app/AlertProvider.js`.
 - **Costo:** avisar el costo antes de generar con Claude. Ningún modelo de pago fuera de Claude.
@@ -572,7 +601,7 @@ Lógica en `lib/estructura.js`, ruta `/api/generar-estructura`.
 
 ---
 
-### Etapa 6. Paso "Base de datos" · Construida, falta generarla desde la interfaz
+### Etapa 6. Paso "Base de datos" · Terminada
 
 **Objetivo:** generar la base de datos y comprobar que funciona en su contenedor.
 
@@ -606,12 +635,19 @@ Lógica en `lib/bd.js`, ruta `/api/generar-bd`.
    - al terminar se borra. No toca el proyecto del usuario ni sus puertos. Tarda de 20 a 50 segundos.
 
    Cómo se prueba lo declara cada pieza en `bd` de su `pieza.json`.
-4. **Corrección automática:** si un archivo falla, se identifica en la salida, se regenera con el error de PostgreSQL y se prueba de nuevo, hasta 3 veces.
+4. **Corrección automática**, hasta 3 intentos en total:
+   - si un archivo falla, se identifica en la salida, se regenera con el error de PostgreSQL y se prueba de nuevo;
+   - si todo se aplica pero quedan tablas sin datos de prueba, se completa `seed.sql` con la lista de las vacías;
+   - una corrección no puede quitar datos para que el error desaparezca: el código compara las filas de `seed.sql` antes y después, y si bajan lo marca como problema y pide otra corrección;
+   - si completar datos deja una base que ya no se aplica, se vuelve a la última versión que sí se aplicaba.
 5. **Revisión del resultado** (`revisarPrueba`):
    - entidades del ER sin tabla y tablas fuera del ER;
    - tablas sin RLS, sin políticas o sin acceso desde la API;
-   - datos de prueba vacíos y menos usuarios que actores;
+   - tablas sin datos de prueba (cada tabla debe tener al menos una fila) y menos usuarios que actores;
+   - usuarios de prueba con `instance_id` distinto de ceros (no podrán iniciar sesión) o con el rol en `raw_user_meta_data`. Lo consulta el runner en `auth.users`;
    - un requerimiento que pide un resumen criptográfico sin `digest` en la base.
+
+   Al validar cada archivo, el código también marca el rol tomado de `raw_user_meta_data` (`->> 'rol'`), que es una escalada de privilegios.
 
    Lo que queda va a "Revisar antes de aprobar".
 6. **Usuarios de prueba:** uno por actor, `<actor>@prueba.local` con la contraseña `Prueba123!` (`CONTRASENA_PRUEBA` en `lib/archivosBD.js`). Se verificó que inician sesión en Auth y leen su fila por la API con RLS.
@@ -630,9 +666,25 @@ Lógica en `lib/bd.js`, ruta `/api/generar-bd`.
 - La ficha (`FichaBD.js`) muestra:
   - el estado de la prueba;
   - la cobertura: tablas del ER, RLS y políticas, datos de prueba, usuarios y la contraseña de prueba;
-  - cada tabla y cada archivo.
+  - cada tabla y cada archivo, marcado como corregido o editado.
+- **El código se ve y se edita en el explorador de archivos** ("Archivos del proyecto"):
+  - "Expandir" lo abre a pantalla completa; se cierra con Esc.
+  - "Editar" lo vuelve un editor con números de línea: Tab, Ctrl+S, Guardar y Cancelar.
+  - Al guardar, el archivo queda como `editado` en `archivos_proyecto`, el paso pierde la aprobación y la prueba queda en "Hay cambios hechos a mano sin probar".
+  - Solo se edita el código generado de un paso que se puede trabajar. Los archivos de plantilla no se editan, y los de un paso aprobado se bloquean hasta pulsar "Editar" en el paso.
+- **Los pasos de la fase se pliegan** desde su título:
+  - abierto por defecto, solo el que se está trabajando (el primero sin aprobar);
+  - los plegados muestran un resumen (aprobado, piezas, archivos, estado de la prueba, lo que falta revisar);
+  - en la ficha del stack, cada sección es desplegable, con su cantidad.
 
-  El código se ve en el explorador de archivos.
+#### Costo con Claude (Sonnet 5, $2 y $10 por millón de tokens de entrada y salida)
+
+Estimado con el tamaño real de lo que generó Gemini:
+- **Bomberos:** unos $0,65 a $0,80. Son ~150.000 tokens de entrada, porque cada archivo lleva el diseño (~13.000 tokens) y el código de los anteriores, y ~26.000 de salida, más el razonamiento.
+- **Taller:** unos $0,15 a $0,20.
+- **Cada corrección tras la prueba:** unos $0,10.
+
+El aviso de la interfaz (10 centavos por archivo) acierta en bomberos y exagera en el taller.
 
 #### Probado con IA real (Gemini 3.8 Flash, fuera de la interfaz)
 
@@ -647,10 +699,51 @@ Lógica en `lib/bd.js`, ruta `/api/generar-bd`.
   - orden sin trabajos no se termina (RF10), orden cerrada no se modifica (RF12) y el cobro es solo del Recepcionista.
 - **Lo que mostró la primera prueba:** solo con la regla general en el prompt, la IA dejó el hash como columna que valida el formato pero lo recibe del cliente. Por eso el prompt nombra los RF que piden un hash y la revisión exige `digest`. En la segunda generación, la base calcula el hash y rechaza una firma cuyo hash no coincide. Todavía lo compara con el que manda el cliente en vez de escribirlo ella misma: revisarlo al aprobar.
 
-**Falta:**
-- ejecutar `supabase/bd_implementacion.sql`;
-- reiniciar `npm run all`, porque el runner nuevo tiene `probarbd`;
-- generar, revisar y aprobar la base de bomberos desde la interfaz.
+#### Generada desde la interfaz (bomberos, Gemini, 20 de octubre)
+
+- **Google saturado:** respondieron 503 y respuestas cortadas, pero la cadena de respaldo terminó cada archivo. Por eso se agregaron:
+  - "Continuar base de datos";
+  - el log claro ("Google cortó la respuesta (saturación)");
+  - el selector de modelo gratuito.
+- **Error de la interfaz, corregido:** una prueba fallida también trae `error`, y la interfaz la tomaba como "no se pudo probar", así que no lanzaba la corrección automática. Ahora se distingue por `ok`.
+- **`0001`:** sintaxis (`end if;` en lugar de `end;`) y una escalada de privilegios: el rol se tomaba de `raw_user_meta_data`. La prueba solo detecta la primera.
+- **`seed.sql`:** `setval` sobre una secuencia, firmas repetidas en varios registros y roles de firmante que no son actores.
+- Las versiones corregidas de los dos archivos se le entregaron al usuario para pegarlas en el editor (ver "Estado actual").
+
+**Revisión completa de los 7 archivos de bomberos (20 de octubre).** Además de lo anterior, se encontraron:
+- `firmar_parte()` sin comprobar quién firma (es `security definer` y se salta la RLS);
+- firmas de la bitácora vehicular enlazables a mano sin verificación;
+- bitácora de guardia que se podía entregar sin firma;
+- `jsonb_agg` sin `order by` en el contenido que se firma;
+- notificaciones editables por su dueño;
+- un seed sin partes, con lo que ninguna regla de `0004` se ejecutaba en la prueba.
+
+Se entregaron completos los archivos corregidos `0001`, `0004`, `0006` y `seed.sql` (5 partes, firmas y cierres hechos con las funciones de la base, bitácoras firmadas y entregadas, notificaciones por trigger).
+
+**Por qué pasó y qué se cambió, para cualquier proyecto:**
+- **Guía de `supabase`,** cinco reglas nuevas:
+  - el rol sale de `raw_app_meta_data` y el trigger sobre `auth.users` es solo de inserción;
+  - toda función `security definer` comprueba quién la llama;
+  - toda firma enlazada se verifica con un trigger;
+  - el contenido firmado va ordenado;
+  - hay datos de prueba en todas las tablas, con las funciones ejecutadas como cada usuario mediante `request.jwt.claims`.
+- **Prompt de `lib/bd.js`:** pide al menos una fila en cada tabla del ER y ejecutar los flujos con las funciones de la base. Al corregir, prohíbe quitar inserciones.
+- **Código:**
+  - la validación marca el rol tomado de `raw_user_meta_data` y las correcciones que quitan filas;
+  - la revisión de la prueba lista las tablas vacías y revisa los usuarios de prueba;
+  - la corrección automática completa las tablas vacías.
+- **Mezcla de modelos:** la saturación de Google hizo que modelos distintos generaran archivos distintos, con convenciones distintas. Conviene elegir un solo modelo en el selector antes de generar la base.
+
+**Resultado final de bomberos:** con los cuatro archivos corregidos, la prueba dio 22 de 22 tablas, todas con RLS, políticas y datos de prueba, y 3 usuarios. Los 7 archivos se ven en la ficha y en el explorador; `0005` (Realtime) y `seed.sql` no crean tablas, y está bien.
+
+**Funciones de la base que usarán los pasos siguientes** (las RPC del contrato):
+- `firmar_parte(parte, rol, archivo)`;
+- `firmar_bitacora_vehicular(bitacora, tipo, archivo)`;
+- `cerrar_y_entregar_bitacora_guardia(bitacora, archivo)`;
+- `registrar_firma(...)`, `verificar_integridad_firma(...)` y las `obtener_contenido_*_json(...)`;
+- `rol_actual()`.
+
+El cierre de un parte es un `update` de `estado_cierre`, que valida la base.
 
 **Queda para la Etapa 8:**
 - los disparadores que llaman a la Edge Function de notificaciones (asignación, cierre);
@@ -675,6 +768,19 @@ Necesitan la función ya escrita.
    - con Supabase, el mapa de tablas y vistas expuestas por PostgREST, las funciones RPC y las Edge Functions, con sus permisos.
 2. Para cada operación, indicar los roles que pueden usarla y el requerimiento que cumple.
 3. Validar que cada acción de las pantallas del prototipo tenga su operación.
+
+#### Propuesta para construirlo (por decidir con el usuario)
+
+1. **Inventario de la base sin IA.** Con Supabase, el contrato parte de lo que existe de verdad. El runner lo lee de la base probada, igual que la prueba de la Etapa 6:
+   - las tablas expuestas por la API, con sus columnas;
+   - las políticas por operación (`select`, `insert`, `update`, `delete`) y los permisos;
+   - las funciones RPC con sus argumentos: `firmar_parte`, `firmar_bitacora_vehicular`, `cerrar_y_entregar_bitacora_guardia`...
+
+   Así el contrato no inventa operaciones que la base no tiene.
+2. **La IA hace el mapa.** Para cada pantalla del prototipo, toma sus acciones (botones y formularios, de su HTML) y sus RF, y le asigna la operación que la cumple: tabla y operación, una RPC o una Edge Function. Con Express, genera el `openapi.yaml`.
+3. **Lo que falta se detecta, no se inventa.** Una acción sin operación queda marcada. Ejemplo en bomberos: crear cuentas de usuario (RF01) no se puede hacer desde el navegador, porque exige la clave de servicio de Auth, y necesita una Edge Function. Lo que falta se anota para la Etapa 8.
+4. **Prueba de permisos real.** En el proyecto de prueba, el runner llama a la API como cada usuario de prueba (Administrador, Jefe de guardia, Bombero) y comprueba que cada operación se permite o se rechaza según el contrato. Por ejemplo, el Bombero no puede avalar un parte ni crear vehículos. Es la parte de seguridad que la prueba de la Etapa 6 no veía.
+5. **Resultado:** una ficha en `proyectos.contrato_implementacion` con las operaciones por pantalla, sus roles y RF, lo que falta, y el resultado de la prueba de permisos.
 
 **Terminado cuando:** el contrato está aprobado y cubre todas las acciones del prototipo.
 
@@ -784,7 +890,10 @@ Por comparación, el taller mecánico (Next.js + Supabase con Auth y API de dato
 
 ## 14. Pendientes por decidir
 
-- **Panel de Ejecución:** tres propuestas sin respuesta del usuario (Docker apagado, salida 0 de `migraciones` con `--wait` y levantar solo las piezas con código). Ver "Estado actual".
+- **Propuestas sin respuesta del usuario** (detalle en "Estado actual"):
+  - el panel de Ejecución: Docker apagado, la salida 0 de `migraciones` con `--wait` y levantar solo las piezas con código;
+  - el aviso claro en Vercel;
+  - el costo estimado de la base según el tamaño del diseño.
 - **README del proyecto generado (Etapa 11):** cómo levantarlo, usuarios de prueba y que el cifrado en reposo se resuelve en el disco del servidor.
 - **Edición manual de la estructura de carpetas:** como en la ficha del stack.
 - **Réplica de la base de datos** en los diseños con alta disponibilidad: hoy se duplica el servidor web; replicar la base y su cambio automático (Patroni) queda como mejora posterior.

@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm --prefix docs-site install --no-audit --no-fund && npm run docs:build && next build",
+    "docs": "npm --prefix docs-site run start -- --port 3001",
+    "docs:build": "npm --prefix docs-site run build -- --out-dir ../public/docs",
     "start": "next start",
     "lint": "eslint",
     "runner": "node --env-file=.env.local runner/index.mjs",

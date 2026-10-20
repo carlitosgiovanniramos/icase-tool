@@ -29,12 +29,17 @@ const comoLista = (texto) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-function Seccion({ titulo, children }) {
+// Sección plegable, como las piezas de la estructura de carpetas. abierta: se abre sola (ej. al
+// editar una fila de la sección).
+function Seccion({ titulo, detalle, abierta, children }) {
   return (
-    <div className="mt-6">
-      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{titulo}</h4>
-      {children}
-    </div>
+    <details className="mt-3 border border-gray-300" open={abierta || undefined}>
+      <summary className="cursor-pointer px-4 py-2.5 bg-gray-50 text-sm">
+        <span className="font-semibold text-gray-900">{titulo}</span>
+        {detalle && <span className="text-gray-500"> · {detalle}</span>}
+      </summary>
+      <div className="p-4">{children}</div>
+    </details>
   );
 }
 
@@ -283,9 +288,9 @@ export default function FichaStack({ stack, editable = false, guardando = false,
         )}
       </div>
 
-      {stack.explicacion && <p className="mt-3 text-sm text-gray-600 leading-relaxed">{stack.explicacion}</p>}
+      {stack.explicacion && <p className="mt-3 mb-4 text-sm text-gray-600 leading-relaxed">{stack.explicacion}</p>}
 
-      <Seccion titulo={`Contenedores (${(stack.contenedores || []).length})`}>
+      <Seccion titulo="Contenedores" detalle={(stack.contenedores || []).length}>
         <Tabla
           columnas={["Servicio", "Qué es"]}
           filas={(stack.contenedores || []).map((c) => [
@@ -296,7 +301,7 @@ export default function FichaStack({ stack, editable = false, guardando = false,
       </Seccion>
 
       {(stack.componentes || []).length > 0 && (
-        <Seccion titulo="Diagrama de sistemas: cómo se implementa cada componente">
+        <Seccion titulo="Diagrama de sistemas: cómo se implementa cada componente" detalle={stack.componentes.length}>
           <Tabla
             columnas={["Componente", "Ubicación", "Tecnología", "RF", "Se implementa con"]}
             filas={stack.componentes.map((c) => [
@@ -310,14 +315,14 @@ export default function FichaStack({ stack, editable = false, guardando = false,
         </Seccion>
       )}
 
-      <Seccion titulo="Arquitectura: cómo se implementa cada elemento">
+      <Seccion titulo="Arquitectura: cómo se implementa cada elemento" detalle={(stack.elementos || []).length}>
         <Tabla
           columnas={["Elemento", "Se implementa con", "Detalle"]}
           filas={(stack.elementos || []).map((e) => [e.elemento, resolucion(e.resolucion, e.pieza), e.detalle])}
         />
       </Seccion>
 
-      <Seccion titulo="Librerías">
+      <Seccion titulo="Librerías" detalle={librerias.length} abierta={editando?.tipo === "libreria"}>
         {librerias.length > 0 && (
           <Tabla
             columnas={["Paquete", "En", "Capacidad", "Para qué", "Requerimientos", ...(editable ? [""] : [])]}
@@ -359,7 +364,7 @@ export default function FichaStack({ stack, editable = false, guardando = false,
       </Seccion>
 
       {externos.length > 0 && (
-        <Seccion titulo="Servicios externos (necesitan clave propia)">
+        <Seccion titulo="Servicios externos (necesitan clave propia)" detalle={externos.length} abierta={editando?.tipo === "externo"}>
           <Tabla
             columnas={["Servicio", "Variable", "Lo usa", "Nota", ...(editable ? [""] : [])]}
             filas={externos.map((x, i) => [

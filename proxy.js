@@ -45,8 +45,9 @@ export default async function proxy(request) {
   return response;
 }
 
+// La documentación (/docs) es pública: la consulta quien no tiene cuenta (ej. el docente).
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|docs|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

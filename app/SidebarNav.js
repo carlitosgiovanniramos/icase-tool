@@ -40,6 +40,15 @@ export default function SidebarNav() {
           </Link>
         );
       })}
+      {/* La documentación es un sitio aparte (Docusaurus) servido en /docs: se abre en otra pestaña. */}
+      <a
+        href="/docs"
+        target="_blank"
+        rel="noreferrer"
+        className="px-3 py-2 text-sm font-medium border-l-2 border-transparent transition-colors text-[#94a3b8] hover:text-white"
+      >
+        Documentación
+      </a>
     </nav>
   );
 }
