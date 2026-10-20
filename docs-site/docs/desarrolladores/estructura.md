@@ -23,8 +23,7 @@ icase-tool/
 │   └── <pieza>/              pieza.json, compose.yml, archivos fijos y README.md (guía para la IA)
 ├── runner/index.mjs          proceso local que ejecuta Docker
 ├── supabase/                 scripts SQL de la base de I-CASE Tool
-├── docs/                     documentos internos (plan de la fase de Implementación)
-├── docs-site/                esta documentación (Docusaurus)
+├── docs-site/                documentación (Docusaurus), con el plan de implementación
 ├── proxy.js                  exige sesión en toda la app salvo /login, /registro y /docs
 └── next.config.mjs           sirve la documentación en /docs
 ```
@@ -40,4 +39,4 @@ icase-tool/
 | Agregar una tecnología al catálogo | una carpeta nueva en `plantillas/` |
 | Editar esta documentación | `docs-site/docs/` y `docs-site/openapi/icase-tool.yaml` |
 
-El plan detallado de la fase de Implementación, con decisiones y estado, está en `docs/plan-implementacion.md`.
+El plan detallado de la fase de Implementación, con decisiones y estado, está en el [plan de implementación](./plan-implementacion) (`docs-site/docs/desarrolladores/plan-implementacion.md`).

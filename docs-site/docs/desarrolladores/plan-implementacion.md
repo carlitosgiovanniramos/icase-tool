@@ -1,6 +1,11 @@
+---
+title: Plan de implementación
+sidebar_position: 6
+---
+
 # Plan de trabajo: fase de Implementación
 
-Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada.
+Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada. Es el documento técnico interno del equipo: decisiones, estado de cada etapa y guía para retomar el trabajo.
 
 ## Estado actual (20 de octubre de 2026)
 
@@ -116,7 +121,7 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
 
 | Archivo | Qué es |
 |---|---|
-| `docs/plan-implementacion.md` | Este plan. Mantener al día la sección "Estado actual" |
+| `docs-site/docs/desarrolladores/plan-implementacion.md` | Este plan, publicado también en la documentación (*Desarrolladores → Plan de implementación*). Mantener al día la sección "Estado actual" |
 | `plantillas/<pieza>/` | Catálogo de piezas: `pieza.json` (ficha), `compose.yml`, `compose.<otra>.yml`, `archivos/`, `archivos.<otra>/`, `README.md` (guía para la IA) |
 | `lib/implementacion.js` | Armador de proyectos: junta las piezas en `docker-compose.yml`, `.env.example` y archivos fijos |
 | `lib/stack.js` | Paso "Stack técnico": prompt, validación, lectura del diagrama de sistemas, revisión manual (`revisarStack`) y revisión de la arquitectura contra el catálogo |

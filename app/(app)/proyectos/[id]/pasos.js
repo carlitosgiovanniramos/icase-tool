@@ -113,7 +113,7 @@ export const PASOS = [
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));
 
-// Pasos de la fase de Implementación (ver docs/plan-implementacion.md). Los que ya tienen
+// Pasos de la fase de Implementación (ver docs-site/docs/desarrolladores/plan-implementacion.md). Los que ya tienen
 // generador están también en PASOS; los demás solo se listan como pendientes: cada uno pasa a
 // PASOS cuando tenga su generador, porque antes la cascada intentaría generarlos.
 export const PASOS_IMPLEMENTACION = [

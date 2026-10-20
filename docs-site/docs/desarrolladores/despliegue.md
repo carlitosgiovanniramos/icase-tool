@@ -28,4 +28,4 @@ La aplicación se publica en **Vercel** desde el repositorio de GitHub.
 | Implementación | Backend, Web, Móvil, cierre (descarga del proyecto) | Pendiente |
 | Pruebas | — | Planificado |
 
-El detalle de cada etapa está en `docs/plan-implementacion.md`. Los cambios por versión, en [`CHANGELOG.md`](https://github.com/carlitosgiovanniramos/icase-tool/blob/main/CHANGELOG.md).
+El detalle de cada etapa está en el [plan de implementación](./plan-implementacion). Los cambios por versión, en [`CHANGELOG.md`](https://github.com/carlitosgiovanniramos/icase-tool/blob/main/CHANGELOG.md).
