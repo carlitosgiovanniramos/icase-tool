@@ -149,6 +149,7 @@ export default function FichaBD({ bd, onProbar, probando, deshabilitado }) {
                   <td className="px-2 py-1.5 align-top font-mono text-xs text-gray-800 whitespace-nowrap">
                     {a.ruta}
                     {a.corregido && <span className="ml-2 text-[10px] font-bold uppercase text-gray-500">corregido</span>}
+                    {a.editado && <span className="ml-2 text-[10px] font-bold uppercase text-gray-500">editado</span>}
                   </td>
                   <td className="px-2 py-1.5 align-top text-gray-500">{a.lineas}</td>
                   <td className="px-2 py-1.5 align-top text-gray-500 text-xs">{(a.tablas || []).join(", ")}</td>

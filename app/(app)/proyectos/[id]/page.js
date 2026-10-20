@@ -1583,9 +1583,10 @@ export default function WorkspaceProyecto() {
 
   // Código generado de un paso con archivos (archivos_proyecto): se guarda cada archivo apenas
   // se genera, así un corte no pierde lo que ya se pagó.
-  async function guardarArchivoGenerado(clave, ruta, contenido) {
+  // estado: "generado" (por la IA) o "editado" (a mano en el explorador).
+  async function guardarArchivoGenerado(clave, ruta, contenido, estado = "generado") {
     const { error } = await supabase.from("archivos_proyecto").upsert(
-      { proyecto_id: id, ruta, contenido, paso: clave, estado: "generado", hash: hashCodigo(contenido), actualizado_en: new Date().toISOString() },
+      { proyecto_id: id, ruta, contenido, paso: clave, estado, hash: hashCodigo(contenido), actualizado_en: new Date().toISOString() },
       { onConflict: "proyecto_id,ruta" }
     );
     if (error) {
@@ -1628,8 +1629,10 @@ export default function WorkspaceProyecto() {
     } catch (err) {
       data = { error: err.message };
     }
-    if (data.error) {
-      return { ok: null, fecha: new Date().toISOString(), error: data.error, advertencias: [`La base no se probó: ${data.error}`] };
+    // Una prueba hecha trae "ok" (y, si falló, su "error" de PostgreSQL); sin "ok", no se pudo probar.
+    if (data.ok === undefined) {
+      const error = data.error || "El servidor respondió sin resultado.";
+      return { ok: null, fecha: new Date().toISOString(), error, advertencias: [`La base no se probó: ${error}`] };
     }
     return data;
   }
@@ -1684,12 +1687,13 @@ export default function WorkspaceProyecto() {
   // Ficha guardada en proyectos.bd_implementacion (el código va en archivos_proyecto).
   function fichaBD(archivos, prueba) {
     const plan = archivosDeBaseDatos(artefactosRef.current.impl_estructura);
-    const lista = archivos.map(({ ruta, contenido, advertencias = [], corregido }) => ({
+    const lista = archivos.map(({ ruta, contenido, advertencias = [], corregido, editado }) => ({
       ruta,
       lineas: contenido.trimEnd().split("\n").length,
       tablas: plan.find((a) => a.ruta === ruta)?.tablas || [],
       advertencias,
       ...(corregido ? { corregido } : {}),
+      ...(editado ? { editado } : {}),
     }));
     return {
       archivos: lista,
@@ -1750,6 +1754,32 @@ export default function WorkspaceProyecto() {
       mostrarError(err.message, "No se pudo probar: Base de datos");
     } finally {
       setCargando(null);
+    }
+  }
+
+  // Edición a mano de un archivo de la base desde el explorador. Como toda edición, el paso pierde
+  // la aprobación; la prueba anterior ya no vale y queda pendiente ("Probar de nuevo").
+  async function guardarArchivoEditado(archivo, contenido) {
+    try {
+      const ficha = artefactosRef.current.impl_bd;
+      if (archivo.paso !== "impl_bd" || !ficha) throw new Error("Este archivo no se puede editar.");
+      await guardarArchivoGenerado("impl_bd", archivo.ruta, contenido, "editado");
+      const archivos = ficha.archivos.map((a) =>
+        a.ruta === archivo.ruta ? { ...a, lineas: contenido.trimEnd().split("\n").length, advertencias: [], editado: true } : a
+      );
+      const aviso = "Hay cambios hechos a mano sin probar: pulsa Probar de nuevo.";
+      await guardarArtefacto("impl_bd", {
+        ...ficha,
+        archivos,
+        prueba: { ok: null, fecha: new Date().toISOString(), error: "cambios sin probar", advertencias: [aviso] },
+        revision: [...archivos.flatMap((a) => (a.advertencias || []).map((x) => `${a.ruta}: ${x}`)), aviso],
+        actualizado: new Date().toISOString(),
+      });
+      await marcarCambio("impl_bd");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, `No se pudo guardar ${archivo.ruta}`);
+      return false;
     }
   }
 
@@ -2457,6 +2487,11 @@ export default function WorkspaceProyecto() {
           <ImplementacionFase
             proyectoId={id}
             onVolver={() => setVista("resumen")}
+            // Se edita el código que generó un paso mientras ese paso se puede trabajar.
+            editable={(a) =>
+              a.origen === "generado" && a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta && !ocupado
+            }
+            onGuardarArchivo={guardarArchivoEditado}
             // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
             recarga={JSON.stringify([
               artefactos.impl_stack?.piezas,

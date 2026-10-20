@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PALETA } from "../../../estilos";
 import { useAlert } from "../../../AlertProvider";
 import { PASO, PASOS_IMPLEMENTACION } from "./pasos";
@@ -106,7 +106,164 @@ function NodoCarpeta({ nodo, ruta, nivel, abiertas, alternar, seleccionado, onSe
   );
 }
 
-function ExploradorArchivos({ archivos }) {
+function BotonCodigo({ onClick, disabled, children, principal }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={principal ? { backgroundColor: PALETA.navy, borderColor: PALETA.navy } : { borderColor: PALETA.navy, color: PALETA.navy }}
+      className={`border px-3 py-1 text-xs font-semibold uppercase tracking-wide disabled:opacity-50 ${
+        principal ? "text-white hover:brightness-125" : "bg-transparent hover:bg-gray-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Código con número de línea, de solo lectura.
+function CodigoLectura({ contenido, alto }) {
+  return (
+    <pre className={`flex-1 overflow-auto ${alto} text-xs leading-5 font-mono p-0 m-0`}>
+      <code className="grid" style={{ gridTemplateColumns: "auto 1fr" }}>
+        {contenido.split("\n").map((linea, i) => (
+          <span key={i} className="contents">
+            <span className="select-none text-right text-gray-400 pl-3 pr-3 bg-gray-50">{i + 1}</span>
+            <span className="pr-4 whitespace-pre">{linea || " "}</span>
+          </span>
+        ))}
+      </code>
+    </pre>
+  );
+}
+
+// Editor de código: área de texto con los números de línea al costado (se desplazan juntos).
+// Tab inserta dos espacios; Ctrl+S guarda.
+function CodigoEditable({ valor, onCambiar, onGuardar, alto }) {
+  const numerosRef = useRef(null);
+  const lineas = valor.split("\n").length;
+
+  function alTecla(e) {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const { selectionStart: inicio, selectionEnd: fin } = e.target;
+      onCambiar(valor.slice(0, inicio) + "  " + valor.slice(fin));
+      requestAnimationFrame(() => e.target.setSelectionRange(inicio + 2, inicio + 2));
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      onGuardar();
+    }
+  }
+
+  return (
+    <div className={`flex-1 flex min-h-0 ${alto}`}>
+      <div ref={numerosRef} className="select-none overflow-hidden text-right text-gray-400 bg-gray-50 text-xs leading-5 font-mono py-0 pl-3 pr-3">
+        {Array.from({ length: lineas }, (_, i) => (
+          <div key={i}>{i + 1}</div>
+        ))}
+      </div>
+      <textarea
+        value={valor}
+        onChange={(e) => onCambiar(e.target.value)}
+        onKeyDown={alTecla}
+        onScroll={(e) => numerosRef.current && (numerosRef.current.scrollTop = e.target.scrollTop)}
+        spellCheck={false}
+        wrap="off"
+        className="flex-1 resize-none outline-none text-xs leading-5 font-mono p-0 pr-4 whitespace-pre overflow-auto"
+      />
+    </div>
+  );
+}
+
+// Panel del archivo elegido: ver, expandir a pantalla completa y, si el paso que lo generó se
+// puede trabajar, editarlo. Lo mismo se ve dentro del explorador o expandido.
+// onGuardar(archivo, contenido) devuelve true si se guardó.
+function PanelArchivo({ archivo, editable, onGuardar }) {
+  const [expandido, setExpandido] = useState(false);
+  const [borrador, setBorrador] = useState(null); // texto en edición, o null si solo se ve
+  const [guardando, setGuardando] = useState(false);
+  const cambiado = borrador !== null && borrador !== archivo.contenido;
+
+  useEffect(() => {
+    if (!expandido) return;
+    const alTecla = (e) => e.key === "Escape" && setExpandido(false);
+    window.addEventListener("keydown", alTecla);
+    const overflowPrevio = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", alTecla);
+      document.body.style.overflow = overflowPrevio;
+    };
+  }, [expandido]);
+
+  async function guardar() {
+    if (!cambiado || guardando) return;
+    setGuardando(true);
+    try {
+      if (await onGuardar(archivo, borrador)) setBorrador(null);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  const planificado = archivo.origen === "planificado";
+  const alto = expandido ? "" : "max-h-[520px]";
+
+  return (
+    <div className={expandido ? "fixed inset-0 z-50 bg-white flex flex-col" : "flex-1 min-w-0 flex flex-col"}>
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-300 flex-wrap">
+        <span className="text-sm font-mono text-gray-800 truncate">{archivo.ruta}</span>
+        {archivo.origen === "plantilla" && (
+          <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-200">Plantilla</span>
+        )}
+        {planificado && (
+          <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-200">Pendiente</span>
+        )}
+        {archivo.estado === "editado" && borrador === null && (
+          <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-200">Editado</span>
+        )}
+        {!planificado && (
+          <div className="ml-auto flex items-center gap-2">
+            {borrador !== null ? (
+              <>
+                <BotonCodigo onClick={guardar} disabled={!cambiado || guardando} principal>
+                  {guardando ? "Guardando..." : "Guardar"}
+                </BotonCodigo>
+                <BotonCodigo onClick={() => setBorrador(null)} disabled={guardando}>
+                  Cancelar
+                </BotonCodigo>
+              </>
+            ) : (
+              editable && <BotonCodigo onClick={() => setBorrador(archivo.contenido)}>Editar</BotonCodigo>
+            )}
+            <BotonCodigo onClick={() => setExpandido((e) => !e)}>{expandido ? "Cerrar ✕" : "Expandir"}</BotonCodigo>
+          </div>
+        )}
+      </div>
+      {planificado ? (
+        // Todavía sin código: lo que dice la estructura de carpetas sobre el archivo.
+        <div className="p-4 text-sm text-gray-700 space-y-2">
+          <p>{archivo.proposito}</p>
+          <p className="text-xs text-gray-500">Tipo: {archivo.tipo}</p>
+          {archivo.requerimientos?.length > 0 && (
+            <p className="text-xs text-gray-500">Requerimientos: {archivo.requerimientos.join(", ")}</p>
+          )}
+          {archivo.pantallas?.length > 0 && <p className="text-xs text-gray-500">Pantallas: {archivo.pantallas.join(" · ")}</p>}
+          {archivo.tablas?.length > 0 && <p className="text-xs text-gray-500">Tablas: {archivo.tablas.join(", ")}</p>}
+          {archivo.modulo && <p className="text-xs text-gray-500">Módulo: {archivo.modulo}</p>}
+        </div>
+      ) : borrador !== null ? (
+        <CodigoEditable valor={borrador} onCambiar={setBorrador} onGuardar={guardar} alto={expandido ? "" : "h-[520px]"} />
+      ) : (
+        <CodigoLectura contenido={archivo.contenido} alto={alto} />
+      )}
+    </div>
+  );
+}
+
+// editable(archivo): si se puede editar (código generado de un paso que se puede trabajar).
+function ExploradorArchivos({ archivos, editable, onGuardar }) {
   const arbol = useMemo(() => armarArbol(archivos), [archivos]);
   const [abiertas, setAbiertas] = useState(() => new Set(Object.keys(arbol.carpetas)));
   const [seleccionado, setSeleccionado] = useState(null);
@@ -134,51 +291,14 @@ function ExploradorArchivos({ archivos }) {
           onSeleccionar={setSeleccionado}
         />
       </div>
-      <div className="flex-1 min-w-0 flex flex-col">
-        {archivo ? (
-          <>
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-300">
-              <span className="text-sm font-mono text-gray-800 truncate">{archivo.ruta}</span>
-              {archivo.origen === "plantilla" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-200">
-                  Plantilla
-                </span>
-              )}
-              {archivo.origen === "planificado" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-200">
-                  Pendiente
-                </span>
-              )}
-            </div>
-            {archivo.origen === "planificado" ? (
-              // Todavía sin código: lo que dice la estructura de carpetas sobre el archivo.
-              <div className="p-4 text-sm text-gray-700 space-y-2">
-                <p>{archivo.proposito}</p>
-                <p className="text-xs text-gray-500">Tipo: {archivo.tipo}</p>
-                {archivo.requerimientos?.length > 0 && (
-                  <p className="text-xs text-gray-500">Requerimientos: {archivo.requerimientos.join(", ")}</p>
-                )}
-                {archivo.pantallas?.length > 0 && <p className="text-xs text-gray-500">Pantallas: {archivo.pantallas.join(" · ")}</p>}
-                {archivo.tablas?.length > 0 && <p className="text-xs text-gray-500">Tablas: {archivo.tablas.join(", ")}</p>}
-                {archivo.modulo && <p className="text-xs text-gray-500">Módulo: {archivo.modulo}</p>}
-              </div>
-            ) : (
-            <pre className="flex-1 overflow-auto max-h-[520px] text-xs leading-5 font-mono p-0 m-0">
-              <code className="grid" style={{ gridTemplateColumns: "auto 1fr" }}>
-                {archivo.contenido.split("\n").map((linea, i) => (
-                  <span key={i} className="contents">
-                    <span className="select-none text-right text-gray-400 pl-3 pr-3 bg-gray-50">{i + 1}</span>
-                    <span className="pr-4 whitespace-pre">{linea || " "}</span>
-                  </span>
-                ))}
-              </code>
-            </pre>
-            )}
-          </>
-        ) : (
+      {archivo ? (
+        // key: al cambiar de archivo se descarta lo que se estaba editando en el anterior.
+        <PanelArchivo key={archivo.ruta} archivo={archivo} editable={!!editable?.(archivo)} onGuardar={onGuardar} />
+      ) : (
+        <div className="flex-1 min-w-0 flex">
           <p className="m-auto text-sm text-gray-500">Selecciona un archivo.</p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -390,12 +510,20 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
 // children: los pasos de la fase que ya tienen generador (los arma la página del proyecto, con
 // sus controles de aprobar, rechazar y cascada). recarga: cambia cuando cambian las piezas del
 // stack, y con ellas los archivos fijos y los servicios del proyecto.
-export default function ImplementacionFase({ proyectoId, onVolver, recarga, children }) {
+// editable(archivo) / onGuardarArchivo(archivo, contenido): edición del código generado; la
+// página decide qué se puede editar y guarda el cambio en su paso.
+export default function ImplementacionFase({ proyectoId, onVolver, recarga, editable, onGuardarArchivo, children }) {
   const [archivos, setArchivos] = useState(null);
   const [generados, setGenerados] = useState(0);
   const [servicios, setServicios] = useState([]);
   const [error, setError] = useState("");
   const pendientes = PASOS_IMPLEMENTACION.filter((p) => !PASO[p.clave]);
+
+  async function guardarArchivo(archivo, contenido) {
+    if (!(await onGuardarArchivo?.(archivo, contenido))) return false;
+    setArchivos((lista) => lista.map((a) => (a.ruta === archivo.ruta ? { ...a, contenido, estado: "editado" } : a)));
+    return true;
+  }
 
   useEffect(() => {
     llamar(proyectoId, "archivos")
@@ -453,7 +581,13 @@ export default function ImplementacionFase({ proyectoId, onVolver, recarga, chil
                   Todavía no hay código generado. Se muestran los archivos fijos de las piezas y, en cursiva, los planificados.
                 </p>
               )}
-              <ExploradorArchivos key={recarga} archivos={archivos} />
+              <ExploradorArchivos
+                // Se reinicia (carpetas abiertas, archivo elegido) solo si cambian las rutas, no al guardar un archivo.
+                key={archivos.map((a) => a.ruta).join("|")}
+                archivos={archivos}
+                editable={editable}
+                onGuardar={guardarArchivo}
+              />
             </>
           )}
         </div>
