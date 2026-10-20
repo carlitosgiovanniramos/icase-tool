@@ -2328,6 +2328,7 @@ export default function WorkspaceProyecto() {
     impl_bd: !!fasesAprobadas.impl_estructura,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
+  const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   // La generación de la base se cortó: se ofrece seguir desde el archivo que faltaba.
   const bdIncompleta = !!artefactos.impl_bd?.incompleto && pendientes.impl_bd !== "desactualizado";
 
@@ -2353,7 +2354,6 @@ export default function WorkspaceProyecto() {
     if (a.revision?.length) partes.push(`${a.revision.length} por revisar`);
     return partes.filter(Boolean).join(" · ");
   }
-  const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   const hayDiseno = PASOS.some((p) => p.fase === "diseno" && artefactos[p.clave]);
 
   const configPrototipo = contexto.prototipo || {};
