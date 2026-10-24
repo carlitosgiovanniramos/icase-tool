@@ -35,6 +35,8 @@ import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
+import FichaContrato from "./FichaContrato";
+import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
@@ -927,6 +929,7 @@ export default function WorkspaceProyecto() {
       },
       impl_stack: cuerpoStack(),
       impl_estructura: cuerpoEstructura(),
+      impl_contrato: { proyectoId: id },
     };
 
     const data = await pedirIA(PASO[clave].ruta, { ...cuerpos[clave], indicaciones });
@@ -938,10 +941,14 @@ export default function WorkspaceProyecto() {
       const { advertencias = [], ...analisis } = resto;
       return { valor: analisis, modelo, advertencias };
     }
-    if (clave === "impl_stack" || clave === "impl_estructura") {
+    if (["impl_stack", "impl_estructura", "impl_contrato"].includes(clave)) {
       // Lo que la validación no pudo corregir queda en la ficha ("revision") para revisarlo antes
       // de aprobar, y también se muestra al generar.
       const { advertencias = [], ...ficha } = resto;
+      if (clave === "impl_contrato") {
+        await sincronizarArchivosContrato(ficha);
+        return { valor: { ...ficha, advertencias, revision: [...(ficha.errores || []), ...advertencias] }, modelo, advertencias: [...(ficha.errores || []), ...advertencias] };
+      }
       return { valor: { ...ficha, revision: advertencias }, modelo, advertencias };
     }
     // Se guarda ya limpio, para que los pasos siguientes reciban código válido. Cada ruta devuelve
@@ -1295,6 +1302,7 @@ export default function WorkspaceProyecto() {
 
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
+    if (clave === "impl_contrato" && claudeActivo() && !(await confirmar("Se generará el contrato con Claude. Costo orientativo: $0,20 a $1,00 según el diseño y los reintentos.", "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
       const ficha = artefactosRef.current.impl_bd;
       const faltan = retomar && ficha?.incompleto ? ficha.total - ficha.archivos.length : undefined;
@@ -1347,6 +1355,10 @@ export default function WorkspaceProyecto() {
     try {
       for (let i = 0; i < pasos.length; i++) {
         const p = pasos[i];
+        // El contrato se inventaría sobre una base todavía sin revisar si la cascada lo
+        // generara inmediatamente después de regenerar el SQL. Espera su aprobación.
+        if (p.clave === "impl_contrato" && !fasesRef.current.impl_bd) return;
+        if (p.clave === "impl_contrato" && claudeActivo() && !(await confirmar("Costo orientativo del contrato con Claude: $0,20 a $1,00.", "¿Actualizar contrato con Claude?", "Actualizar"))) return;
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
           const { valor, modelo, detenido, advertencias } = await pedirPaso(p.clave, {
@@ -1425,6 +1437,15 @@ export default function WorkspaceProyecto() {
   // Aprobar un paso que cambió propaga el cambio: se regeneran automáticamente los pasos
   // siguientes que quedaron desactualizados, y cada uno queda pendiente de revisión.
   async function aprobarPaso(clave) {
+    if (clave === "impl_contrato" && !contratoAprobable(artefactosRef.current.impl_contrato)) {
+      mostrarError("Corrige los errores y cubre todas las acciones antes de aprobar.", "Contrato incompleto");
+      return;
+    }
+    if (clave === "impl_contrato") {
+      const prueba = artefactosRef.current.impl_contrato?.prueba;
+      if (prueba?.fallidas) { mostrarError("Hay permisos que contradicen el contrato. Corrige la base o el contrato y vuelve a probar.", "Prueba de permisos fallida"); return; }
+      if ((!prueba || prueba.inconclusas || prueba.pendientes) && !(await confirmar("Hay permisos o flujos pendientes de comprobar. La aprobación valida el contrato; esas pruebas seguirán pendientes para la integración del backend.", "¿Aprobar con pruebas pendientes?", "Aprobar contrato"))) return;
+    }
     cancelarEdicion(clave); // aprobado de nuevo: vuelve a quedar bloqueado
 
     // Al aprobar los requerimientos, los agregados o cambiados con "Ampliar con IA" dejan de
@@ -1596,6 +1617,53 @@ export default function WorkspaceProyecto() {
   }
 
   // ---------- Base de datos ----------
+
+  async function sincronizarArchivosContrato(ficha) {
+    const rutas = ["contrato/api.json", ...(ficha.openapi ? ["openapi.yaml"] : [])];
+    await guardarArchivoGenerado("impl_contrato", rutas[0], JSON.stringify({ tipo: ficha.tipo, operaciones: ficha.operaciones, acciones: ficha.acciones }, null, 2));
+    if (ficha.openapi) await guardarArchivoGenerado("impl_contrato", "openapi.yaml", ficha.openapi);
+    await borrarArchivosDePaso("impl_contrato", rutas);
+  }
+
+  async function guardarContrato(actual) {
+    setCargando({ paso: "editar:impl_contrato" });
+    try {
+      const ficha = await pedirJson("/api/revisar-contrato", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId: id, actual }) });
+      if (ficha.error) throw new Error(ficha.error);
+      await guardarArtefacto("impl_contrato", { ...ficha, revision: [...ficha.errores, ...ficha.advertencias] });
+      await sincronizarArchivosContrato(ficha);
+      await marcarCambio("impl_contrato");
+      return true;
+    } catch (error) { mostrarError(error.message, "No se pudo guardar el contrato"); return false; }
+    finally { setCargando(null); }
+  }
+
+  async function probarContrato() {
+    setCargando({ paso: "probar:impl_contrato" });
+    try {
+      const { prueba, error } = await pedirJson("/api/probar-contrato", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId: id }) });
+      if (error) throw new Error(error);
+      const actual = artefactosRef.current.impl_contrato;
+      await guardarArtefacto("impl_contrato", { ...actual, prueba });
+      if (prueba.fallidas || prueba.inconclusas) await marcarCambio("impl_contrato");
+    } catch (error) { mostrarError(error.message, "No se pudo probar el contrato"); }
+    finally { setCargando(null); }
+  }
+
+  async function ampliarContrato(instruccion) {
+    if (claudeActivo() && !(await confirmar("Costo orientativo con Claude: $0,20 a $1,00, según el diseño y los reintentos.", "¿Modificar con Claude?", "Modificar"))) return false;
+    setCargando({ paso: "ampliar:impl_contrato" });
+    try {
+      const data = await pedirIA(PASO.impl_contrato.ruta, { proyectoId: id, actual: artefactosRef.current.impl_contrato, instruccion, indicaciones: contextoRef.current.indicaciones?.impl_contrato });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia: modelo, ...ficha } = data;
+      await guardarArtefacto("impl_contrato", { ...ficha, revision: [...ficha.errores, ...ficha.advertencias] });
+      await sincronizarArchivosContrato(ficha);
+      await marcarCambio("impl_contrato", {}, modelo);
+      return true;
+    } catch (error) { mostrarError(error.message, "No se pudo modificar el contrato"); return false; }
+    finally { setCargando(null); }
+  }
 
   // Código generado de un paso con archivos (archivos_proyecto): se guarda cada archivo apenas
   // se genera, así un corte no pierde lo que ya se pagó.
@@ -2348,6 +2416,7 @@ export default function WorkspaceProyecto() {
     impl_stack: !!fasesAprobadas.diseno,
     impl_estructura: !!fasesAprobadas.impl_stack,
     impl_bd: !!fasesAprobadas.impl_estructura,
+    impl_contrato: !!fasesAprobadas.impl_bd && !pendientes.impl_bd,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2356,7 +2425,7 @@ export default function WorkspaceProyecto() {
 
   // Pasos de Implementación plegables: por defecto se ve abierto solo el que se está trabajando
   // (el primero sin aprobar) y los demás muestran un resumen; el usuario abre o pliega cualquiera.
-  const PASOS_PLEGABLES = ["impl_stack", "impl_estructura", "impl_bd"];
+  const PASOS_PLEGABLES = ["impl_stack", "impl_estructura", "impl_bd", "impl_contrato"];
   const pasoEnCurso = PASOS_PLEGABLES.find((c) => visible(c) && !aprobado(c));
   const pasoAbierto = (clave) => (plegados[clave] === undefined ? clave === pasoEnCurso || generando(clave) : !plegados[clave]);
   const alternarPaso = (clave) => setPlegados((p) => ({ ...p, [clave]: pasoAbierto(clave) }));
@@ -2369,6 +2438,7 @@ export default function WorkspaceProyecto() {
       partes.push(`${(a.contenedores || []).length} contenedores`);
     }
     if (clave === "impl_estructura") partes.push(`${(a.archivos || []).length} archivos`);
+    if (clave === "impl_contrato") partes.push(`${(a.operaciones || []).length} operaciones`, `${a.cobertura?.acciones?.join("/") || "0"} acciones`);
     if (clave === "impl_bd") {
       partes.push(bdIncompleta ? `${a.archivos.length} de ${a.total} archivos` : `${(a.archivos || []).length} archivos`);
       if (!bdIncompleta) partes.push(a.prueba?.ok ? "probada" : a.prueba?.ok === false ? "con errores" : "sin probar");
@@ -2862,6 +2932,30 @@ export default function WorkspaceProyecto() {
                 )}
                   </>
                 )}
+              </>
+            )}
+            {visible("impl_contrato") && (
+              <>
+                <TituloPaso color={PALETA.marron} estado={pendientes.impl_contrato} modelo={modelos.impl_contrato}
+                  onActualizar={trabajable("impl_contrato") ? () => actualizarPaso("impl_contrato") : undefined}
+                  deshabilitado={ocupado} onAlternar={() => alternarPaso("impl_contrato")} abierto={pasoAbierto("impl_contrato")} resumen={resumenPaso("impl_contrato")}>
+                  Contrato de API
+                </TituloPaso>
+                {pasoAbierto("impl_contrato") && <>
+                  {trabajable("impl_contrato") && !bloqueado("impl_contrato") && <CampoIndicaciones clave="impl_contrato" valor={contexto.indicaciones?.impl_contrato} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: revisa las operaciones de firma y sus roles" />}
+                  <ControlesPaso clave="impl_contrato" esperando={!trabajable("impl_contrato")} bloqueado={bloqueado("impl_contrato")} enEdicion={enEdicion("impl_contrato")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
+                    <BotonGenerar onClick={() => regenerarPaso("impl_contrato")} secundario={!!artefactos.impl_contrato} disabled={ocupado} cargando={generando("impl_contrato")} textoCargando="Leyendo la base y generando contrato..." color={PALETA.marron}>
+                      {artefactos.impl_contrato ? "Regenerar" : "Generar"} contrato de API
+                    </BotonGenerar>
+                    {artefactos.impl_contrato && <BotonEliminar onClick={() => eliminarPaso("impl_contrato", "¿Eliminar el contrato de API?")} disabled={ocupado} title="Eliminar contrato" />}
+                  </ControlesPaso>
+                  {artefactos.impl_contrato && <FichaContrato key={artefactos.impl_contrato.actualizado} contrato={artefactos.impl_contrato} editable={trabajable("impl_contrato") && !bloqueado("impl_contrato")} deshabilitado={ocupado} onGuardar={guardarContrato} onProbar={probarContrato} />}
+                  {artefactos.impl_contrato && trabajable("impl_contrato") && !bloqueado("impl_contrato") && <AmpliarConIA descripcion="Describe qué ajustar en las operaciones, sus roles o sus datos de prueba." ejemplo="Ej: corrige los argumentos de las RPC de firma" onEnviar={ampliarContrato} cargando={generando("ampliar:impl_contrato")} deshabilitado={ocupado} />}
+                  {artefactos.impl_contrato && trabajable("impl_contrato") && <div className="mt-4 flex gap-3 flex-wrap">
+                    <BotonAprobar aprobado={!!fasesAprobadas.impl_contrato} onClick={() => aprobarPaso("impl_contrato")} etiqueta="Contrato de API" disabled={ocupado || !contratoAprobable(artefactos.impl_contrato) || !!artefactos.impl_contrato.prueba?.fallidas} />
+                    {!fasesAprobadas.impl_contrato && <BotonRechazar etiqueta="Contrato de API" onClick={() => rechazarPaso("impl_contrato", "¿Rechazar el contrato?")} disabled={ocupado} />}
+                  </div>}
+                </>}
               </>
             )}
           </ImplementacionFase>

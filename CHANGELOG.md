@@ -2,6 +2,12 @@
 
 Los cambios importantes de I-CASE Tool, de la versión más reciente a la más antigua. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [Sin publicar] - 2026-10-24
+
+### Agregado
+- Etapa 7, **Contrato de API**: inventario de la base probada, operaciones por acción del prototipo, validación determinista, edición, ampliación con IA, aprobación y cascada; exportación JSON/OpenAPI y matriz de permisos de Supabase con escrituras revertidas en un proyecto desechable.
+- Migración `supabase/contrato_implementacion.sql`; rutas de generación, revisión y prueba, y pruebas automatizadas del contrato.
+
 ## [Beta 2.3] - 2026-10-20
 
 Primera parte de la **fase de Implementación** y documentación del proyecto.

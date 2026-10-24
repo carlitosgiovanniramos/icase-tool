@@ -45,12 +45,19 @@ La especificación completa, con cada parámetro y respuesta, está en la **[Ref
 | POST | `/api/revisar-stack` | Implementación | Revalida una ficha editada a mano (sin IA) | Ficha del stack |
 | POST | `/api/generar-estructura` | Implementación | Estructura de carpetas | Ficha de la estructura |
 | POST | `/api/generar-bd` | Implementación | Un archivo SQL (migración o datos de prueba) | `contenido` |
+| POST | `/api/generar-contrato` | Implementación | Inventario real y contrato por acción del prototipo | Operaciones, acciones, cobertura y errores |
+| POST | `/api/revisar-contrato` | Implementación | Revalida una edición sin IA con el inventario guardado | Ficha del contrato |
+| POST | `/api/probar-contrato` | Implementación | Prueba permisos de tablas y RPC como cada actor en Supabase desechable | `prueba` |
 | POST | `/api/implementacion` | Implementación | Archivos del proyecto, ejecución y prueba de la base (vía runner) | Según la acción |
 | GET | `/api/modelos-ia` | General | Modelos gratuitos disponibles y en pausa | `modelos[]` |
 | GET | `/api/exportar-diseno` | Solo desarrollo | Respaldo local de los diseños | `guardados` |
 | GET | `/api/importar-prototipo` | Solo desarrollo | Restaura un prototipo desde un respaldo | — |
 
 ## Códigos de estado
+
+Las tres rutas del contrato reciben `proyectoId` y leen el diseño y los SQL con la sesión del usuario (RLS). Generar admite además `usarClaude`, `indicaciones`, `actual` e `instruccion`; revisar recibe `actual`. Las rutas devuelven el resultado y el navegador lo guarda. Una huella SHA-256 de los SQL y el stack impide reutilizar un inventario después de cambiar la base. El contrato debe regenerarse si esa huella cambia.
+
+La prueba usa usuarios `@prueba.local`, nunca claves de servicio del cliente. Devuelve estados `correcta`, `fallida`, `inconclusa` y `pendiente` por operación y rol; no devuelve JWT ni contraseñas. Las respuestas vacías solo prueban un rechazo RLS si la misma petición funciona con filas para un rol permitido. `ok` resume las pruebas ejecutables de tablas y RPC, y `pendientes` conserva los flujos Auth/Edge aún sin integrar. Una base que no se aplica devuelve 422; una base sin aprobar, una migración del contrato ausente o un contrato desactualizado, 409.
 
 | Código | Significado en I-CASE Tool |
 |---|---|

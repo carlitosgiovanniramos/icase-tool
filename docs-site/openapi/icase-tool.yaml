@@ -595,6 +595,120 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
 
+  /api/generar-contrato:
+    post:
+      tags: [Implementación]
+      summary: Genera el contrato de API por acción del prototipo
+      description: |
+        Lee el proyecto y los SQL con RLS. Exige la base aprobada y vigente. Inspecciona una base
+        desechable mediante el runner, o reutiliza el inventario guardado si coincide su huella SQL/stack.
+        Devuelve operaciones, acciones, errores, advertencias, cobertura e inventario; con Express,
+        también openapi (YAML). No guarda la ficha: lo hace el navegador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proyectoId]
+              properties:
+                proyectoId: { type: string, format: uuid }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+                indicaciones: { type: string }
+                actual: { type: object, description: Contrato anterior para ampliación }
+                instruccion: { type: string }
+      responses:
+        "200":
+          description: Contrato generado y validado; puede incluir errores que impiden aprobar
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContratoImplementacion" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/revisar-contrato:
+    post:
+      tags: [Implementación]
+      summary: Revalida un contrato editado sin llamar a la IA
+      description: Exige un inventario guardado vigente. Descarta las pruebas anteriores al cambiar operaciones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proyectoId, actual]
+              properties:
+                proyectoId: { type: string, format: uuid }
+                actual: { type: object, required: [operaciones, acciones], properties: { operaciones: { type: array, items: { type: object } }, acciones: { type: array, items: { type: object } } } }
+      responses:
+        "200":
+          description: Ficha revalidada, con errores y advertencias
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContratoImplementacion" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/probar-contrato:
+    post:
+      tags: [Implementación]
+      summary: Prueba permisos de Supabase como cada actor
+      description: |
+        Reaplica los SQL en un proyecto desechable. Inicia sesión por Auth con usuarios de prueba
+        y llama a PostgREST con sus JWT. Las escrituras se revierten siempre en ese contenedor.
+        Las respuestas vacías y errores de negocio son inconclusos, no permisos verificados.
+        Express y Edge Functions requieren el backend de la etapa 8.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proyectoId]
+              properties:
+                proyectoId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Matriz de resultados; el navegador la guarda en la ficha
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prueba:
+                    type: object
+                    properties:
+                      ok: { type: boolean }
+                      fecha: { type: string, format: date-time }
+                      correctas: { type: integer }
+                      fallidas: { type: integer }
+                      inconclusas: { type: integer }
+                      pendientes: { type: integer }
+                      resultados:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            operacion: { type: string }
+                            rol: { type: string }
+                            permitido: { type: boolean }
+                            estado: { type: string, enum: [correcta, fallida, inconclusa, pendiente] }
+                            detalle: { type: string }
+                            http: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /api/implementacion:
     post:
       tags: [Implementación]
@@ -692,6 +806,21 @@ components:
                   explicacion: { type: string }
                   advertencias: { type: array, items: { type: string } }
   schemas:
+    ContratoImplementacion:
+      type: object
+      properties:
+        tipo: { type: string, enum: [supabase, openapi] }
+        operaciones: { type: array, items: { type: object } }
+        acciones: { type: array, items: { type: object } }
+        errores: { type: array, items: { type: string } }
+        advertencias: { type: array, items: { type: string } }
+        cobertura: { type: object }
+        inventario: { type: object, nullable: true }
+        huella: { type: string, description: SHA-256 de los SQL y el stack }
+        actualizado: { type: string, format: date-time }
+        openapi: { type: string, description: YAML OpenAPI del proyecto Express }
+        modelo_ia: { type: string }
+        costo_ia: { type: number }
     PreferenciaIA:
       description: "true = solo Claude; id de un modelo gratuito = solo ese; false = automático"
       oneOf:

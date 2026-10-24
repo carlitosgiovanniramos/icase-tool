@@ -109,6 +109,15 @@ export const PASOS = [
     ruta: "/api/generar-bd",
     archivos: true,
   },
+  {
+    clave: "impl_contrato",
+    fase: "implementacion",
+    nombre: "Contrato de API",
+    aprobacion: "impl_contrato",
+    columna: "contrato_implementacion",
+    ruta: "/api/generar-contrato",
+    archivos: true,
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));

@@ -7,9 +7,9 @@ sidebar_position: 6
 
 Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada. Es el documento técnico interno del equipo: decisiones, estado de cada etapa y guía para retomar el trabajo.
 
-## Estado actual (20 de octubre de 2026)
+## Estado actual (24 de octubre de 2026)
 
-**La Etapa 6 (Base de datos) está terminada. Sigue la Etapa 7: el paso "Contrato / API", que hay que construir.** La Etapa 7 quedó en pausa mientras se hacía la **documentación del proyecto** para el taller de clase (punto 1, "Herramientas de documentación"). La documentación ya está construida: ver "Documentación del proyecto".
+**La Etapa 6 (Base de datos) está terminada. La Etapa 7 (Contrato / API) ya tiene implementación en código; falta aplicar su migración y validar/aprobar el contrato con los proyectos reales.** La Etapa 8 (Backend) sigue pendiente. La documentación del proyecto ya está construida: ver "Documentación del proyecto".
 - **Bomberos:**
   - estructura aprobada (76 archivos);
   - base generada con Gemini y corregida a mano (`0001`, `0004`, `0006` y `seed.sql`);
@@ -25,7 +25,7 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada) |
 | 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada) |
 | 6. Paso "Base de datos" | Terminada (base de bomberos probada 22/22) |
-| **7. Paso "Contrato / API"** | **Siguiente: por construir** |
+| **7. Paso "Contrato / API"** | **Implementada; pendiente validación y aprobación con los proyectos reales** |
 | 8 a 11 | Pendientes |
 
 Pendientes inmediatos:
@@ -42,7 +42,7 @@ Pendientes inmediatos:
    - dar acceso al docente si el repositorio es privado;
    - confirmar la licencia (se puso MIT a nombre de CCAJ Software Solutions).
 2. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
-3. **Etapa 7 (Contrato / API):** construir el paso con la receta. Antes, decidir con el usuario lo que propone la sección de la Etapa 7. Se le presentó la propuesta y no respondió todavía, porque pidió hacer la documentación primero.
+3. **Etapa 7 (Contrato / API):** el usuario autorizó su implementación autónoma. Aplicar `supabase/contrato_implementacion.sql`, generar el contrato después de aprobar la base, revisar sus operaciones y ejecutar "Probar permisos" en local. Comprobarlo con bomberos y taller antes de cerrar la etapa.
 4. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
 5. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
 6. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
@@ -66,7 +66,7 @@ Pendientes inmediatos:
 
 ### Base de datos de icase-tool (Supabase)
 
-Scripts de `supabase/` que deben estar ejecutados en el SQL Editor, cada uno una sola vez. Todos lo están en el Supabase actual:
+Scripts de `supabase/` que deben estar ejecutados en el SQL Editor, cada uno una sola vez. Los anteriores a la etapa 7 ya están aplicados; la migración nueva del contrato sigue pendiente:
 
 | Script | Para qué |
 |---|---|
@@ -75,6 +75,7 @@ Scripts de `supabase/` que deben estar ejecutados en el SQL Editor, cada uno una
 | `stack_implementacion.sql` | Columna del paso "Stack técnico" (Etapa 4) |
 | `estructura_implementacion.sql` | Columna del paso "Estructura de carpetas" (Etapa 5) |
 | `bd_implementacion.sql` | Columna del paso "Base de datos" (Etapa 6) |
+| `contrato_implementacion.sql` | Columna del paso "Contrato de API" (Etapa 7; nueva, pendiente de aplicar en el Supabase actual) |
 
 Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si Vercel y la PC usan el mismo proyecto de Supabase, cada script se ejecuta una sola vez para los dos.
 
@@ -84,6 +85,7 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
   - todos los pasos con IA, incluida la generación de la base de datos;
   - el selector de modelo gratuito;
   - "Continuar base de datos".
+  - regenerar el contrato con un inventario guardado, si la huella SQL/stack sigue vigente.
 
   El build incluye `plantillas/` en las rutas que la leen (comprobado en sus `.nft.json`).
 - **Documentación:**
@@ -92,6 +94,7 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
   - no hace falta configurar nada más en Vercel.
 - **No funciona en Vercel:**
   - el runner y Docker: Levantar, Detener, Ver logs y "Probar de nuevo" de la base;
+  - generar un inventario nuevo del contrato y "Probar permisos";
   - el motivo: el runner corre en la PC del usuario y escucha en `127.0.0.1`, y Vercel no tiene Docker ni llega a esa dirección;
   - lo que se ve: "Falta RUNNER_TOKEN en .env.local".
 
@@ -129,6 +132,8 @@ Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si
 | `lib/estructura.js` | Paso "Estructura de carpetas": una generación por pieza y la validación de cobertura |
 | `lib/bd.js` | Paso "Base de datos": prompt y validación de cada archivo SQL, y revisión de la prueba en contenedores (`revisarPrueba`) |
 | `lib/archivosBD.js` | Archivos de la base dentro de la estructura, archivo que falló y error de la prueba; se usa también en el navegador |
+| `lib/contrato.js`, `lib/validarContrato.js`, `lib/accionesContrato.js` | Generación del contrato, validación determinista y extracción de controles del prototipo |
+| `lib/contextoContrato.js`, `lib/inventarioContrato.js`, `lib/pruebaContrato.js`, `lib/runner.js` | Lectura autenticada del proyecto y SQL, inventario de PostgreSQL, pruebas HTTP por actor y comunicación con el runner |
 | `lib/gemini.js`, `lib/groq.js`, `lib/claude.js` | Llamadas a la IA: Gemini, después Groq; solo Claude con el interruptor; solo el modelo elegido si hay uno (`generarSoloCon`, `modelosGratuitos`) |
 | `lib/preferenciaClaude.js`, `app/InterruptorClaude.js`, `app/api/modelos-ia` | Preferencia de IA del navegador ("Usar Claude", modelo gratuito elegido, gasto estimado), el interruptor y el selector de la barra lateral, y la lista de modelos gratuitos |
 | `runner/index.mjs` | Runner: el único proceso que ejecuta Docker. `probarbd` prueba la base en un proyecto aparte |
@@ -814,7 +819,7 @@ Necesitan la función ya escrita.
 
 ---
 
-### Etapa 7. Paso "Contrato / API"
+### Etapa 7. Paso "Contrato / API" · Implementada, pendiente validación real
 
 **Objetivo:** definir las operaciones antes de generar el backend y los clientes, para que encajen aunque se generen por separado.
 
@@ -828,7 +833,7 @@ Necesitan la función ya escrita.
 2. Para cada operación, indicar los roles que pueden usarla y el requerimiento que cumple.
 3. Validar que cada acción de las pantallas del prototipo tenga su operación.
 
-#### Propuesta para construirlo (por decidir con el usuario)
+#### Implementación (autorizada el 24 de octubre)
 
 1. **Inventario de la base sin IA.** Con Supabase, el contrato parte de lo que existe de verdad. El runner lo lee de la base probada, igual que la prueba de la Etapa 6:
    - las tablas expuestas por la API, con sus columnas;
@@ -841,7 +846,20 @@ Necesitan la función ya escrita.
 4. **Prueba de permisos real.** En el proyecto de prueba, el runner llama a la API como cada usuario de prueba (Administrador, Jefe de guardia, Bombero) y comprueba que cada operación se permite o se rechaza según el contrato. Por ejemplo, el Bombero no puede avalar un parte ni crear vehículos. Es la parte de seguridad que la prueba de la Etapa 6 no veía.
 5. **Resultado:** una ficha en `proyectos.contrato_implementacion` con las operaciones por pantalla, sus roles y RF, lo que falta, y el resultado de la prueba de permisos.
 
-**Terminado cuando:** el contrato está aprobado y cubre todas las acciones del prototipo.
+Archivos principales: `lib/accionesContrato.js`, `lib/inventarioContrato.js`, `lib/validarContrato.js`, `lib/contrato.js`, `lib/contextoContrato.js`, `lib/pruebaContrato.js`, las rutas `generar-contrato`, `revisar-contrato`, `probar-contrato`, y `FichaContrato.js`. El paso está en `PASOS`, con aprobación, edición, rechazo, eliminación y cascada.
+
+- El runner aplica los SQL en un proyecto separado con sufijo `-contrato` y consulta el catálogo de PostgreSQL. No se hace introspección del Supabase de I-CASE Tool ni se modifica el proyecto generado del usuario.
+- La ficha conserva el inventario y una huella de SQL/stack. Si cambia la base, no se permite reutilizarlo para editar o probar. La generación vuelve a inspeccionar.
+- El código extrae formularios, botones, enlaces e inputs submit/button del HTML; exige una asignación para cada control (API, local o navegación) y una justificación para las dos últimas. Una pantalla sin controles recibe una acción de consulta. La cobertura mide estos controles; no demuestra por sí sola la corrección funcional de la pantalla.
+- La IA tiene un reintento. El validador comprueba roles/RF, tablas/vistas, grants, RPC y argumentos; no permite administrar Auth desde el navegador. Las Edge Functions quedan explícitamente para la etapa 8.
+- La prueba inicia sesión por Auth y llama a PostgREST como cada actor, sin usar service role. Solo en ese contenedor se configura `PGRST_DB_TX_END=rollback`: las escrituras HTTP no se confirman. [Configuración oficial de PostgREST](https://docs.postgrest.org/en/v14/references/configuration.html#db-tx-end).
+- Las respuestas vacías y errores de negocio se marcan inconclusos. Excepción: una respuesta vacía para un rol prohibido demuestra el filtro RLS si la misma petición sí devolvió filas para un rol permitido, sobre los mismos datos con rollback. Una operación que devuelve datos para un rol prohibido se marca fallida. No reemplaza una auditoría de todos los permisos por fila, ni una prueba de las Edge Functions y servicios externos. Efectos externos de una RPC no se revierten con una transacción: deben integrarse y probarse en la etapa 8.
+- Los contratos se exportan a `contrato/api.json` y, con Express, `openapi.yaml` en `archivos_proyecto`. La ficha permite descargarlos, editar JSON con revalidación y ampliar con IA. Editarlos invalida la aprobación y la prueba anterior.
+- La cascada espera a que la base regenerada vuelva a aprobarse antes de inspeccionarla. Errores de estructura/cobertura y permisos fallidos bloquean aprobar; las pruebas pendientes requieren reconocimiento explícito en la interfaz.
+- Validación técnica del 24 de octubre: 18 pruebas automatizadas; lint de los archivos modificados; compilación de Next.js y Docusaurus. Integración real con Supabase desechable: inventario, login de dos actores, CRUD, RPC con restricción de rol y rollback (16 comprobaciones). Segundo stack: inventario de órdenes de taller con PostgreSQL sin Supabase. Generación con IA gratuita probada para Supabase y Express (2 operaciones por caso, cobertura completa). Esto no sustituye la validación de bomberos y taller con sus datos actuales.
+- Comandos: `node --test tests/contrato.test.mjs`; `node tests/contrato-docker.mjs` para Docker. Para incluir generación con modelos gratuitos: establecer `PROBAR_IA=1` y ejecutar `node --env-file=.env.local tests/contrato-docker.mjs`. La prueba crea sus propios proyectos temporales y usuarios, y no usa datos de los proyectos reales.
+
+**Terminado cuando:** el contrato está aprobado y cubre todas las acciones del prototipo, después de revisar los resultados de permisos y sus pendientes de integración.
 
 ---
 
