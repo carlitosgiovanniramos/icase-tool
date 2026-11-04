@@ -7,7 +7,7 @@ sidebar_position: 5
 
 La Implementación convierte el diseño aprobado en un **proyecto de código**. La herramienta no cambia las tecnologías del diseño: si la arquitectura dice Next.js, Flutter y Supabase, el proyecto usa exactamente eso.
 
-Los pasos se ven uno debajo del otro y se **pliegan** desde su título: abierto queda el que estás trabajando y los demás muestran un resumen.
+Los pasos se ven uno debajo del otro y se **pliegan** desde su título. El encabezado muestra el nombre y el estado, sin resúmenes ni cantidades. Puedes abrir varios a la vez; inicialmente se abre el primer paso pendiente.
 
 ## 1. Stack técnico
 

@@ -5,6 +5,14 @@ Los cambios importantes de I-CASE Tool, de la versión más reciente a la más a
 ## [Sin publicar] - 2026-10-24
 
 ### Agregado
+- Pasos desplegables en Análisis y Diseño, con nombre y estado visibles; encabezados sin resúmenes en las tres fases. Actores y requerimientos se consultan por secciones conservando su aprobación conjunta.
+- Capturas reales de inicio de sesión, página de inicio y creación de proyecto en el manual de primeros pasos.
+- Capturas reales de Análisis aprobado en su manual y de Diseño aprobado en «Aprobación de fases».
+- Captura real de la entrevista con IA, con preguntas y respuestas opcionales, en el manual de Análisis.
+- Captura real de actores y requerimientos funcionales y no funcionales en el manual de Análisis.
+- Captura real del diagrama de clases expandido en el manual de Diseño y el README.
+- Captura real del prototipo expandido de inicio de sesión web de bomberos en el manual de Diseño.
+- Captura real de la vista previa del informe de bomberos en el manual de Informe y exportación.
 - Etapa 7, **Contrato de API**: inventario de la base probada, operaciones por acción del prototipo, validación determinista, edición, ampliación con IA, aprobación y cascada; exportación JSON/OpenAPI y matriz de permisos de Supabase con escrituras revertidas en un proyecto desechable.
 - Migración `supabase/contrato_implementacion.sql`; rutas de generación, revisión y prueba, y pruebas automatizadas del contrato.
 

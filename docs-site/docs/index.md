@@ -64,7 +64,8 @@ flowchart LR
   - las fases de **Análisis** y **Diseño** completas;
   - el informe en PDF;
   - en **Implementación**, los pasos *Stack técnico*, *Estructura de carpetas* y *Base de datos*. La base se prueba en contenedores Docker.
-- **En construcción:** *Contrato / API*, *Backend*, *Web*, *Móvil* y el cierre de la Implementación (ver [Despliegue y estado del proyecto](./desarrolladores/despliegue)).
+- **Implementado, en validación:** *Contrato de API*, con prueba de permisos por actor.
+- **En construcción:** *Backend*, *Web*, *Móvil* y el cierre de la Implementación (ver [Despliegue y estado del proyecto](./desarrolladores/despliegue)).
 - **Requisito de la fase de Implementación:** la ejecución en contenedores (levantar el proyecto generado o probar su base) funciona con I-CASE Tool en local, con Docker Desktop. La versión publicada genera los artefactos, pero no ejecuta contenedores.
 
 ## Correspondencia con el punto 1 del taller

@@ -37,15 +37,16 @@ function siguienteCodigo(lista, prefijo) {
   return `${prefijo}${String(ultimo + 1).padStart(2, "0")}`;
 }
 
-function EtiquetaSeccion({ children, extra }) {
+function EtiquetaSeccion({ children, estado }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
+    <summary className="flex items-center gap-2 mb-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+      <span className="text-xs text-gray-400 group-open:rotate-90" aria-hidden="true">▸</span>
       <span className="w-2 h-2 shrink-0" style={{ backgroundColor: PALETA.navy }} />
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
         {children}
       </h3>
-      {extra}
-    </div>
+      <span className="text-xs text-gray-500">{estado}</span>
+    </summary>
   );
 }
 
@@ -197,6 +198,7 @@ function SeccionRequisitos({
   tipo,
   lista,
   esNoFuncional,
+  estado,
   editando,
   setEditando,
   actoresDisponibles,
@@ -222,8 +224,8 @@ function SeccionRequisitos({
   );
 
   return (
-    <div>
-      <EtiquetaSeccion>{titulo}</EtiquetaSeccion>
+    <details className="group">
+      <EtiquetaSeccion estado={estado}>{titulo}</EtiquetaSeccion>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {lista.map((r) =>
           editando === r.codigo && onGuardar ? (
@@ -263,7 +265,7 @@ function SeccionRequisitos({
           + Agregar requerimiento {esNoFuncional ? "no funcional" : "funcional"}
         </button>
       )}
-    </div>
+    </details>
   );
 }
 
@@ -275,6 +277,7 @@ function SeccionRequisitos({
 export default function AnalisisResultado({
   resultado,
   modelo,
+  estado,
   onEliminarRequerimiento,
   onEliminarActor,
   onGuardarRequerimiento,
@@ -288,7 +291,15 @@ export default function AnalisisResultado({
   } = resultado;
 
   const actoresDisponibles = actores.map((a) => a.nombre);
+  const etiquetaEstado = {
+    aprobado: "Aprobado",
+    generado: "Pendiente de aprobación",
+    pendiente: "Pendiente",
+    revision: "Pendiente de revisión",
+    desactualizado: "Desactualizado",
+  }[estado];
   const propsComunes = {
+    estado: etiquetaEstado,
     editando,
     setEditando,
     actoresDisponibles,
@@ -298,8 +309,9 @@ export default function AnalisisResultado({
 
   return (
     <div className="mt-6 space-y-8">
-      <div>
-        <EtiquetaSeccion extra={<BadgeModelo modelo={modelo} />}>Actores</EtiquetaSeccion>
+      <details className="group">
+        <EtiquetaSeccion estado={etiquetaEstado}>Actores</EtiquetaSeccion>
+        <BadgeModelo modelo={modelo} />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {actores.map((actor, i) => {
             const color = ROTACION_COLORES[i % ROTACION_COLORES.length];
@@ -337,7 +349,7 @@ export default function AnalisisResultado({
             );
           })}
         </div>
-      </div>
+      </details>
 
       <SeccionRequisitos
         titulo="Requerimientos funcionales"

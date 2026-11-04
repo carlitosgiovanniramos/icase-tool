@@ -28,9 +28,7 @@ Los cinco diagramas se trabajan igual:
 4. **Descargar SVG** si lo necesitas fuera de la herramienta.
 5. **Aprobar**.
 
-:::info Captura pendiente
-`capturas/07-diagrama-expandido.png`: un diagrama expandido con zoom.
-:::
+![Diagrama de clases de bomberos expandido, con zoom al 150 %, controles de ajuste y descarga SVG.](/img/capturas/07-diagrama-expandido.png)
 
 ## Prototipo de pantallas
 
@@ -42,9 +40,7 @@ El prototipo se arma en tres pasos:
 
 Cada pantalla se ve a tamaño real (la móvil, en el ancho de un celular) y se puede **Expandir**. Para cambiarla: **Ampliar con IA** eligiendo la pantalla, o la pestaña **Código** para editar su HTML con vista previa en vivo. Con Claude activado hay dos niveles de detalle (económico o detallado) y se avisa el **costo estimado** antes de generar.
 
-:::info Captura pendiente
-`capturas/08-prototipo.png`: grilla del prototipo con pantallas web y móvil.
-:::
+![Prototipo expandido del inicio de sesión web de bomberos, con selector de pantallas y pestañas Web y Móvil.](/img/capturas/08-prototipo.png)
 
 ## Aprobar el Diseño
 

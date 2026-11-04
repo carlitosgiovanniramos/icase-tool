@@ -17,9 +17,7 @@ Con las fases de Análisis y Diseño aprobadas, la vista **Informe** arma un doc
 
 Pulsa **Exportar PDF** y, en el diálogo de impresión del navegador, elige **Guardar como PDF**. El nombre del archivo lo propone la herramienta.
 
-:::info Captura pendiente
-`capturas/10-informe.png`: vista previa del informe.
-:::
+![Vista previa del informe de análisis y diseño de bomberos, con portada, contenido y botón Exportar PDF.](/img/capturas/10-informe.png)
 
 ## Otras formas de exportar
 

@@ -7,9 +7,11 @@ sidebar_position: 6
 
 Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada. Es el documento técnico interno del equipo: decisiones, estado de cada etapa y guía para retomar el trabajo.
 
-## Estado actual (24 de octubre de 2026)
+## Estado actual (3 de noviembre de 2026)
 
-**La Etapa 6 (Base de datos) está terminada. La Etapa 7 (Contrato / API) ya tiene implementación en código; falta aplicar su migración y validar/aprobar el contrato con los proyectos reales.** La Etapa 8 (Backend) sigue pendiente. La documentación del proyecto ya está construida: ver "Documentación del proyecto".
+> La implementación de bomberos se eliminó para repetirla desde cero con el despliegue en Azure. Lo que sigue es el "Plan de la semana". Las notas de bomberos de esta sección describen el estado anterior a ese borrado.
+
+**La Etapa 6 (Base de datos) está terminada. La Etapa 7 (Contrato / API) está implementada: el código está en `develop` (commit `9aebdeb`), su migración ya está aplicada en el Supabase de icase-tool y pasan sus 18 pruebas automatizadas. Falta cumplir su criterio de cierre: generar, probar y aprobar el contrato con bomberos y con el taller.** La Etapa 8 (Backend) sigue pendiente. La documentación del proyecto ya está construida: ver "Documentación del proyecto".
 - **Bomberos:**
   - estructura aprobada (76 archivos);
   - base generada con Gemini y corregida a mano (`0001`, `0004`, `0006` y `seed.sql`);
@@ -25,16 +27,14 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada) |
 | 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada) |
 | 6. Paso "Base de datos" | Terminada (base de bomberos probada 22/22) |
-| **7. Paso "Contrato / API"** | **Implementada; pendiente validación y aprobación con los proyectos reales** |
+| **7. Paso "Contrato / API"** | **Implementada (código, migración aplicada, 18 pruebas); falta aprobar el contrato de bomberos y del taller** |
 | 8 a 11 | Pendientes |
 
 Pendientes inmediatos:
 
 1. **Documentación (taller de clase).** Construida y publicada en `/docs`. Faltan cosas del usuario:
-   - las **12 capturas** de la aplicación real, en `docs-site/static/img/capturas/`, con los nombres que indican los recuadros "Captura pendiente":
-     - `01-inicio-sesion`, `02-barra-lateral`, `03-crear-proyecto`, `04-paso-aprobado`;
-     - `05-contexto-entrevista`, `06-requerimientos`, `07-diagrama-expandido`, `08-prototipo`;
-     - `09-explorador`, `10-informe`, `11-bomberos-stack` y `12-bomberos-base`;
+   - las **3 capturas restantes** de la aplicación real, en `docs-site/static/img/capturas/`, con los nombres que indican los recuadros "Captura pendiente" (inicio de sesión, página de inicio, creación de proyecto, fases de Análisis y Diseño aprobadas, entrevista con IA, requerimientos, diagrama expandido, prototipo e informe ya incorporadas):
+     - `09-explorador`, `11-bomberos-stack` y `12-bomberos-base`;
      - todas `.png`; la 07 y la 12 también aparecen en el README.
 
      Después se reemplazan los recuadros por las imágenes.
@@ -42,7 +42,7 @@ Pendientes inmediatos:
    - dar acceso al docente si el repositorio es privado;
    - confirmar la licencia (se puso MIT a nombre de CCAJ Software Solutions).
 2. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
-3. **Etapa 7 (Contrato / API):** el usuario autorizó su implementación autónoma. Aplicar `supabase/contrato_implementacion.sql`, generar el contrato después de aprobar la base, revisar sus operaciones y ejecutar "Probar permisos" en local. Comprobarlo con bomberos y taller antes de cerrar la etapa.
+3. **Cerrar la Etapa 7 (Contrato / API):** con la base aprobada y Docker encendido, generar el contrato, revisar sus operaciones y lo que falta, ejecutar "Probar permisos" y aprobarlo. Hacerlo con bomberos y con el taller. Al aprobar los dos, marcar la etapa como terminada; la siguiente es la Etapa 8 (Backend).
 4. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
 5. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
 6. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
@@ -51,6 +51,84 @@ Pendientes inmediatos:
    - **"Levantar" con solo la base generada:** desde la Etapa 6 hay código, así que el botón se habilita, pero la web y la app todavía no tienen archivos y su compilación falla. Se propuso levantar solo los servicios de las piezas que ya tienen código.
    - **En Vercel:** cambiar "Falta RUNNER_TOKEN en .env.local" por "La ejecución en contenedores solo funciona con icase-tool en local" y dejar de consultar el estado (ver "Despliegue en Vercel").
    - **Costo estimado de la base con Claude:** hoy son 10 centavos por archivo, que acierta en bomberos pero duplica el costo real en el taller. Se propuso calcularlo con el tamaño del ER, las clases, los requerimientos y las tablas de cada archivo.
+
+## Plan de la semana: presentación desplegada (3 al 10 de noviembre de 2026)
+
+El ingeniero va a revisar el proyecto **desplegado**, no en local. Se necesita que, desde icase-tool en Vercel, el proyecto de bomberos (y cualquier otro) tenga su aplicación generada funcionando en una dirección pública, como una página normal.
+
+**Cambio de estado (3 de noviembre):** el usuario eliminó toda la implementación de bomberos para repetirla desde cero con el despliegue en mente. Las correcciones a mano de la base (`0001`, `0004`, `0006`, `seed.sql`) ya no existen; las reglas de seguridad quedaron en la guía de Supabase, y la nueva base debe probarse igual.
+
+### Arquitectura de la presentación
+
+```
+Vercel (icase-tool)  ──HTTPS + token──▶  Azure: Ubuntu + Docker + runner + Caddy
+                                           └─ contenedores de cada proyecto generado
+                                              (base Supabase, backend, web)
+```
+
+- icase-tool sigue en Vercel y llama al runner con `RUNNER_URL` y `RUNNER_TOKEN`.
+- El runner y Docker pasan a una máquina virtual en **Azure for Students** ($100 de crédito, 365 días, verificado el 3 de noviembre; la cuenta es de la hermana del usuario, con su consentimiento).
+- Oracle Cloud se descartó: pide tarjeta y la del usuario rechaza pagos internacionales. Vercel no ejecuta contenedores. Render, Railway y Fly.io ya no tienen un nivel gratis que aguante varios contenedores.
+- **Respaldo:** el runner en la PC del usuario con un túnel gratis (Cloudflare, ngrok o Tailscale Funnel). Es el mismo código; solo cambia `RUNNER_URL`.
+
+### Máquina en Azure
+
+- Ubuntu Server 24.04, x64, **8 GB de RAM** (Supabase y Next.js juntos no caben cómodos en 4), disco de 64 GB o más.
+- IP pública **estática** (con IP dinámica cambia al desasignar la máquina y Vercel dejaría de encontrarla).
+- Puertos 22, 80 y 443. Llave SSH: el archivo `.pem` se queda en la PC del usuario y no se comparte.
+- **Cuidar el crédito:** apagar con "Detener (desasignar)" desde el portal cuando no se use; apagar desde Linux sigue cobrando. Aviso de presupuesto al 50 %.
+- HTTPS sin comprar dominio: nombre gratuito de Azure o un servicio como sslip.io. Se confirma al montarlo.
+
+### Calendario
+
+| Día | Usuario | Claude |
+|---|---|---|
+| 1 (3 nov) | Crear la máquina en Azure y pasar la IP y el usuario | Validador del contrato (5 cambios) y este plan |
+| 2 | Regenerar base y contrato de bomberos con Gemini gratis, probar permisos y aprobar (cierra la Etapa 7) | Runner para servidor: escucha desde fuera con token, carpeta de trabajo en Linux, Caddy con HTTPS. Instalar Docker y el runner por SSH |
+| 3 | Poner `RUNNER_URL` y `RUNNER_TOKEN` en Vercel y probar que levanta la base desde ahí | Sección "Aplicación" en Implementación: estado, Levantar, "Abrir aplicación" y usuarios de prueba |
+| 4 a 5 | Revisar y aprobar lo generado | Etapa 8 achicada (con Supabase, solo la Edge Function de crear usuario) y Etapa 9 (Web) |
+| 6 | Ensayo completo desde Vercel, con la PC apagada | Móvil solo si hay tiempo; correcciones |
+| 7 | Margen | Capturas que faltan, plan y CHANGELOG |
+
+### Avance del día 1 (3 de noviembre)
+
+- Máquina de Azure creada y probada por SSH: Ubuntu 24.04, x86_64, 2 núcleos, 7,7 GB de RAM, 61 GB de disco, IP pública estática.
+- Docker 29.9.3 y Compose 5.7.0 instalados; `azureuser` usa Docker sin `sudo`; carpeta de trabajo `/srv/icase-workspaces`.
+- La llave SSH y los datos de conexión están en `azure/` (ignorada por git, incluida la IP). Se usa una copia de la llave en `~/.ssh_icase/key`, fuera del repo.
+- **Falta (día 2):**
+  1. nombre DNS gratuito para la IP (etiqueta de nombre DNS en Azure);
+  2. runner para Linux (carpeta, dirección, token);
+  3. Caddy con HTTPS;
+  4. `RUNNER_URL` y `RUNNER_TOKEN` en Vercel;
+  5. regenerar la cadena de bomberos (stack, estructura, base y contrato; el usuario eliminó todo desde "Stack técnico");
+  6. cambios del validador del contrato, a la espera del sí del usuario.
+
+### Cambios al plan por el tiempo
+
+- Un solo proyecto completo para la demo: bomberos. El taller entra solo si sobra tiempo.
+- **Etapa 8 (Backend)** se achica: con Supabase el backend es la base con sus permisos. Solo la Edge Function de crear usuario. Notificaciones push (Firebase) quedan anotadas como pendiente.
+- **Etapa 9 (Web)** es la prioridad: es lo que el ingeniero abre y usa.
+- **Etapa 10 (Móvil)** pasa a opcional. Si no hay tiempo, se presenta el código generado, o Flutter compilado para web dentro de un marco de celular.
+- Nueva etapa de **Publicación de los proyectos generados**: sección "Aplicación" en Implementación con estado, Levantar, "Abrir aplicación" (otra pestaña) y usuarios de prueba. La vista previa dentro de icase-tool es opcional: iniciar sesión dentro de un recuadro de otro dominio puede fallar por las cookies.
+- Un proyecto de Supabase propio usa 2 a 3 GB: se levanta al abrirlo y se apaga si nadie lo usa.
+
+### Cambios de código que lleva
+
+1. **Validador del contrato** (`lib/validarContrato.js`). En la primera generación con Gemini 3.8 Flash, unos 23 de 37 errores venían de las reglas y no del modelo. Reglas generales, válidas para cualquier proyecto:
+   - aceptar los nombres de Supabase para Auth (`signInWithPassword` es login, `signOut` es logout);
+   - permitir guiones en los nombres de las Edge Functions;
+   - no exigir un RF de la pantalla a cerrar sesión ni a las demás operaciones de Auth;
+   - una operación sin botón (consulta al cargar, token push) queda como advertencia, no como error;
+   - el error de roles dice qué rol sobra y en qué RF, y compara nombres sin importar mayúsculas ni tildes.
+2. **Runner** (`runner/index.mjs`): dirección y carpeta configurables, también en Linux; siempre con token.
+3. **Caddy** con una dirección pública por proyecto.
+4. **Sección "Aplicación"** en `ImplementacionFase.js`.
+5. **Rutas largas:** confirmar que `maxDuration = 300` cabe en el plan de Vercel.
+
+### Pendientes de decisión
+
+- Preguntar al ingeniero si le basta que la aplicación se abra por una dirección pública con el motor de contenedores en un servidor propio.
+- El usuario debe dar el sí para los cambios del validador antes de aplicarlos (los generadores aprobados no se tocan sin un sí).
 
 ## Guía para retomar el trabajo
 
@@ -75,7 +153,7 @@ Scripts de `supabase/` que deben estar ejecutados en el SQL Editor, cada uno una
 | `stack_implementacion.sql` | Columna del paso "Stack técnico" (Etapa 4) |
 | `estructura_implementacion.sql` | Columna del paso "Estructura de carpetas" (Etapa 5) |
 | `bd_implementacion.sql` | Columna del paso "Base de datos" (Etapa 6) |
-| `contrato_implementacion.sql` | Columna del paso "Contrato de API" (Etapa 7; nueva, pendiente de aplicar en el Supabase actual) |
+| `contrato_implementacion.sql` | Columna del paso "Contrato de API" (Etapa 7; aplicada) |
 
 Cada paso nuevo de Implementación con columna propia agrega su script aquí. Si Vercel y la PC usan el mismo proyecto de Supabase, cada script se ejecuta una sola vez para los dos.
 
@@ -229,7 +307,7 @@ El taller "Herramientas de documentación, pruebas y evaluación de software" pi
 | D. Documentación para desarrolladores en GitHub | `README.md` reescrito, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md` (desde Beta 1.0 hasta Beta 2.3), `LICENSE` (MIT) y la sección *Desarrolladores* |
 
 - **Publicación:** en `/docs` de la misma aplicación. Así hay un solo despliegue y una sola URL, y el enlace "Documentación" de la barra lateral la abre. La portada tiene la tabla de correspondencia con el punto 1, siguiendo un ejemplo de otro grupo que el usuario mostró (`app-secure.github.io/icase`, hecho con MkDocs).
-- **Capturas:** no se usan capturas simuladas. Cada página indica con un recuadro "Captura pendiente" el nombre del archivo que la reemplazará. Faltan las 12 capturas (ver "Pendientes inmediatos").
+- **Capturas:** no se usan capturas simuladas. Cada página indica con un recuadro "Captura pendiente" el nombre del archivo que la reemplazará. Faltan 3 capturas: `09-explorador`, `11-bomberos-stack` y `12-bomberos-base` (ver "Pendientes inmediatos").
 - **Comprobado:**
   - el sitio compila sin enlaces rotos (`onBrokenLinks: "throw"`);
   - `npm run build` genera la documentación y la app;
@@ -738,7 +816,7 @@ Lógica en `lib/bd.js`, ruta `/api/generar-bd`.
   - Solo se edita el código generado de un paso que se puede trabajar. Los archivos de plantilla no se editan, y los de un paso aprobado se bloquean hasta pulsar "Editar" en el paso.
 - **Los pasos de la fase se pliegan** desde su título:
   - abierto por defecto, solo el que se está trabajando (el primero sin aprobar);
-  - los plegados muestran un resumen (aprobado, piezas, archivos, estado de la prueba, lo que falta revisar);
+  - los plegados muestran solo el nombre y el estado; este comportamiento también se aplica a Análisis y Diseño;
   - en la ficha del stack, cada sección es desplegable, con su cantidad.
 
 #### Costo con Claude (Sonnet 5, $2 y $10 por millón de tokens de entrada y salida)
@@ -857,6 +935,7 @@ Archivos principales: `lib/accionesContrato.js`, `lib/inventarioContrato.js`, `l
 - Los contratos se exportan a `contrato/api.json` y, con Express, `openapi.yaml` en `archivos_proyecto`. La ficha permite descargarlos, editar JSON con revalidación y ampliar con IA. Editarlos invalida la aprobación y la prueba anterior.
 - La cascada espera a que la base regenerada vuelva a aprobarse antes de inspeccionarla. Errores de estructura/cobertura y permisos fallidos bloquean aprobar; las pruebas pendientes requieren reconocimiento explícito en la interfaz.
 - Validación técnica del 24 de octubre: 18 pruebas automatizadas; lint de los archivos modificados; compilación de Next.js y Docusaurus. Integración real con Supabase desechable: inventario, login de dos actores, CRUD, RPC con restricción de rol y rollback (16 comprobaciones). Segundo stack: inventario de órdenes de taller con PostgreSQL sin Supabase. Generación con IA gratuita probada para Supabase y Express (2 operaciones por caso, cobertura completa). Esto no sustituye la validación de bomberos y taller con sus datos actuales.
+- Revisión del 1 de noviembre: la columna `contrato_implementacion` existe en el Supabase de icase-tool y las 18 pruebas pasan. No se comprobó si ya hay contratos de bomberos o del taller generados o aprobados: Docker estaba apagado y la base de icase-tool solo muestra los proyectos con la sesión del usuario.
 - Comandos: `node --test tests/contrato.test.mjs`; `node tests/contrato-docker.mjs` para Docker. Para incluir generación con modelos gratuitos: establecer `PROBAR_IA=1` y ejecutar `node --env-file=.env.local tests/contrato-docker.mjs`. La prueba crea sus propios proyectos temporales y usuarios, y no usa datos de los proyectos reales.
 
 **Terminado cuando:** el contrato está aprobado y cubre todas las acciones del prototipo, después de revisar los resultados de permisos y sus pendientes de integración.

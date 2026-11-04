@@ -24,7 +24,7 @@ La aplicación se publica en **Vercel** desde el repositorio de GitHub.
 | Análisis | Contexto, entrevista, requerimientos, casos de uso | Terminado |
 | Diseño | Clases, entidad-relación, prototipo, árbol de navegación, arquitectura, sistemas, informe | Terminado |
 | Implementación | Stack técnico, estructura de carpetas, base de datos (con prueba en Docker) | Terminado |
-| Implementación | Contrato / API | Siguiente |
+| Implementación | Contrato / API (con prueba de permisos por actor) | Implementado; falta validarlo con los proyectos reales |
 | Implementación | Backend, Web, Móvil, cierre (descarga del proyecto) | Pendiente |
 | Pruebas | — | Planificado |
 

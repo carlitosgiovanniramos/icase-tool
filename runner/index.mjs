@@ -5,7 +5,7 @@
 // Uso: npm run runner (lee las variables de .env.local).
 //   RUNNER_TOKEN             clave compartida con icase-tool (obligatoria)
 //   RUNNER_PORT              puerto del runner (por defecto 4100)
-//   WORKSPACES_DIR           carpeta de trabajo de los proyectos (por defecto C:\icase-workspaces)
+//   WORKSPACES_DIR           carpeta de trabajo de los proyectos (por defecto C:\icase-workspaces en Windows, /srv/icase-workspaces en Linux)
 //   RUNNER_INACTIVIDAD_MIN   minutos sin uso antes de apagar un proyecto (por defecto 60)
 
 import http from "node:http";
@@ -21,7 +21,7 @@ import { probarPermisosContrato } from "../lib/pruebaContrato.js";
 
 const PUERTO = Number(process.env.RUNNER_PORT) || 4100;
 const TOKEN = process.env.RUNNER_TOKEN || "";
-const RAIZ = path.resolve(process.env.WORKSPACES_DIR || "C:\\icase-workspaces");
+const RAIZ = path.resolve(process.env.WORKSPACES_DIR || (process.platform === "win32" ? "C:\\icase-workspaces" : "/srv/icase-workspaces"));
 const INACTIVIDAD_MS = (Number(process.env.RUNNER_INACTIVIDAD_MIN) || 60) * 60_000;
 const MAX_CUERPO = 20 * 1024 * 1024;
 const MAX_SALIDA = 100_000; // caracteres de salida de docker que se conservan por proyecto
