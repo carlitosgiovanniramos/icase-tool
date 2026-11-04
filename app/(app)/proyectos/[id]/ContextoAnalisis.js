@@ -133,7 +133,6 @@ export default function ContextoAnalisis({
   const [modeloPreguntas, setModeloPreguntas] = useState(null);
 
   const entrevista = valor.entrevista || [];
-  const respondidas = entrevista.filter((p) => p.respuesta?.trim()).length;
   const completados =
     CAMPOS_TEXTO.filter((c) => valor[c.clave]?.trim()).length +
     (valor.plataformas?.length ? 1 : 0) +
@@ -190,6 +189,7 @@ export default function ContextoAnalisis({
     <div className="border border-gray-300 mb-6">
       <button
         type="button"
+        aria-expanded={abierto}
         onClick={() => setAbierto((v) => !v)}
         className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left"
       >
@@ -199,7 +199,7 @@ export default function ContextoAnalisis({
             Contexto del análisis
           </span>
           <span className="text-xs text-gray-500">
-            {completados}/{totalCampos} campos · {respondidas} respuestas de la entrevista
+            {completados === totalCampos ? "Completo" : "Pendiente de completar"}
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">

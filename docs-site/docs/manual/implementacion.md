@@ -7,7 +7,7 @@ sidebar_position: 5
 
 La Implementación convierte el diseño aprobado en un **proyecto de código**. La herramienta no cambia las tecnologías del diseño: si la arquitectura dice Next.js, Flutter y Supabase, el proyecto usa exactamente eso.
 
-Los pasos se ven uno debajo del otro y se **pliegan** desde su título: abierto queda el que estás trabajando y los demás muestran un resumen.
+Los pasos se ven uno debajo del otro y se **pliegan** desde su título. El encabezado muestra el nombre y el estado, sin resúmenes ni cantidades. Puedes abrir varios a la vez; inicialmente se abre el primer paso pendiente.
 
 ## 1. Stack técnico
 
@@ -35,6 +35,22 @@ La ficha muestra el estado de la prueba, las tablas del ER creadas, cuáles tien
 
 :::warning Requiere Docker
 La prueba de la base y el panel de **Ejecución** necesitan **Docker Desktop** encendido y I-CASE Tool ejecutándose en local. En la versión publicada se generan los archivos, pero no se prueban.
+:::
+
+## 4. Contrato de API
+
+Disponible después de aprobar la base de datos. Relaciona las acciones reales del prototipo (formularios, botones y enlaces) con las operaciones que usarán el backend y los clientes.
+
+- **Supabase:** lee tablas, vistas, columnas, políticas, permisos y RPC de una base desechable creada con los SQL aprobados. Las operaciones que requieren una Edge Function quedan indicadas como pendientes de Backend.
+- **Express:** produce un contrato `openapi.yaml`, con entradas, salidas, roles y requerimientos. Su ejecución se comprobará al construir el backend.
+- La ficha muestra cobertura, errores, operaciones por pantalla y sus datos de prueba. **Editar contrato** permite ajustar el JSON y **Validar y guardar** vuelve a comprobarlo sin IA. También puedes usar **Ampliar con IA**.
+- **Probar permisos** inicia sesión con cada actor de prueba y llama a las tablas y RPC de Supabase. Las escrituras se revierten en el servidor PostgREST del proyecto desechable. Un error de negocio o una respuesta sin filas queda **sin verificar**; una respuesta vacía para un rol prohibido solo demuestra el filtro RLS si la misma petición devuelve filas para un rol permitido.
+- **Descargar contrato** entrega JSON para Supabase o YAML OpenAPI para Express. Ambos aparecen también en el explorador de archivos.
+
+Los errores de cobertura y las contradicciones comprobadas de permisos impiden aprobar. Si hay pruebas sin ejecutar, inconclusas o flujos de integración pendientes, se pide reconocerlos antes de aprobar. Aprobar el contrato no equivale a aprobar la seguridad de todo el sistema.
+
+:::info Instalación
+Ejecuta una vez `supabase/contrato_implementacion.sql` en el SQL Editor del Supabase de I-CASE Tool. Para generar un inventario nuevo y probar permisos necesitas Docker y el runner local. Una versión desplegada puede regenerar el mapa con un inventario previamente guardado si los SQL y el stack no cambiaron.
 :::
 
 ## Archivos del proyecto

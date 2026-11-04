@@ -50,3 +50,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# acceso al servidor de Azure (llave SSH y datos de conexión)
+/azure/

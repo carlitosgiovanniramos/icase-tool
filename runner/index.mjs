@@ -5,7 +5,7 @@
 // Uso: npm run runner (lee las variables de .env.local).
 //   RUNNER_TOKEN             clave compartida con icase-tool (obligatoria)
 //   RUNNER_PORT              puerto del runner (por defecto 4100)
-//   WORKSPACES_DIR           carpeta de trabajo de los proyectos (por defecto C:\icase-workspaces)
+//   WORKSPACES_DIR           carpeta de trabajo de los proyectos (por defecto C:\icase-workspaces en Windows, /srv/icase-workspaces en Linux)
 //   RUNNER_INACTIVIDAD_MIN   minutos sin uso antes de apagar un proyecto (por defecto 60)
 
 import http from "node:http";
@@ -15,10 +15,13 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { parse as leerYaml, stringify as escribirYaml } from "yaml";
+import { CONSULTA_INVENTARIO, CONSULTA_USUARIOS_CONTRATO } from "../lib/inventarioContrato.js";
+import { probarPermisosContrato } from "../lib/pruebaContrato.js";
 
 const PUERTO = Number(process.env.RUNNER_PORT) || 4100;
 const TOKEN = process.env.RUNNER_TOKEN || "";
-const RAIZ = path.resolve(process.env.WORKSPACES_DIR || "C:\\icase-workspaces");
+const RAIZ = path.resolve(process.env.WORKSPACES_DIR || (process.platform === "win32" ? "C:\\icase-workspaces" : "/srv/icase-workspaces"));
 const INACTIVIDAD_MS = (Number(process.env.RUNNER_INACTIVIDAD_MIN) || 60) * 60_000;
 const MAX_CUERPO = 20 * 1024 * 1024;
 const MAX_SALIDA = 100_000; // caracteres de salida de docker que se conservan por proyecto
@@ -415,11 +418,11 @@ const CONSULTAS_OPCIONALES = {
 //   servicio, modo: "tarea" (servicio de un solo uso que aplica los archivos, como migraciones de
 //     Supabase) o "servicio" (la base aplica sus scripts al crearse, como PostgreSQL)
 //   conexion: { usuario, baseDatos }, con ${VARIABLE} del .env si hace falta
-async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {} }) {
+async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, inventario = false, contrato, actores = [] }) {
   if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
   if (!SERVICIO_VALIDO.test(String(servicio))) throw new ErrorRunner(400, "Servicio no válido.");
   if (!["tarea", "servicio"].includes(modo)) throw new ErrorRunner(400, "Modo de prueba no válido.");
-  const idPrueba = `${id}-bd`;
+  const idPrueba = `${id}${inventario ? "-contrato" : "-bd"}`;
   const carpeta = carpetaDe(idPrueba);
   const estado = estadoDe(idPrueba);
   if (estado.operacion) throw new ErrorRunner(409, "Ya hay una prueba de la base en curso para este proyecto.");
@@ -438,7 +441,15 @@ async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {} }) 
     for (const a of archivos) {
       const destino = rutaSegura(carpeta, a.ruta);
       await mkdir(path.dirname(destino), { recursive: true });
-      await writeFile(destino, String(a.contenido ?? ""), "utf8");
+      let contenido = String(a.contenido ?? "");
+      if (contrato && a.ruta === "docker-compose.yml") {
+        const configuracion = leerYaml(contenido);
+        if (!configuracion.services?.rest || !configuracion.services?.auth || !configuracion.services?.["api-gw"]) throw new ErrorRunner(400, "La prueba de permisos requiere Supabase con Auth y API de datos.");
+        // Solo en el proyecto desechable: ninguna escritura PostgREST se confirma.
+        configuracion.services.rest.environment.PGRST_DB_TX_END = "rollback";
+        contenido = escribirYaml(configuracion);
+      }
+      await writeFile(destino, contenido, "utf8");
     }
     const ejemplo = leerVariables(archivos.find((a) => a.ruta === ".env.example")?.contenido);
     const variables = await asignarPuertos(completarVariables(ejemplo, {}), false);
@@ -473,6 +484,12 @@ async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {} }) 
     const resumen = { ok: true, salida: salida.slice(-20_000), tablas: await psql(CONSULTA_TABLAS) };
     for (const [clave, consulta] of Object.entries(CONSULTAS_OPCIONALES)) {
       resumen[clave] = await psql(consulta).catch(() => null);
+    }
+    if (inventario) resumen.inventario = await psql(CONSULTA_INVENTARIO);
+    if (contrato) {
+      const usuarios = await psql(CONSULTA_USUARIOS_CONTRATO);
+      await compose(idPrueba, ["up", "-d", "--wait", "rest", "auth", "api-gw"], { espera: 100_000 });
+      resumen.pruebaContrato = await probarPermisosContrato({ baseUrl: `http://127.0.0.1:${variables.SUPABASE_PORT}`, anonKey: variables.ANON_KEY, usuarios, actores, contrato });
     }
     return resumen;
   } finally {

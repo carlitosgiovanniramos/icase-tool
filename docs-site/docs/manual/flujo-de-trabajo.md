@@ -31,6 +31,14 @@ flowchart LR
 | **Rechazar** | Lo descartas para ajustar las indicaciones y generarlo de nuevo. También se borra lo que dependía de él |
 | **Eliminar** | Igual que rechazar, desde los controles del paso |
 
+## Consultar los pasos
+
+Los pasos de **Análisis**, **Diseño** e **Implementación** son desplegables. Pulsa el nombre para abrir o cerrar su contenido. El encabezado mantiene visibles el nombre y el estado, sin resúmenes ni cantidades. Puedes abrir varios pasos a la vez.
+
+En Análisis también puedes desplegar por separado **Actores**, **Requerimientos funcionales** y **Requerimientos no funcionales**. Comparten la aprobación del paso **Actores y requerimientos**; desplegarlos no crea aprobaciones independientes. El contexto del análisis conserva su propio desplegable.
+
+El primer paso pendiente de cada fase se abre inicialmente. Los pasos aprobados quedan cerrados hasta que los abras. Los controles de generación, edición y aprobación están dentro de cada desplegable.
+
 ## Cambios en cascada
 
 Si cambias un paso ya aprobado, los pasos que se generaron a partir de él quedan **Desactualizados** (etiqueta roja). Arriba aparece un aviso con dos opciones:
@@ -45,9 +53,7 @@ Al aprobar un paso que cambió, la herramienta ofrece actualizar solo el siguien
 - La fase de **Análisis** se aprueba cuando sus pasos (requerimientos y casos de uso) están aprobados. Se pulsa **Continuar a Diseño**.
 - La fase de **Diseño** se aprueba cuando sus seis pasos están aprobados. Se pulsa **Continuar a Implementación**. Con el Diseño aprobado también se habilita el **Informe**.
 
-:::info Captura pendiente
-`capturas/04-paso-aprobado.png`: un paso aprobado (barra "Aprobado" con el botón Editar) y otro desactualizado.
-:::
+![Fase de Diseño aprobada, con sus seis pasos aprobados y el botón Continuar a Implementación.](/img/capturas/04-paso-aprobado.png)
 
 ## Qué modelo de IA respondió
 

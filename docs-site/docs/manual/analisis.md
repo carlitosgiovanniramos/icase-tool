@@ -30,9 +30,7 @@ Pulsa **Generar preguntas**: la IA lee la descripción, el documento y el contex
 
 > *Ejemplo real:* "¿La firma electrónica debe ser una firma digital certificada o es suficiente con una firma trazada en la pantalla?"
 
-:::info Captura pendiente
-`capturas/05-contexto-entrevista.png`: contexto completado y preguntas de la entrevista.
-:::
+![Entrevista con IA en I-CASE Tool: preguntas generadas para un sistema de reservas de salas, con sus motivos y campos de respuesta opcionales.](/img/capturas/05-contexto-entrevista.png)
 
 ## 2. Requerimientos
 
@@ -44,9 +42,7 @@ Pulsa **Generar**. El resultado tiene:
 
 Puedes **agregar, editar o eliminar** cada requerimiento a mano, o usar **Ampliar con IA** (ej. *"agrega un requerimiento para exportar el parte a PDF"*). Lo nuevo o modificado queda marcado hasta que apruebas.
 
-:::info Captura pendiente
-`capturas/06-requerimientos.png`: lista de requerimientos con un RF abierto.
-:::
+![Actores, requerimientos funcionales y no funcionales de un sistema de reservas de salas, pendientes de aprobación, con controles para agregar, editar y eliminar.](/img/capturas/06-requerimientos.png)
 
 ## 3. Diagrama de casos de uso
 
@@ -58,3 +54,5 @@ Se genera desde los requerimientos aprobados: actores, casos de uso agrupados po
 - **Ver explicación**: por qué se organizó así.
 
 Con requerimientos y casos de uso aprobados, pulsa **Continuar a Diseño**.
+
+![Fase de Análisis aprobada, con actores y requerimientos y diagrama de casos de uso aprobados, y el botón Continuar a Diseño.](/img/capturas/04-analisis-aprobado.png)

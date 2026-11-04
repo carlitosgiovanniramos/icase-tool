@@ -35,6 +35,8 @@ import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
+import FichaContrato from "./FichaContrato";
+import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { useAlert } from "../../../AlertProvider";
@@ -408,15 +410,17 @@ function ControlesPaso({
 }
 
 const ESTADOS_PASO = {
+  aprobado: { texto: "Aprobado", color: PALETA.oliva },
+  generado: { texto: "Pendiente de aprobación", color: PALETA.naranjaOscuro },
+  pendiente: { texto: "Pendiente", color: "#6b7280" },
   revision: { texto: "Actualizado · pendiente de revisión", color: PALETA.naranjaOscuro },
   desactualizado: { texto: "Desactualizado", color: PALETA.carmesi },
 };
 
 // onActualizar: si el paso está desactualizado y se puede trabajar, botón para regenerarlo ahí
 // mismo con los datos nuevos.
-// onAlternar: el paso se pliega (fase de Implementación); abierto dice cómo está y resumen es lo
-// que se ve de él mientras está plegado.
-function TituloPaso({ color, estado, modelo, separador = true, onActualizar, deshabilitado, onAlternar, abierto, resumen, children }) {
+// onAlternar permite plegar el contenido; el nombre y el estado quedan siempre visibles.
+function TituloPaso({ color, estado, modelo, separador = true, onActualizar, deshabilitado, onAlternar, abierto, children }) {
   const e = ESTADOS_PASO[estado];
   const titulo = (
     <>
@@ -440,7 +444,6 @@ function TituloPaso({ color, estado, modelo, separador = true, onActualizar, des
       ) : (
         titulo
       )}
-      {onAlternar && !abierto && resumen && <span className="text-xs text-gray-500">{resumen}</span>}
       {e && (
         <span
           className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
@@ -459,7 +462,7 @@ function TituloPaso({ color, estado, modelo, separador = true, onActualizar, des
           Actualizar
         </button>
       )}
-      <BadgeModelo modelo={modelo} />
+      {(!onAlternar || abierto) && <BadgeModelo modelo={modelo} />}
     </div>
   );
 }
@@ -624,7 +627,7 @@ export default function WorkspaceProyecto() {
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
   const [desbloqueados, setDesbloqueados] = useState([]); // pasos aprobados abiertos para editar
-  const [plegados, setPlegados] = useState({}); // pasos de Implementación: clave -> true (plegado) o false, elegido por el usuario
+  const [plegados, setPlegados] = useState({}); // clave -> true (plegado) o false, elegido por el usuario
   const [deteniendo, setDeteniendo] = useState(false); // se pidió detener la generación de pantallas
   const [contexto, setContexto] = useState({}); // contexto de elicitación (proyectos.contexto)
   const [estadoContexto, setEstadoContexto] = useState(null); // pendiente | guardando | guardado | error
@@ -927,6 +930,7 @@ export default function WorkspaceProyecto() {
       },
       impl_stack: cuerpoStack(),
       impl_estructura: cuerpoEstructura(),
+      impl_contrato: { proyectoId: id },
     };
 
     const data = await pedirIA(PASO[clave].ruta, { ...cuerpos[clave], indicaciones });
@@ -938,10 +942,14 @@ export default function WorkspaceProyecto() {
       const { advertencias = [], ...analisis } = resto;
       return { valor: analisis, modelo, advertencias };
     }
-    if (clave === "impl_stack" || clave === "impl_estructura") {
+    if (["impl_stack", "impl_estructura", "impl_contrato"].includes(clave)) {
       // Lo que la validación no pudo corregir queda en la ficha ("revision") para revisarlo antes
       // de aprobar, y también se muestra al generar.
       const { advertencias = [], ...ficha } = resto;
+      if (clave === "impl_contrato") {
+        await sincronizarArchivosContrato(ficha);
+        return { valor: { ...ficha, advertencias, revision: [...(ficha.errores || []), ...advertencias] }, modelo, advertencias: [...(ficha.errores || []), ...advertencias] };
+      }
       return { valor: { ...ficha, revision: advertencias }, modelo, advertencias };
     }
     // Se guarda ya limpio, para que los pasos siguientes reciban código válido. Cada ruta devuelve
@@ -1295,6 +1303,7 @@ export default function WorkspaceProyecto() {
 
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
+    if (clave === "impl_contrato" && claudeActivo() && !(await confirmar("Se generará el contrato con Claude. Costo orientativo: $0,20 a $1,00 según el diseño y los reintentos.", "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
       const ficha = artefactosRef.current.impl_bd;
       const faltan = retomar && ficha?.incompleto ? ficha.total - ficha.archivos.length : undefined;
@@ -1347,6 +1356,10 @@ export default function WorkspaceProyecto() {
     try {
       for (let i = 0; i < pasos.length; i++) {
         const p = pasos[i];
+        // El contrato se inventaría sobre una base todavía sin revisar si la cascada lo
+        // generara inmediatamente después de regenerar el SQL. Espera su aprobación.
+        if (p.clave === "impl_contrato" && !fasesRef.current.impl_bd) return;
+        if (p.clave === "impl_contrato" && claudeActivo() && !(await confirmar("Costo orientativo del contrato con Claude: $0,20 a $1,00.", "¿Actualizar contrato con Claude?", "Actualizar"))) return;
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
           const { valor, modelo, detenido, advertencias } = await pedirPaso(p.clave, {
@@ -1425,6 +1438,15 @@ export default function WorkspaceProyecto() {
   // Aprobar un paso que cambió propaga el cambio: se regeneran automáticamente los pasos
   // siguientes que quedaron desactualizados, y cada uno queda pendiente de revisión.
   async function aprobarPaso(clave) {
+    if (clave === "impl_contrato" && !contratoAprobable(artefactosRef.current.impl_contrato)) {
+      mostrarError("Corrige los errores y cubre todas las acciones antes de aprobar.", "Contrato incompleto");
+      return;
+    }
+    if (clave === "impl_contrato") {
+      const prueba = artefactosRef.current.impl_contrato?.prueba;
+      if (prueba?.fallidas) { mostrarError("Hay permisos que contradicen el contrato. Corrige la base o el contrato y vuelve a probar.", "Prueba de permisos fallida"); return; }
+      if ((!prueba || prueba.inconclusas || prueba.pendientes) && !(await confirmar("Hay permisos o flujos pendientes de comprobar. La aprobación valida el contrato; esas pruebas seguirán pendientes para la integración del backend.", "¿Aprobar con pruebas pendientes?", "Aprobar contrato"))) return;
+    }
     cancelarEdicion(clave); // aprobado de nuevo: vuelve a quedar bloqueado
 
     // Al aprobar los requerimientos, los agregados o cambiados con "Ampliar con IA" dejan de
@@ -1596,6 +1618,53 @@ export default function WorkspaceProyecto() {
   }
 
   // ---------- Base de datos ----------
+
+  async function sincronizarArchivosContrato(ficha) {
+    const rutas = ["contrato/api.json", ...(ficha.openapi ? ["openapi.yaml"] : [])];
+    await guardarArchivoGenerado("impl_contrato", rutas[0], JSON.stringify({ tipo: ficha.tipo, operaciones: ficha.operaciones, acciones: ficha.acciones }, null, 2));
+    if (ficha.openapi) await guardarArchivoGenerado("impl_contrato", "openapi.yaml", ficha.openapi);
+    await borrarArchivosDePaso("impl_contrato", rutas);
+  }
+
+  async function guardarContrato(actual) {
+    setCargando({ paso: "editar:impl_contrato" });
+    try {
+      const ficha = await pedirJson("/api/revisar-contrato", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId: id, actual }) });
+      if (ficha.error) throw new Error(ficha.error);
+      await guardarArtefacto("impl_contrato", { ...ficha, revision: [...ficha.errores, ...ficha.advertencias] });
+      await sincronizarArchivosContrato(ficha);
+      await marcarCambio("impl_contrato");
+      return true;
+    } catch (error) { mostrarError(error.message, "No se pudo guardar el contrato"); return false; }
+    finally { setCargando(null); }
+  }
+
+  async function probarContrato() {
+    setCargando({ paso: "probar:impl_contrato" });
+    try {
+      const { prueba, error } = await pedirJson("/api/probar-contrato", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId: id }) });
+      if (error) throw new Error(error);
+      const actual = artefactosRef.current.impl_contrato;
+      await guardarArtefacto("impl_contrato", { ...actual, prueba });
+      if (prueba.fallidas || prueba.inconclusas) await marcarCambio("impl_contrato");
+    } catch (error) { mostrarError(error.message, "No se pudo probar el contrato"); }
+    finally { setCargando(null); }
+  }
+
+  async function ampliarContrato(instruccion) {
+    if (claudeActivo() && !(await confirmar("Costo orientativo con Claude: $0,20 a $1,00, según el diseño y los reintentos.", "¿Modificar con Claude?", "Modificar"))) return false;
+    setCargando({ paso: "ampliar:impl_contrato" });
+    try {
+      const data = await pedirIA(PASO.impl_contrato.ruta, { proyectoId: id, actual: artefactosRef.current.impl_contrato, instruccion, indicaciones: contextoRef.current.indicaciones?.impl_contrato });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia: modelo, ...ficha } = data;
+      await guardarArtefacto("impl_contrato", { ...ficha, revision: [...ficha.errores, ...ficha.advertencias] });
+      await sincronizarArchivosContrato(ficha);
+      await marcarCambio("impl_contrato", {}, modelo);
+      return true;
+    } catch (error) { mostrarError(error.message, "No se pudo modificar el contrato"); return false; }
+    finally { setCargando(null); }
+  }
 
   // Código generado de un paso con archivos (archivos_proyecto): se guarda cada archivo apenas
   // se genera, así un corte no pierde lo que ya se pagó.
@@ -2348,34 +2417,20 @@ export default function WorkspaceProyecto() {
     impl_stack: !!fasesAprobadas.diseno,
     impl_estructura: !!fasesAprobadas.impl_stack,
     impl_bd: !!fasesAprobadas.impl_estructura,
+    impl_contrato: !!fasesAprobadas.impl_bd && !pendientes.impl_bd,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   // La generación de la base se cortó: se ofrece seguir desde el archivo que faltaba.
   const bdIncompleta = !!artefactos.impl_bd?.incompleto && pendientes.impl_bd !== "desactualizado";
 
-  // Pasos de Implementación plegables: por defecto se ve abierto solo el que se está trabajando
-  // (el primero sin aprobar) y los demás muestran un resumen; el usuario abre o pliega cualquiera.
-  const PASOS_PLEGABLES = ["impl_stack", "impl_estructura", "impl_bd"];
-  const pasoEnCurso = PASOS_PLEGABLES.find((c) => visible(c) && !aprobado(c));
-  const pasoAbierto = (clave) => (plegados[clave] === undefined ? clave === pasoEnCurso || generando(clave) : !plegados[clave]);
+  // En cada fase se abre inicialmente el primer paso pendiente; los demás se abren a elección.
+  const pasosDeFase = (clave) => PASOS.filter((p) => p.fase === PASO[clave].fase);
+  const pasoAbierto = (clave) => generando(clave) || (plegados[clave] === undefined
+    ? clave === pasosDeFase(clave).find((p) => (p.clave === "analisis" || visible(p.clave)) && !aprobado(p.clave))?.clave
+    : !plegados[clave]);
   const alternarPaso = (clave) => setPlegados((p) => ({ ...p, [clave]: pasoAbierto(clave) }));
-  function resumenPaso(clave) {
-    const a = artefactos[clave];
-    if (!a) return "Sin generar";
-    const partes = aprobado(clave) ? ["Aprobado"] : [];
-    if (clave === "impl_stack") {
-      partes.push((a.piezas || []).map((p) => a.titulos?.[p.pieza] || p.pieza).join(", "));
-      partes.push(`${(a.contenedores || []).length} contenedores`);
-    }
-    if (clave === "impl_estructura") partes.push(`${(a.archivos || []).length} archivos`);
-    if (clave === "impl_bd") {
-      partes.push(bdIncompleta ? `${a.archivos.length} de ${a.total} archivos` : `${(a.archivos || []).length} archivos`);
-      if (!bdIncompleta) partes.push(a.prueba?.ok ? "probada" : a.prueba?.ok === false ? "con errores" : "sin probar");
-    }
-    if (a.revision?.length) partes.push(`${a.revision.length} por revisar`);
-    return partes.filter(Boolean).join(" · ");
-  }
+  const estadoPaso = (clave) => pendientes[clave] || (aprobado(clave) ? "aprobado" : artefactos[clave] ? "generado" : "pendiente");
   const hayDiseno = PASOS.some((p) => p.fase === "diseno" && artefactos[p.clave]);
 
   const configPrototipo = contexto.prototipo || {};
@@ -2564,14 +2619,13 @@ export default function WorkspaceProyecto() {
           >
             <TituloPaso
               color={PALETA.marron}
-              estado={pendientes.impl_stack}
+              estado={estadoPaso("impl_stack")}
               modelo={modelos.impl_stack}
               onActualizar={trabajable("impl_stack") ? () => actualizarPaso("impl_stack") : undefined}
               deshabilitado={ocupado}
               separador={false}
               onAlternar={() => alternarPaso("impl_stack")}
               abierto={pasoAbierto("impl_stack")}
-              resumen={resumenPaso("impl_stack")}
             >
               Stack técnico
             </TituloPaso>
@@ -2661,13 +2715,12 @@ export default function WorkspaceProyecto() {
               <>
                 <TituloPaso
                   color={PALETA.marron}
-                  estado={pendientes.impl_estructura}
+                  estado={estadoPaso("impl_estructura")}
                   modelo={modelos.impl_estructura}
                   onActualizar={trabajable("impl_estructura") ? () => actualizarPaso("impl_estructura") : undefined}
                   deshabilitado={ocupado}
                   onAlternar={() => alternarPaso("impl_estructura")}
                   abierto={pasoAbierto("impl_estructura")}
-                  resumen={resumenPaso("impl_estructura")}
                 >
                   Estructura de carpetas
                 </TituloPaso>
@@ -2753,13 +2806,12 @@ export default function WorkspaceProyecto() {
               <>
                 <TituloPaso
                   color={PALETA.marron}
-                  estado={pendientes.impl_bd}
+                  estado={estadoPaso("impl_bd")}
                   modelo={modelos.impl_bd}
                   onActualizar={trabajable("impl_bd") ? () => actualizarPaso("impl_bd") : undefined}
                   deshabilitado={ocupado}
                   onAlternar={() => alternarPaso("impl_bd")}
                   abierto={pasoAbierto("impl_bd")}
-                  resumen={resumenPaso("impl_bd")}
                 >
                   Base de datos
                 </TituloPaso>
@@ -2864,6 +2916,30 @@ export default function WorkspaceProyecto() {
                 )}
               </>
             )}
+            {visible("impl_contrato") && (
+              <>
+                <TituloPaso color={PALETA.marron} estado={estadoPaso("impl_contrato")} modelo={modelos.impl_contrato}
+                  onActualizar={trabajable("impl_contrato") ? () => actualizarPaso("impl_contrato") : undefined}
+                  deshabilitado={ocupado} onAlternar={() => alternarPaso("impl_contrato")} abierto={pasoAbierto("impl_contrato")}>
+                  Contrato de API
+                </TituloPaso>
+                {pasoAbierto("impl_contrato") && <>
+                  {trabajable("impl_contrato") && !bloqueado("impl_contrato") && <CampoIndicaciones clave="impl_contrato" valor={contexto.indicaciones?.impl_contrato} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: revisa las operaciones de firma y sus roles" />}
+                  <ControlesPaso clave="impl_contrato" esperando={!trabajable("impl_contrato")} bloqueado={bloqueado("impl_contrato")} enEdicion={enEdicion("impl_contrato")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
+                    <BotonGenerar onClick={() => regenerarPaso("impl_contrato")} secundario={!!artefactos.impl_contrato} disabled={ocupado} cargando={generando("impl_contrato")} textoCargando="Leyendo la base y generando contrato..." color={PALETA.marron}>
+                      {artefactos.impl_contrato ? "Regenerar" : "Generar"} contrato de API
+                    </BotonGenerar>
+                    {artefactos.impl_contrato && <BotonEliminar onClick={() => eliminarPaso("impl_contrato", "¿Eliminar el contrato de API?")} disabled={ocupado} title="Eliminar contrato" />}
+                  </ControlesPaso>
+                  {artefactos.impl_contrato && <FichaContrato key={artefactos.impl_contrato.actualizado} contrato={artefactos.impl_contrato} editable={trabajable("impl_contrato") && !bloqueado("impl_contrato")} deshabilitado={ocupado} onGuardar={guardarContrato} onProbar={probarContrato} />}
+                  {artefactos.impl_contrato && trabajable("impl_contrato") && !bloqueado("impl_contrato") && <AmpliarConIA descripcion="Describe qué ajustar en las operaciones, sus roles o sus datos de prueba." ejemplo="Ej: corrige los argumentos de las RPC de firma" onEnviar={ampliarContrato} cargando={generando("ampliar:impl_contrato")} deshabilitado={ocupado} />}
+                  {artefactos.impl_contrato && trabajable("impl_contrato") && <div className="mt-4 flex gap-3 flex-wrap">
+                    <BotonAprobar aprobado={!!fasesAprobadas.impl_contrato} onClick={() => aprobarPaso("impl_contrato")} etiqueta="Contrato de API" disabled={ocupado || !contratoAprobable(artefactos.impl_contrato) || !!artefactos.impl_contrato.prueba?.fallidas} />
+                    {!fasesAprobadas.impl_contrato && <BotonRechazar etiqueta="Contrato de API" onClick={() => rechazarPaso("impl_contrato", "¿Rechazar el contrato?")} disabled={ocupado} />}
+                  </div>}
+                </>}
+              </>
+            )}
           </ImplementacionFase>
         ) : (
           <p className="text-sm text-gray-600">
@@ -2930,162 +3006,170 @@ export default function WorkspaceProyecto() {
           deshabilitado={!analisisEditable}
         />
 
-        <ControlesPaso
-          clave="analisis"
-          bloqueado={bloqueado("analisis")}
-          enEdicion={enEdicion("analisis")}
-          deshabilitado={ocupado}
-          onEditar={desbloquearPaso}
-          onCancelarEdicion={cancelarEdicion}
-        >
-          <BotonGenerar
-            onClick={() => regenerarPaso("analisis")}
-            secundario={!!artefactos.analisis}
-            disabled={ocupado}
-            cargando={generando("analisis")}
-            color={PALETA.navy}
+        <TituloPaso color={PALETA.navy} estado={estadoPaso("analisis")} modelo={modelos.analisis}
+          separador={false} onAlternar={() => alternarPaso("analisis")} abierto={pasoAbierto("analisis")}>
+          Actores y requerimientos
+        </TituloPaso>
+        <div hidden={!pasoAbierto("analisis")}>
+          <ControlesPaso
+            clave="analisis"
+            bloqueado={bloqueado("analisis")}
+            enEdicion={enEdicion("analisis")}
+            deshabilitado={ocupado}
+            onEditar={desbloquearPaso}
+            onCancelarEdicion={cancelarEdicion}
           >
-            {resultado ? "Regenerar" : "Generar"} actores y requerimientos
-          </BotonGenerar>
-
-          {resultado && (
-            <BotonEliminar
-              onClick={() =>
-                eliminarPaso("analisis", "¿Eliminar el análisis?", { tambien: ["casos_uso"] })
-              }
+            <BotonGenerar
+              onClick={() => regenerarPaso("analisis")}
+              secundario={!!artefactos.analisis}
               disabled={ocupado}
-              title="Eliminar actores y requerimientos"
-            />
-          )}
-        </ControlesPaso>
+              cargando={generando("analisis")}
+              color={PALETA.navy}
+            >
+              {resultado ? "Regenerar" : "Generar"} actores y requerimientos
+            </BotonGenerar>
 
-        {resultado && (
-          <>
-            <AnalisisResultado
-              resultado={resultado}
-              modelo={modelos.analisis}
-              onEliminarRequerimiento={analisisEditable ? eliminarRequerimiento : undefined}
-              onEliminarActor={analisisEditable ? eliminarActor : undefined}
-              onGuardarRequerimiento={analisisEditable ? guardarRequerimiento : undefined}
-            />
-
-            {!bloqueado("analisis") && (
-              <AmpliarConIA
-                descripcion="Describe qué agregar o cambiar. Lo nuevo y lo modificado aparece marcado para que lo revises."
-                ejemplo="Ej: faltan requerimientos para el inventario de bodega; en RF03 la prioridad debe ser alta"
-                onEnviar={ampliarAnalisis}
-                cargando={generando("ampliar:analisis")}
-                deshabilitado={ocupado}
+            {resultado && (
+              <BotonEliminar
+                onClick={() =>
+                  eliminarPaso("analisis", "¿Eliminar el análisis?", { tambien: ["casos_uso"] })
+                }
+                disabled={ocupado}
+                title="Eliminar actores y requerimientos"
               />
             )}
+          </ControlesPaso>
 
-            <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3 flex-wrap">
-              <BotonAprobar
-                aprobado={requerimientosAprobados}
-                onClick={() => aprobarPaso("analisis")}
-                etiqueta="Requerimientos"
-                disabled={ocupado}
+          {resultado && (
+            <>
+              <AnalisisResultado
+                resultado={resultado}
+                estado={estadoPaso("analisis")}
+                onEliminarRequerimiento={analisisEditable ? eliminarRequerimiento : undefined}
+                onEliminarActor={analisisEditable ? eliminarActor : undefined}
+                onGuardarRequerimiento={analisisEditable ? guardarRequerimiento : undefined}
               />
-              {!requerimientosAprobados && (
-                <BotonRechazar
-                  etiqueta="Requerimientos"
-                  disabled={ocupado}
-                  onClick={() =>
-                    eliminarPaso("analisis", "¿Rechazar los requerimientos?", {
-                      tambien: ["casos_uso"],
-                      introduccion:
-                        "Se descartarán los actores y requerimientos generados para que ajustes el contexto del análisis y los generes de nuevo.",
-                      textoConfirmar: "Rechazar",
-                    })
-                  }
+
+              {!bloqueado("analisis") && (
+                <AmpliarConIA
+                  descripcion="Describe qué agregar o cambiar. Lo nuevo y lo modificado aparece marcado para que lo revises."
+                  ejemplo="Ej: faltan requerimientos para el inventario de bodega; en RF03 la prioridad debe ser alta"
+                  onEnviar={ampliarAnalisis}
+                  cargando={generando("ampliar:analisis")}
+                  deshabilitado={ocupado}
                 />
               )}
-            </div>
-          </>
-        )}
+
+              <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3 flex-wrap">
+                <BotonAprobar
+                  aprobado={requerimientosAprobados}
+                  onClick={() => aprobarPaso("analisis")}
+                  etiqueta="Requerimientos"
+                  disabled={ocupado}
+                />
+                {!requerimientosAprobados && (
+                  <BotonRechazar
+                    etiqueta="Requerimientos"
+                    disabled={ocupado}
+                    onClick={() =>
+                      eliminarPaso("analisis", "¿Rechazar los requerimientos?", {
+                        tambien: ["casos_uso"],
+                        introduccion:
+                          "Se descartarán los actores y requerimientos generados para que ajustes el contexto del análisis y los generes de nuevo.",
+                        textoConfirmar: "Rechazar",
+                      })
+                    }
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {resultado && visible("casos_uso") && (
           <>
-            <TituloPaso
+            <TituloPaso onAlternar={() => alternarPaso("casos_uso")} abierto={pasoAbierto("casos_uso")}
               color={PALETA.navy}
-              estado={pendientes.casos_uso}
+              estado={estadoPaso("casos_uso")}
               modelo={modelos.casos_uso}
               onActualizar={trabajable("casos_uso") ? () => actualizarPaso("casos_uso") : undefined}
               deshabilitado={ocupado}
             >
               Diagrama de casos de uso
             </TituloPaso>
+            <div hidden={!pasoAbierto("casos_uso")}>
 
-            {trabajable("casos_uso") && !bloqueado("casos_uso") && (
-              <CampoIndicaciones
-                clave="casos_uso"
-                valor={contexto.indicaciones?.casos_uso}
-                onChange={cambiarIndicaciones}
-                deshabilitado={ocupado}
-                ejemplo="Ej: agrupa los casos de uso por módulo; no muestres el actor Sistema"
-              />
-            )}
-
-            <ControlesPaso
-              clave="casos_uso"
-              esperando={!trabajable("casos_uso")}
-              bloqueado={bloqueado("casos_uso")}
-              enEdicion={enEdicion("casos_uso")}
-              deshabilitado={ocupado}
-              onEditar={desbloquearPaso}
-              onCancelarEdicion={cancelarEdicion}
-            >
-              <BotonGenerar
-                onClick={() => regenerarPaso("casos_uso")}
-                secundario={!!artefactos.casos_uso}
-                disabled={ocupado}
-                cargando={generando("casos_uso")}
-                color={PALETA.negro}
-                textoCargando="Generando diagrama..."
-              >
-                {artefactos.casos_uso ? "Regenerar" : "Generar"} diagrama de casos de uso
-              </BotonGenerar>
-
-              {svgs.casos_uso && (
-                <BotonEliminar
-                  onClick={() => eliminarPaso("casos_uso", "¿Eliminar el diagrama de casos de uso?")}
-                  disabled={ocupado}
-                  title="Eliminar diagrama de casos de uso"
+              {trabajable("casos_uso") && !bloqueado("casos_uso") && (
+                <CampoIndicaciones
+                  clave="casos_uso"
+                  valor={contexto.indicaciones?.casos_uso}
+                  onChange={cambiarIndicaciones}
+                  deshabilitado={ocupado}
+                  ejemplo="Ej: agrupa los casos de uso por módulo; no muestres el actor Sistema"
                 />
               )}
-            </ControlesPaso>
 
-            <DiagramaBox
-              svg={svgs.casos_uso}
-              titulo="Diagrama de casos de uso"
-              nombreArchivo="diagrama-casos-de-uso"
-              codigo={artefactos.casos_uso}
-              renderizar={renderizar}
-              editable={!ocupado && trabajable("casos_uso") && !bloqueado("casos_uso")}
-              onGuardarCodigo={(codigo) => guardarCodigoDiagrama("casos_uso", codigo)}
-            />
-
-            {recuadroAmpliar("casos_uso")}
-
-            {svgs.casos_uso && trabajable("casos_uso") && (
-              <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3 flex-wrap">
-                <BotonAprobar
-                  aprobado={casosUsoAprobados}
-                  onClick={() => aprobarPaso("casos_uso")}
-                  etiqueta="Casos de uso"
+              <ControlesPaso
+                clave="casos_uso"
+                esperando={!trabajable("casos_uso")}
+                bloqueado={bloqueado("casos_uso")}
+                enEdicion={enEdicion("casos_uso")}
+                deshabilitado={ocupado}
+                onEditar={desbloquearPaso}
+                onCancelarEdicion={cancelarEdicion}
+              >
+                <BotonGenerar
+                  onClick={() => regenerarPaso("casos_uso")}
+                  secundario={!!artefactos.casos_uso}
                   disabled={ocupado}
-                />
-                {!casosUsoAprobados && (
-                  <BotonRechazar
-                    etiqueta="Casos de uso"
+                  cargando={generando("casos_uso")}
+                  color={PALETA.negro}
+                  textoCargando="Generando diagrama..."
+                >
+                  {artefactos.casos_uso ? "Regenerar" : "Generar"} diagrama de casos de uso
+                </BotonGenerar>
+
+                {svgs.casos_uso && (
+                  <BotonEliminar
+                    onClick={() => eliminarPaso("casos_uso", "¿Eliminar el diagrama de casos de uso?")}
                     disabled={ocupado}
-                    onClick={() =>
-                      rechazarPaso("casos_uso", "¿Rechazar el diagrama de casos de uso?")
-                    }
+                    title="Eliminar diagrama de casos de uso"
                   />
                 )}
-              </div>
-            )}
+              </ControlesPaso>
+
+              <DiagramaBox
+                svg={svgs.casos_uso}
+                titulo="Diagrama de casos de uso"
+                nombreArchivo="diagrama-casos-de-uso"
+                codigo={artefactos.casos_uso}
+                renderizar={renderizar}
+                editable={!ocupado && trabajable("casos_uso") && !bloqueado("casos_uso")}
+                onGuardarCodigo={(codigo) => guardarCodigoDiagrama("casos_uso", codigo)}
+              />
+
+              {recuadroAmpliar("casos_uso")}
+
+              {svgs.casos_uso && trabajable("casos_uso") && (
+                <div className="mt-6 pt-6 border-t-2 border-gray-200 flex items-center gap-3 flex-wrap">
+                  <BotonAprobar
+                    aprobado={casosUsoAprobados}
+                    onClick={() => aprobarPaso("casos_uso")}
+                    etiqueta="Casos de uso"
+                    disabled={ocupado}
+                  />
+                  {!casosUsoAprobados && (
+                    <BotonRechazar
+                      etiqueta="Casos de uso"
+                      disabled={ocupado}
+                      onClick={() =>
+                        rechazarPaso("casos_uso", "¿Rechazar el diagrama de casos de uso?")
+                      }
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -3162,9 +3246,9 @@ export default function WorkspaceProyecto() {
             {/* --- Diagrama de clases --- */}
             {visible("clases") && (
               <>
-                <TituloPaso
+                <TituloPaso onAlternar={() => alternarPaso("clases")} abierto={pasoAbierto("clases")}
                   color={PALETA.naranjaOscuro}
-                  estado={pendientes.clases}
+                  estado={estadoPaso("clases")}
                   modelo={modelos.clases}
                   onActualizar={trabajable("clases") ? () => actualizarPaso("clases") : undefined}
                   deshabilitado={ocupado}
@@ -3172,81 +3256,83 @@ export default function WorkspaceProyecto() {
                 >
                   Diagrama de clases
                 </TituloPaso>
+                <div hidden={!pasoAbierto("clases")}>
 
-                {trabajable("clases") && !bloqueado("clases") && (
-                  <CampoIndicaciones
-                    clave="clases"
-                    valor={contexto.indicaciones?.clases}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: usa herencia para los tipos de parte"
-                  />
-                )}
-
-                <ControlesPaso
-                  clave="clases"
-                  esperando={!trabajable("clases")}
-                  bloqueado={bloqueado("clases")}
-                  enEdicion={enEdicion("clases")}
-                  deshabilitado={ocupado}
-                  onEditar={desbloquearPaso}
-                  onCancelarEdicion={cancelarEdicion}
-                >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("clases")}
-                    secundario={!!artefactos.clases}
-                    disabled={ocupado}
-                    cargando={generando("clases")}
-                    color={PALETA.naranjaOscuro}
-                  >
-                    {artefactos.clases ? "Regenerar" : "Generar"} diagrama de clases
-                  </BotonGenerar>
-
-                  {svgs.clases && (
-                    <BotonEliminar
-                      onClick={() => eliminarPaso("clases", "¿Eliminar el diagrama de clases?")}
-                      disabled={ocupado}
-                      title="Eliminar diagrama de clases"
+                  {trabajable("clases") && !bloqueado("clases") && (
+                    <CampoIndicaciones
+                      clave="clases"
+                      valor={contexto.indicaciones?.clases}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: usa herencia para los tipos de parte"
                     />
                   )}
-                </ControlesPaso>
 
-                <DiagramaBox
-                  svg={svgs.clases}
-                  titulo="Diagrama de clases"
-                  nombreArchivo="diagrama-de-clases"
-                  codigo={artefactos.clases}
-                  renderizar={renderizar}
-                  editable={!ocupado && trabajable("clases") && !bloqueado("clases")}
-                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("clases", codigo)}
-                />
-
-                {recuadroAmpliar("clases")}
-
-                {svgs.clases && trabajable("clases") && (
-                  <div className="mt-4 flex items-center gap-3 flex-wrap">
-                    <BotonAprobar
-                      aprobado={!!fasesAprobadas.diseno_clases}
-                      onClick={() => aprobarPaso("clases")}
-                      etiqueta="Diagrama de clases"
+                  <ControlesPaso
+                    clave="clases"
+                    esperando={!trabajable("clases")}
+                    bloqueado={bloqueado("clases")}
+                    enEdicion={enEdicion("clases")}
+                    deshabilitado={ocupado}
+                    onEditar={desbloquearPaso}
+                    onCancelarEdicion={cancelarEdicion}
+                  >
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("clases")}
+                      secundario={!!artefactos.clases}
                       disabled={ocupado}
-                    />
-                    {!fasesAprobadas.diseno_clases && (
-                      <BotonRechazar
-                        etiqueta="Diagrama de clases"
+                      cargando={generando("clases")}
+                      color={PALETA.naranjaOscuro}
+                    >
+                      {artefactos.clases ? "Regenerar" : "Generar"} diagrama de clases
+                    </BotonGenerar>
+
+                    {svgs.clases && (
+                      <BotonEliminar
+                        onClick={() => eliminarPaso("clases", "¿Eliminar el diagrama de clases?")}
                         disabled={ocupado}
-                        onClick={() => rechazarPaso("clases", "¿Rechazar el diagrama de clases?")}
+                        title="Eliminar diagrama de clases"
                       />
                     )}
-                  </div>
-                )}
+                  </ControlesPaso>
+
+                  <DiagramaBox
+                    svg={svgs.clases}
+                    titulo="Diagrama de clases"
+                    nombreArchivo="diagrama-de-clases"
+                    codigo={artefactos.clases}
+                    renderizar={renderizar}
+                    editable={!ocupado && trabajable("clases") && !bloqueado("clases")}
+                    onGuardarCodigo={(codigo) => guardarCodigoDiagrama("clases", codigo)}
+                  />
+
+                  {recuadroAmpliar("clases")}
+
+                  {svgs.clases && trabajable("clases") && (
+                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                      <BotonAprobar
+                        aprobado={!!fasesAprobadas.diseno_clases}
+                        onClick={() => aprobarPaso("clases")}
+                        etiqueta="Diagrama de clases"
+                        disabled={ocupado}
+                      />
+                      {!fasesAprobadas.diseno_clases && (
+                        <BotonRechazar
+                          etiqueta="Diagrama de clases"
+                          disabled={ocupado}
+                          onClick={() => rechazarPaso("clases", "¿Rechazar el diagrama de clases?")}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
             {/* --- Diagrama entidad-relación --- */}
-            <TituloPaso
+            <TituloPaso onAlternar={() => alternarPaso("er")} abierto={pasoAbierto("er")}
               color={PALETA.naranjaOscuro}
-              estado={pendientes.er}
+              estado={estadoPaso("er")}
               modelo={modelos.er}
               onActualizar={trabajable("er") ? () => actualizarPaso("er") : undefined}
               deshabilitado={ocupado}
@@ -3254,466 +3340,475 @@ export default function WorkspaceProyecto() {
             >
               Diagrama entidad-relación
             </TituloPaso>
+            <div hidden={!pasoAbierto("er")}>
 
-            {trabajable("er") && !bloqueado("er") && (
-              <CampoIndicaciones
-                clave="er"
-                valor={contexto.indicaciones?.er}
-                onChange={cambiarIndicaciones}
-                deshabilitado={ocupado}
-                ejemplo="Ej: incluye una tabla de auditoría; nombres de entidades en singular"
-              />
-            )}
-
-            <ControlesPaso
-              clave="er"
-              esperando={!trabajable("er")}
-              bloqueado={bloqueado("er")}
-              enEdicion={enEdicion("er")}
-              deshabilitado={ocupado}
-              onEditar={desbloquearPaso}
-              onCancelarEdicion={cancelarEdicion}
-            >
-              <BotonGenerar
-                onClick={() => regenerarPaso("er")}
-                secundario={!!artefactos.er}
-                disabled={ocupado}
-                cargando={generando("er")}
-                color={PALETA.naranjaOscuro}
-              >
-                {artefactos.er ? "Regenerar" : "Generar"} diagrama entidad-relación
-              </BotonGenerar>
-
-              {svgs.er && (
-                <BotonEliminar
-                  onClick={() => eliminarPaso("er", "¿Eliminar el diagrama entidad-relación?")}
-                  disabled={ocupado}
-                  title="Eliminar diagrama entidad-relación"
+              {trabajable("er") && !bloqueado("er") && (
+                <CampoIndicaciones
+                  clave="er"
+                  valor={contexto.indicaciones?.er}
+                  onChange={cambiarIndicaciones}
+                  deshabilitado={ocupado}
+                  ejemplo="Ej: incluye una tabla de auditoría; nombres de entidades en singular"
                 />
               )}
-            </ControlesPaso>
 
-            <DiagramaBox
-              svg={svgs.er}
-              titulo="Diagrama entidad-relación"
-              nombreArchivo="diagrama-entidad-relacion"
-              codigo={artefactos.er}
-              renderizar={renderizar}
-              editable={!ocupado && trabajable("er") && !bloqueado("er")}
-              onGuardarCodigo={(codigo) => guardarCodigoDiagrama("er", codigo)}
-            />
-
-            {recuadroAmpliar("er")}
-
-            {svgs.er && trabajable("er") && (
-              <div className="mt-4 flex items-center gap-3 flex-wrap">
-                <BotonAprobar
-                  aprobado={!!fasesAprobadas.diseno_er}
-                  onClick={() => aprobarPaso("er")}
-                  etiqueta="Diagrama entidad-relación"
+              <ControlesPaso
+                clave="er"
+                esperando={!trabajable("er")}
+                bloqueado={bloqueado("er")}
+                enEdicion={enEdicion("er")}
+                deshabilitado={ocupado}
+                onEditar={desbloquearPaso}
+                onCancelarEdicion={cancelarEdicion}
+              >
+                <BotonGenerar
+                  onClick={() => regenerarPaso("er")}
+                  secundario={!!artefactos.er}
                   disabled={ocupado}
-                />
-                {!fasesAprobadas.diseno_er && (
-                  <BotonRechazar
-                    etiqueta="Diagrama entidad-relación"
+                  cargando={generando("er")}
+                  color={PALETA.naranjaOscuro}
+                >
+                  {artefactos.er ? "Regenerar" : "Generar"} diagrama entidad-relación
+                </BotonGenerar>
+
+                {svgs.er && (
+                  <BotonEliminar
+                    onClick={() => eliminarPaso("er", "¿Eliminar el diagrama entidad-relación?")}
                     disabled={ocupado}
-                    onClick={() => rechazarPaso("er", "¿Rechazar el diagrama entidad-relación?")}
+                    title="Eliminar diagrama entidad-relación"
                   />
                 )}
-              </div>
-            )}
+              </ControlesPaso>
 
-            {/* --- Prototipo de pantallas --- */}
+              <DiagramaBox
+                svg={svgs.er}
+                titulo="Diagrama entidad-relación"
+                nombreArchivo="diagrama-entidad-relacion"
+                codigo={artefactos.er}
+                renderizar={renderizar}
+                editable={!ocupado && trabajable("er") && !bloqueado("er")}
+                onGuardarCodigo={(codigo) => guardarCodigoDiagrama("er", codigo)}
+              />
+
+              {recuadroAmpliar("er")}
+
+              {svgs.er && trabajable("er") && (
+                <div className="mt-4 flex items-center gap-3 flex-wrap">
+                  <BotonAprobar
+                    aprobado={!!fasesAprobadas.diseno_er}
+                    onClick={() => aprobarPaso("er")}
+                    etiqueta="Diagrama entidad-relación"
+                    disabled={ocupado}
+                  />
+                  {!fasesAprobadas.diseno_er && (
+                    <BotonRechazar
+                      etiqueta="Diagrama entidad-relación"
+                      disabled={ocupado}
+                      onClick={() => rechazarPaso("er", "¿Rechazar el diagrama entidad-relación?")}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+{/* --- Prototipo de pantallas --- */}
             {visible("prototipo") && (
               <>
-                <TituloPaso
+                <TituloPaso onAlternar={() => alternarPaso("prototipo")} abierto={pasoAbierto("prototipo")}
                   color={PALETA.naranjaOscuro}
-                  estado={pendientes.prototipo}
+                  estado={estadoPaso("prototipo")}
                   modelo={modelos.prototipo}
                   onActualizar={trabajable("prototipo") ? () => actualizarPaso("prototipo") : undefined}
                   deshabilitado={ocupado}
                 >
                   Prototipo de pantallas
                 </TituloPaso>
+                <div hidden={!pasoAbierto("prototipo")}>
 
-                {trabajable("prototipo") && !bloqueado("prototipo") && (
-                  <>
-                    <ConfigPrototipo
-                      valor={configPrototipo}
-                      onChange={cambiarConfigPrototipo}
-                      plataformasPorDefecto={plataformasDePrototipo(contexto)}
-                      generadas={nombresGenerados}
-                      deshabilitado={ocupado}
-                      onProponer={proponerPantallas}
-                      proponiendo={generando("proponer")}
-                      onSubirImagen={subirImagenEstilo}
-                    />
-                    <CampoIndicaciones
-                      clave="prototipo"
-                      valor={contexto.indicaciones?.prototipo}
-                      onChange={cambiarIndicaciones}
-                      deshabilitado={ocupado}
-                      ejemplo="Ej: el dashboard debe tener un mapa con las unidades"
-                    />
-                  </>
-                )}
+                  {trabajable("prototipo") && !bloqueado("prototipo") && (
+                    <>
+                      <ConfigPrototipo
+                        valor={configPrototipo}
+                        onChange={cambiarConfigPrototipo}
+                        plataformasPorDefecto={plataformasDePrototipo(contexto)}
+                        generadas={nombresGenerados}
+                        deshabilitado={ocupado}
+                        onProponer={proponerPantallas}
+                        proponiendo={generando("proponer")}
+                        onSubirImagen={subirImagenEstilo}
+                      />
+                      <CampoIndicaciones
+                        clave="prototipo"
+                        valor={contexto.indicaciones?.prototipo}
+                        onChange={cambiarIndicaciones}
+                        deshabilitado={ocupado}
+                        ejemplo="Ej: el dashboard debe tener un mapa con las unidades"
+                      />
+                    </>
+                  )}
 
-                <ControlesPaso
-                  clave="prototipo"
-                  esperando={!trabajable("prototipo")}
-                  bloqueado={bloqueado("prototipo")}
-                  enEdicion={enEdicion("prototipo")}
-                  deshabilitado={ocupado}
-                  onEditar={desbloquearPaso}
-                  onCancelarEdicion={cancelarEdicion}
-                >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("prototipo")}
-                    secundario={!!artefactos.prototipo}
-                    disabled={ocupado || !planActual.length}
-                    cargando={generando("prototipo")}
-                    textoCargando={cargando?.detalle || "Generando..."}
-                    color={PALETA.naranjaOscuro}
+                  <ControlesPaso
+                    clave="prototipo"
+                    esperando={!trabajable("prototipo")}
+                    bloqueado={bloqueado("prototipo")}
+                    enEdicion={enEdicion("prototipo")}
+                    deshabilitado={ocupado}
+                    onEditar={desbloquearPaso}
+                    onCancelarEdicion={cancelarEdicion}
                   >
-                    {artefactos.prototipo ? "Regenerar prototipo" : "Generar prototipo"} (
-                    {planActual.length} {planActual.length === 1 ? "pantalla" : "pantallas"})
-                  </BotonGenerar>
-
-                  {generando("prototipo") && cargando.lote && (
-                    <BotonDetener onClick={detenerGeneracion} deteniendo={deteniendo} />
-                  )}
-
-                  {!ocupado && artefactos.prototipo && faltantes.length > 0 && (
-                    <button
-                      onClick={agregarPantallasFaltantes}
-                      disabled={ocupado}
-                      style={{ borderColor: PALETA.naranjaOscuro, color: PALETA.naranjaOscuro }}
-                      className="border bg-transparent hover:bg-orange-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("prototipo")}
+                      secundario={!!artefactos.prototipo}
+                      disabled={ocupado || !planActual.length}
+                      cargando={generando("prototipo")}
+                      textoCargando={cargando?.detalle || "Generando..."}
+                      color={PALETA.naranjaOscuro}
                     >
-                      Agregar faltantes ({faltantes.length})
-                    </button>
-                  )}
+                      {artefactos.prototipo ? "Regenerar prototipo" : "Generar prototipo"} (
+                      {planActual.length} {planActual.length === 1 ? "pantalla" : "pantallas"})
+                    </BotonGenerar>
 
-                  {artefactos.prototipo && (
-                    <BotonEliminar
-                      onClick={() => eliminarPaso("prototipo", "¿Eliminar el prototipo?")}
-                      disabled={ocupado}
-                      title="Eliminar todas las pantallas"
-                    />
-                  )}
-                </ControlesPaso>
+                    {generando("prototipo") && cargando.lote && (
+                      <BotonDetener onClick={detenerGeneracion} deteniendo={deteniendo} />
+                    )}
 
-                <MockupsGenerator
-                  mockups={artefactos.prototipo}
-                  deshabilitado={ocupado}
-                  bloqueado={bloqueado("prototipo") || !trabajable("prototipo")}
-                  regenerando={generando("prototipo") ? cargando.indice ?? null : null}
-                  onRegenerar={regenerarPantalla}
-                  onQuitar={quitarPantalla}
-                  onGuardarHtml={guardarHtmlPantalla}
-                />
-
-                {artefactos.prototipo?.length > 0 &&
-                  trabajable("prototipo") &&
-                  !bloqueado("prototipo") && (
-                    <AmpliarPrototipo
-                      pantallas={artefactos.prototipo}
-                      plataformas={
-                        configPrototipo.plataformas?.length
-                          ? configPrototipo.plataformas
-                          : plataformasDePrototipo(contexto)
-                      }
-                      onModificar={ampliarPantalla}
-                      onAgregar={agregarPantallaConIA}
-                      cargando={generando("ampliar:prototipo")}
-                      deshabilitado={ocupado}
-                    />
-                  )}
-
-                {artefactos.prototipo && trabajable("prototipo") && (
-                  <div className="mt-4 flex items-center gap-3 flex-wrap">
-                    <BotonAprobar
-                      aprobado={!!fasesAprobadas.diseno_prototipo}
-                      onClick={() => aprobarPaso("prototipo")}
-                      etiqueta="Prototipo"
-                      disabled={ocupado}
-                    />
-                    {!fasesAprobadas.diseno_prototipo && (
-                      <BotonRechazar
-                        etiqueta="Prototipo"
+                    {!ocupado && artefactos.prototipo && faltantes.length > 0 && (
+                      <button
+                        onClick={agregarPantallasFaltantes}
                         disabled={ocupado}
-                        onClick={() => rechazarPaso("prototipo", "¿Rechazar el prototipo?")}
+                        style={{ borderColor: PALETA.naranjaOscuro, color: PALETA.naranjaOscuro }}
+                        className="border bg-transparent hover:bg-orange-50 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                      >
+                        Agregar faltantes ({faltantes.length})
+                      </button>
+                    )}
+
+                    {artefactos.prototipo && (
+                      <BotonEliminar
+                        onClick={() => eliminarPaso("prototipo", "¿Eliminar el prototipo?")}
+                        disabled={ocupado}
+                        title="Eliminar todas las pantallas"
                       />
                     )}
-                  </div>
-                )}
+                  </ControlesPaso>
+
+                  <MockupsGenerator
+                    mockups={artefactos.prototipo}
+                    deshabilitado={ocupado}
+                    bloqueado={bloqueado("prototipo") || !trabajable("prototipo")}
+                    regenerando={generando("prototipo") ? cargando.indice ?? null : null}
+                    onRegenerar={regenerarPantalla}
+                    onQuitar={quitarPantalla}
+                    onGuardarHtml={guardarHtmlPantalla}
+                  />
+
+                  {artefactos.prototipo?.length > 0 &&
+                    trabajable("prototipo") &&
+                    !bloqueado("prototipo") && (
+                      <AmpliarPrototipo
+                        pantallas={artefactos.prototipo}
+                        plataformas={
+                          configPrototipo.plataformas?.length
+                            ? configPrototipo.plataformas
+                            : plataformasDePrototipo(contexto)
+                        }
+                        onModificar={ampliarPantalla}
+                        onAgregar={agregarPantallaConIA}
+                        cargando={generando("ampliar:prototipo")}
+                        deshabilitado={ocupado}
+                      />
+                    )}
+
+                  {artefactos.prototipo && trabajable("prototipo") && (
+                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                      <BotonAprobar
+                        aprobado={!!fasesAprobadas.diseno_prototipo}
+                        onClick={() => aprobarPaso("prototipo")}
+                        etiqueta="Prototipo"
+                        disabled={ocupado}
+                      />
+                      {!fasesAprobadas.diseno_prototipo && (
+                        <BotonRechazar
+                          etiqueta="Prototipo"
+                          disabled={ocupado}
+                          onClick={() => rechazarPaso("prototipo", "¿Rechazar el prototipo?")}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
             {/* --- Árbol de navegación --- */}
             {visible("arbol") && (
               <>
-                <TituloPaso
+                <TituloPaso onAlternar={() => alternarPaso("arbol")} abierto={pasoAbierto("arbol")}
                   color={PALETA.naranjaOscuro}
-                  estado={pendientes.arbol}
+                  estado={estadoPaso("arbol")}
                   modelo={modelos.arbol}
                   onActualizar={trabajable("arbol") ? () => actualizarPaso("arbol") : undefined}
                   deshabilitado={ocupado}
                 >
                   Árbol de navegación
                 </TituloPaso>
+                <div hidden={!pasoAbierto("arbol")}>
 
-                {trabajable("arbol") && !bloqueado("arbol") && (
-                  <CampoIndicaciones
-                    clave="arbol"
-                    valor={contexto.indicaciones?.arbol}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: separa la navegación por rol"
-                  />
-                )}
-
-                <ControlesPaso
-                  clave="arbol"
-                  esperando={!trabajable("arbol")}
-                  bloqueado={bloqueado("arbol")}
-                  enEdicion={enEdicion("arbol")}
-                  deshabilitado={ocupado}
-                  onEditar={desbloquearPaso}
-                  onCancelarEdicion={cancelarEdicion}
-                >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("arbol")}
-                    secundario={!!artefactos.arbol}
-                    disabled={ocupado}
-                    cargando={generando("arbol")}
-                    color={PALETA.naranjaOscuro}
-                  >
-                    {artefactos.arbol ? "Regenerar" : "Generar"} árbol de navegación
-                  </BotonGenerar>
-
-                  {svgs.arbol && (
-                    <BotonEliminar
-                      onClick={() => eliminarPaso("arbol", "¿Eliminar el árbol de navegación?")}
-                      disabled={ocupado}
-                      title="Eliminar árbol de navegación"
+                  {trabajable("arbol") && !bloqueado("arbol") && (
+                    <CampoIndicaciones
+                      clave="arbol"
+                      valor={contexto.indicaciones?.arbol}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: separa la navegación por rol"
                     />
                   )}
-                </ControlesPaso>
 
-                <ArbolNavegacion
-                  svg={svgs.arbol}
-                  titulo="Árbol de navegación"
-                  nombreArchivo="arbol-de-navegacion"
-                  codigo={artefactos.arbol}
-                  renderizar={renderizar}
-                  editable={!ocupado && trabajable("arbol") && !bloqueado("arbol")}
-                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arbol", codigo)}
-                />
-
-                {recuadroAmpliar("arbol")}
-
-                {svgs.arbol && trabajable("arbol") && (
-                  <div className="mt-4 flex items-center gap-3 flex-wrap">
-                    <BotonAprobar
-                      aprobado={!!fasesAprobadas.diseno_arbol}
-                      onClick={() => aprobarPaso("arbol")}
-                      etiqueta="Árbol de navegación"
+                  <ControlesPaso
+                    clave="arbol"
+                    esperando={!trabajable("arbol")}
+                    bloqueado={bloqueado("arbol")}
+                    enEdicion={enEdicion("arbol")}
+                    deshabilitado={ocupado}
+                    onEditar={desbloquearPaso}
+                    onCancelarEdicion={cancelarEdicion}
+                  >
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("arbol")}
+                      secundario={!!artefactos.arbol}
                       disabled={ocupado}
-                    />
-                    {!fasesAprobadas.diseno_arbol && (
-                      <BotonRechazar
-                        etiqueta="Árbol de navegación"
+                      cargando={generando("arbol")}
+                      color={PALETA.naranjaOscuro}
+                    >
+                      {artefactos.arbol ? "Regenerar" : "Generar"} árbol de navegación
+                    </BotonGenerar>
+
+                    {svgs.arbol && (
+                      <BotonEliminar
+                        onClick={() => eliminarPaso("arbol", "¿Eliminar el árbol de navegación?")}
                         disabled={ocupado}
-                        onClick={() => rechazarPaso("arbol", "¿Rechazar el árbol de navegación?")}
+                        title="Eliminar árbol de navegación"
                       />
                     )}
-                  </div>
-                )}
+                  </ControlesPaso>
+
+                  <ArbolNavegacion
+                    svg={svgs.arbol}
+                    titulo="Árbol de navegación"
+                    nombreArchivo="arbol-de-navegacion"
+                    codigo={artefactos.arbol}
+                    renderizar={renderizar}
+                    editable={!ocupado && trabajable("arbol") && !bloqueado("arbol")}
+                    onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arbol", codigo)}
+                  />
+
+                  {recuadroAmpliar("arbol")}
+
+                  {svgs.arbol && trabajable("arbol") && (
+                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                      <BotonAprobar
+                        aprobado={!!fasesAprobadas.diseno_arbol}
+                        onClick={() => aprobarPaso("arbol")}
+                        etiqueta="Árbol de navegación"
+                        disabled={ocupado}
+                      />
+                      {!fasesAprobadas.diseno_arbol && (
+                        <BotonRechazar
+                          etiqueta="Árbol de navegación"
+                          disabled={ocupado}
+                          onClick={() => rechazarPaso("arbol", "¿Rechazar el árbol de navegación?")}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
             {/* --- Diagrama de arquitectura --- */}
             {visible("arquitectura") && (
               <>
-                <TituloPaso
+                <TituloPaso onAlternar={() => alternarPaso("arquitectura")} abierto={pasoAbierto("arquitectura")}
                   color={PALETA.naranjaOscuro}
-                  estado={pendientes.arquitectura}
+                  estado={estadoPaso("arquitectura")}
                   modelo={modelos.arquitectura}
                   onActualizar={trabajable("arquitectura") ? () => actualizarPaso("arquitectura") : undefined}
                   deshabilitado={ocupado}
                 >
                   Diagrama de arquitectura
                 </TituloPaso>
+                <div hidden={!pasoAbierto("arquitectura")}>
 
-                {trabajable("arquitectura") && !bloqueado("arquitectura") && (
-                  <>
-                    <label className="block mb-3">
-                      <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                        Tecnologías preferidas (opcional)
-                      </span>
-                      <input
-                        value={contexto.tecnologias || ""}
-                        onChange={(e) =>
-                          cambiarContexto({ ...contextoRef.current, tecnologias: e.target.value })
-                        }
-                        placeholder="Ej: Next.js, Supabase, Flutter para la app móvil"
-                        disabled={ocupado}
-                        className={CLASE_INPUT}
+                  {trabajable("arquitectura") && !bloqueado("arquitectura") && (
+                    <>
+                      <label className="block mb-3">
+                        <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                          Tecnologías preferidas (opcional)
+                        </span>
+                        <input
+                          value={contexto.tecnologias || ""}
+                          onChange={(e) =>
+                            cambiarContexto({ ...contextoRef.current, tecnologias: e.target.value })
+                          }
+                          placeholder="Ej: Next.js, Supabase, Flutter para la app móvil"
+                          disabled={ocupado}
+                          className={CLASE_INPUT}
+                        />
+                      </label>
+                      <CampoIndicaciones
+                        clave="arquitectura"
+                        valor={contexto.indicaciones?.arquitectura}
+                        onChange={cambiarIndicaciones}
+                        deshabilitado={ocupado}
+                        ejemplo="Ej: incluye un servicio de notificaciones push"
                       />
-                    </label>
-                    <CampoIndicaciones
-                      clave="arquitectura"
-                      valor={contexto.indicaciones?.arquitectura}
-                      onChange={cambiarIndicaciones}
-                      deshabilitado={ocupado}
-                      ejemplo="Ej: incluye un servicio de notificaciones push"
-                    />
-                  </>
-                )}
-
-                <ControlesPaso
-                  clave="arquitectura"
-                  esperando={!trabajable("arquitectura")}
-                  bloqueado={bloqueado("arquitectura")}
-                  enEdicion={enEdicion("arquitectura")}
-                  deshabilitado={ocupado}
-                  onEditar={desbloquearPaso}
-                  onCancelarEdicion={cancelarEdicion}
-                >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("arquitectura")}
-                    secundario={!!artefactos.arquitectura}
-                    disabled={ocupado}
-                    cargando={generando("arquitectura")}
-                    color={PALETA.naranjaOscuro}
-                  >
-                    {artefactos.arquitectura ? "Regenerar" : "Generar"} diagrama de arquitectura
-                  </BotonGenerar>
-
-                  {svgs.arquitectura && (
-                    <BotonEliminar
-                      onClick={() => eliminarPaso("arquitectura", "¿Eliminar el diagrama de arquitectura?")}
-                      disabled={ocupado}
-                      title="Eliminar diagrama de arquitectura"
-                    />
+                    </>
                   )}
-                </ControlesPaso>
 
-                <DiagramaBox
-                  svg={svgs.arquitectura}
-                  titulo="Diagrama de arquitectura"
-                  nombreArchivo="diagrama-arquitectura"
-                  codigo={artefactos.arquitectura}
-                  renderizar={renderizar}
-                  editable={!ocupado && trabajable("arquitectura") && !bloqueado("arquitectura")}
-                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arquitectura", codigo)}
-                />
-
-                {recuadroAmpliar("arquitectura")}
-
-                {svgs.arquitectura && trabajable("arquitectura") && (
-                  <div className="mt-4 flex items-center gap-3 flex-wrap">
-                    <BotonAprobar
-                      aprobado={!!fasesAprobadas.diseno_arquitectura}
-                      onClick={() => aprobarPaso("arquitectura")}
-                      etiqueta="Diagrama de arquitectura"
+                  <ControlesPaso
+                    clave="arquitectura"
+                    esperando={!trabajable("arquitectura")}
+                    bloqueado={bloqueado("arquitectura")}
+                    enEdicion={enEdicion("arquitectura")}
+                    deshabilitado={ocupado}
+                    onEditar={desbloquearPaso}
+                    onCancelarEdicion={cancelarEdicion}
+                  >
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("arquitectura")}
+                      secundario={!!artefactos.arquitectura}
                       disabled={ocupado}
-                    />
-                    {!fasesAprobadas.diseno_arquitectura && (
-                      <BotonRechazar
-                        etiqueta="Diagrama de arquitectura"
+                      cargando={generando("arquitectura")}
+                      color={PALETA.naranjaOscuro}
+                    >
+                      {artefactos.arquitectura ? "Regenerar" : "Generar"} diagrama de arquitectura
+                    </BotonGenerar>
+
+                    {svgs.arquitectura && (
+                      <BotonEliminar
+                        onClick={() => eliminarPaso("arquitectura", "¿Eliminar el diagrama de arquitectura?")}
                         disabled={ocupado}
-                        onClick={() =>
-                          rechazarPaso("arquitectura", "¿Rechazar el diagrama de arquitectura?")
-                        }
+                        title="Eliminar diagrama de arquitectura"
                       />
                     )}
-                  </div>
-                )}
+                  </ControlesPaso>
+
+                  <DiagramaBox
+                    svg={svgs.arquitectura}
+                    titulo="Diagrama de arquitectura"
+                    nombreArchivo="diagrama-arquitectura"
+                    codigo={artefactos.arquitectura}
+                    renderizar={renderizar}
+                    editable={!ocupado && trabajable("arquitectura") && !bloqueado("arquitectura")}
+                    onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arquitectura", codigo)}
+                  />
+
+                  {recuadroAmpliar("arquitectura")}
+
+                  {svgs.arquitectura && trabajable("arquitectura") && (
+                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                      <BotonAprobar
+                        aprobado={!!fasesAprobadas.diseno_arquitectura}
+                        onClick={() => aprobarPaso("arquitectura")}
+                        etiqueta="Diagrama de arquitectura"
+                        disabled={ocupado}
+                      />
+                      {!fasesAprobadas.diseno_arquitectura && (
+                        <BotonRechazar
+                          etiqueta="Diagrama de arquitectura"
+                          disabled={ocupado}
+                          onClick={() =>
+                            rechazarPaso("arquitectura", "¿Rechazar el diagrama de arquitectura?")
+                          }
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
             {/* --- Diagrama de sistemas --- */}
             {visible("sistema") && (
               <>
-                <TituloPaso
+                <TituloPaso onAlternar={() => alternarPaso("sistema")} abierto={pasoAbierto("sistema")}
                   color={PALETA.naranjaOscuro}
-                  estado={pendientes.sistema}
+                  estado={estadoPaso("sistema")}
                   modelo={modelos.sistema}
                   onActualizar={trabajable("sistema") ? () => actualizarPaso("sistema") : undefined}
                   deshabilitado={ocupado}
                 >
                   Diagrama de sistemas
                 </TituloPaso>
+                <div hidden={!pasoAbierto("sistema")}>
 
-                {trabajable("sistema") && !bloqueado("sistema") && (
-                  <CampoIndicaciones
-                    clave="sistema"
-                    valor={contexto.indicaciones?.sistema}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: separa la App Móvil como subsistema secundario; incluye la integración con el ECU-911"
-                  />
-                )}
-
-                <ControlesPaso
-                  clave="sistema"
-                  esperando={!trabajable("sistema")}
-                  bloqueado={bloqueado("sistema")}
-                  enEdicion={enEdicion("sistema")}
-                  deshabilitado={ocupado}
-                  onEditar={desbloquearPaso}
-                  onCancelarEdicion={cancelarEdicion}
-                >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("sistema")}
-                    secundario={!!artefactos.sistema}
-                    disabled={ocupado}
-                    cargando={generando("sistema")}
-                    color={PALETA.naranjaOscuro}
-                  >
-                    {artefactos.sistema ? "Regenerar" : "Generar"} diagrama de sistemas
-                  </BotonGenerar>
-
-                  {svgs.sistema && (
-                    <BotonEliminar
-                      onClick={() => eliminarPaso("sistema", "¿Eliminar el diagrama de sistemas?")}
-                      disabled={ocupado}
-                      title="Eliminar diagrama de sistemas"
+                  {trabajable("sistema") && !bloqueado("sistema") && (
+                    <CampoIndicaciones
+                      clave="sistema"
+                      valor={contexto.indicaciones?.sistema}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: separa la App Móvil como subsistema secundario; incluye la integración con el ECU-911"
                     />
                   )}
-                </ControlesPaso>
 
-                <DiagramaBox
-                  svg={svgs.sistema}
-                  titulo="Diagrama de sistemas"
-                  nombreArchivo="diagrama-de-sistemas"
-                  codigo={artefactos.sistema}
-                  renderizar={renderizar}
-                  editable={!ocupado && trabajable("sistema") && !bloqueado("sistema")}
-                  onGuardarCodigo={(codigo) => guardarCodigoDiagrama("sistema", codigo)}
-                />
-
-                {recuadroAmpliar("sistema")}
-
-                {svgs.sistema && trabajable("sistema") && (
-                  <div className="mt-4 flex items-center gap-3 flex-wrap">
-                    <BotonAprobar
-                      aprobado={!!fasesAprobadas.diseno_sistema}
-                      onClick={() => aprobarPaso("sistema")}
-                      etiqueta="Diagrama de sistemas"
+                  <ControlesPaso
+                    clave="sistema"
+                    esperando={!trabajable("sistema")}
+                    bloqueado={bloqueado("sistema")}
+                    enEdicion={enEdicion("sistema")}
+                    deshabilitado={ocupado}
+                    onEditar={desbloquearPaso}
+                    onCancelarEdicion={cancelarEdicion}
+                  >
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("sistema")}
+                      secundario={!!artefactos.sistema}
                       disabled={ocupado}
-                    />
-                    {!fasesAprobadas.diseno_sistema && (
-                      <BotonRechazar
-                        etiqueta="Diagrama de sistemas"
+                      cargando={generando("sistema")}
+                      color={PALETA.naranjaOscuro}
+                    >
+                      {artefactos.sistema ? "Regenerar" : "Generar"} diagrama de sistemas
+                    </BotonGenerar>
+
+                    {svgs.sistema && (
+                      <BotonEliminar
+                        onClick={() => eliminarPaso("sistema", "¿Eliminar el diagrama de sistemas?")}
                         disabled={ocupado}
-                        onClick={() => rechazarPaso("sistema", "¿Rechazar el diagrama de sistemas?")}
+                        title="Eliminar diagrama de sistemas"
                       />
                     )}
-                  </div>
-                )}
+                  </ControlesPaso>
+
+                  <DiagramaBox
+                    svg={svgs.sistema}
+                    titulo="Diagrama de sistemas"
+                    nombreArchivo="diagrama-de-sistemas"
+                    codigo={artefactos.sistema}
+                    renderizar={renderizar}
+                    editable={!ocupado && trabajable("sistema") && !bloqueado("sistema")}
+                    onGuardarCodigo={(codigo) => guardarCodigoDiagrama("sistema", codigo)}
+                  />
+
+                  {recuadroAmpliar("sistema")}
+
+                  {svgs.sistema && trabajable("sistema") && (
+                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                      <BotonAprobar
+                        aprobado={!!fasesAprobadas.diseno_sistema}
+                        onClick={() => aprobarPaso("sistema")}
+                        etiqueta="Diagrama de sistemas"
+                        disabled={ocupado}
+                      />
+                      {!fasesAprobadas.diseno_sistema && (
+                        <BotonRechazar
+                          etiqueta="Diagrama de sistemas"
+                          disabled={ocupado}
+                          onClick={() => rechazarPaso("sistema", "¿Rechazar el diagrama de sistemas?")}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               </>
             )}
 

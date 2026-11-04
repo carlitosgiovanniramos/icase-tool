@@ -27,9 +27,7 @@ Dentro de cada proyecto, los **actores** (por ejemplo "Bombero" o "Administrador
 2. Con la cuenta creada, entra desde **Iniciar sesión**.
 3. Al terminar, usa **Cerrar sesión** en la parte inferior de la barra lateral.
 
-:::info Captura pendiente
-`capturas/01-inicio-sesion.png`: pantalla de inicio de sesión.
-:::
+![Pantalla de inicio de sesión de I-CASE Tool, con los campos de correo y contraseña.](/img/capturas/01-inicio-sesion.png)
 
 ## La pantalla principal
 
@@ -44,9 +42,7 @@ La **barra lateral izquierda** tiene:
 | **Modelo gratuito** | Con Claude apagado, elige qué modelo responde: *Automático* (Gemini y, si falla, Groq) o uno en particular |
 | **Gastado** | Lo que llevas gastado con Claude, estimado. Se puede reiniciar |
 
-:::info Captura pendiente
-`capturas/02-barra-lateral.png`: barra lateral con el interruptor de Claude y el selector de modelo.
-:::
+![Página de inicio de I-CASE Tool: Mis proyectos y barra lateral con el interruptor de Claude y el selector de modelo gratuito.](/img/capturas/02-barra-lateral.png)
 
 ## Crear un proyecto
 
@@ -61,9 +57,7 @@ En **+ Crear proyecto** completa:
 
 Pulsa **Crear proyecto**. Se abre la página del proyecto en la fase de **Análisis**.
 
-:::info Captura pendiente
-`capturas/03-crear-proyecto.png`: formulario de creación de proyecto.
-:::
+![Formulario de creación de proyecto de I-CASE Tool, con nombre, descripción y archivos de contexto opcionales.](/img/capturas/03-crear-proyecto.png)
 
 ## La página de un proyecto
 
