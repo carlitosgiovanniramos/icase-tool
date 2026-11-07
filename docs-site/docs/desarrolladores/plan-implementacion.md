@@ -7,14 +7,16 @@ sidebar_position: 6
 
 Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada. Es el documento técnico interno del equipo: decisiones, estado de cada etapa y guía para retomar el trabajo.
 
-## Estado actual (7 de noviembre de 2026)
+## Estado actual (8 de noviembre de 2026)
 
-**Se está preparando la presentación desplegada (ver "Plan de la semana"). La cadena de Implementación de bomberos se rehízo desde cero: stack, estructura, base y contrato de API. El contrato se escribió a mano (ver "Avance del 5 al 7 de noviembre") y su prueba de permisos dio 119 correctas, 0 fallidas, 16 sin verificar (operaciones sin datos de prueba posibles) y 4 pendientes de integración (Auth y la Edge Function). Con su aprobación la Etapa 7 queda terminada. Lo siguiente es la Etapa 8, achicada.**
+**Se está preparando la presentación desplegada del 10 de noviembre (ver "Plan de la semana"). Las Etapas 1 a 8 están terminadas: la cadena de Implementación de bomberos se rehízo desde cero (stack, estructura, base, contrato de API y backend), todo probado en contenedores. Lo siguiente es la Etapa 9 (Web), la más importante para la presentación; después, el despliegue en Azure, y la Etapa 10 (Móvil) solo si da el tiempo.** Los cambios están en `develop` (commits `eb68c56` y `1861771`); falta pasarlos a `main` para que Vercel los publique.
 
 - **Bomberos (rehecho desde el 3 de noviembre):**
   - stack técnico aprobado (Next.js, Flutter y Supabase con alta disponibilidad del panel web; `firebase_core` agregado a mano);
-  - estructura de carpetas aprobada: 129 archivos (Next.js 50, Flutter 58, Supabase 21), 36/36 pantallas, 22/22 tablas, 14/14 módulos, 29/29 RF. Flutter y Supabase los generó Claude Sonnet 5; la pieza Next.js se cortó por el límite de tokens y la escribió Claude en la conversación, pasó el validador del código sin avisos y se insertó con SQL (ver "Avance del 5 al 7 de noviembre");
-  - base de datos generada con Claude Haiku 5.5 (unos 20 centavos), revisada archivo por archivo, con 5 archivos corregidos y probada de nuevo: 22/22 tablas con RLS, políticas y datos, y 3 usuarios.
+  - estructura de carpetas aprobada: 129 archivos (Next.js 50, Flutter 58, Supabase 21), 36/36 pantallas, 22/22 tablas, 14/14 módulos, 29/29 RF. Flutter y Supabase los generó Claude Sonnet 5; la pieza Next.js se cortó por el límite de tokens y la escribió Claude en la conversación, pasó el validador del código sin avisos y se insertó con SQL (ver "Avance del 5 al 8 de noviembre");
+  - base de datos generada con Claude Haiku 5.5 (unos 20 centavos), revisada archivo por archivo, con 5 archivos corregidos y probada de nuevo: 22/22 tablas con RLS, políticas y datos, y 3 usuarios. Después se agregaron al seed registros para la prueba de permisos (partes 7 y 8, bitácoras vehiculares 3 a 6, bitácora de guardia 2);
+  - contrato de API escrito a mano en la conversación y pegado con "Pegar contrato": 48 operaciones, 728/728 controles, 29/29 RF, 0 errores; prueba de permisos 119 correctas, 0 fallidas, 16 sin verificar (operaciones sin datos de prueba posibles) y 4 pendientes (Auth); aprobado;
+  - backend: `crear-usuario` y `notificar-push` generadas con Haiku 5.5; `crear-usuario` corregida a mano (contraseña temporal en vez de invitación por correo) y probada en Docker: Administrador crea la cuenta, Bombero y Jefe de guardia reciben 403.
 - **Azure:** máquina, Docker, runner y Caddy con HTTPS funcionando; Vercel conectado. La máquina se apaga cuando no se usa.
 - **El taller** no se rehízo; entra solo si sobra tiempo.
 
@@ -28,7 +30,9 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 6. Paso "Base de datos" | Terminada (base de bomberos rehecha con Haiku 5.5 y probada 22/22) |
 | 7. Paso "Contrato / API" | Terminada (contrato de bomberos: 48 operaciones, 728/728 controles, 29/29 RF; permisos 119 correctas y 0 fallidas) |
 | 8. Paso "Backend" | Terminada (bomberos: `crear-usuario` y `notificar-push` con Haiku 5.5; prueba de `crear-usuario` 3/3 correctas) |
-| 9 a 11 | Pendientes (ver "Cambios al plan por el tiempo") |
+| **9. Paso "Web"** | **Siguiente** (en la interfaz figura como "Frontend"; se construirá para servir también a la app móvil) |
+| 10. Paso "Móvil" | Opcional, si da el tiempo |
+| 11. Cierre y publicación | El 10 de noviembre: subir a `main`, Azure, dirección pública por proyecto y ensayo |
 
 Pendientes inmediatos:
 
@@ -41,8 +45,8 @@ Pendientes inmediatos:
    - pasar `develop` a `main` y hacer push: los enlaces de la documentación a los archivos de GitHub apuntan a `main`;
    - dar acceso al docente si el repositorio es privado;
    - confirmar la licencia (se puso MIT a nombre de CCAJ Software Solutions).
-2. **Base de bomberos:** aprobarla en la interfaz (ya probada con las correcciones). Al aprobarla se habilita el Contrato de API.
-3. **Cerrar la Etapa 7 (Contrato / API):** con Docker encendido y Claude Haiku 5.5, generar el contrato de bomberos, revisar sus operaciones y lo que falta, ejecutar "Probar permisos" y aprobarlo. Por el tiempo, el taller queda para después. La siguiente es la Etapa 8 (Backend), achicada.
+2. **Etapa 9 (Web):** construir el paso que genera la web archivo por archivo (cada página a partir de su pantalla del prototipo y con las operaciones del contrato), probarla compilando en Docker, generarla con Haiku para bomberos y revisarla en la conversación antes de aprobar. Debe agregar los botones que el prototipo no tiene: asignar rol, suspender cuenta y editar personal y vehículos.
+3. **Despliegue (10 de noviembre):** pasar `develop` a `main`; actualizar la copia del runner en Azure (`runner/index.mjs`, `lib/pruebaContrato.js`, `lib/inventarioContrato.js`); dirección pública por proyecto en Caddy (web y puerta de entrada de Supabase); sección "Aplicación"; ensayo completo desde Vercel con la PC apagada.
 4. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
 5. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
 6. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
@@ -86,9 +90,9 @@ Vercel (icase-tool)  ──HTTPS + token──▶  Azure: Ubuntu + Docker + runn
 | 1 (3 nov) | Crear la máquina en Azure y pasar la IP y el usuario | Docker en el servidor y este plan (hecho) |
 | 2 (4 nov) | Nombre DNS y variables en Vercel | Runner en Linux, Caddy con HTTPS (hecho) |
 | 3 a 5 (5 a 7 nov) | Regenerar stack, estructura y base de bomberos en local | Estructura con "Continuar", pieza Next.js, selector de modelo de Claude, revisión de la base, validador del contrato (hecho) |
-| 6 (8 nov) | Contrato de API de bomberos con Haiku: generar, probar permisos y aprobar (cierra la Etapa 7) | Sección "Aplicación" y dirección pública por proyecto en Caddy; Etapa 8 achicada (Edge Function `crear-usuario`) |
-| 7 (9 nov) | Revisar y aprobar lo generado | Etapa 9 (Web) |
-| 8 (10 nov) | Subir a `main`, ensayo completo desde Vercel con la PC apagada | Correcciones, capturas, CHANGELOG |
+| 6 (8 nov) | Pegar contrato, probar permisos y aprobar; generar, probar y aprobar el backend | Contrato escrito a mano, "Pegar contrato", arreglos de la prueba de permisos, paso Backend completo (hecho) |
+| 7 (9 nov) | Generar la web de bomberos, revisarla y aprobarla | Paso Web; móvil si da el tiempo |
+| 8 (10 nov) | Subir a `main`, encender Azure, ensayo completo desde Vercel con la PC apagada | Runner de Azure al día, dirección pública por proyecto, sección "Aplicación", correcciones, CHANGELOG |
 
 Se trabaja primero en local (más barato y sin el límite de tiempo de Vercel) y al final se despliega: Azure solo se enciende para probar que "Levantar" y la dirección pública funcionan allá.
 
@@ -116,7 +120,7 @@ Se trabaja primero en local (más barato y sin el límite de tiempo de Vercel) y
 - **Falta:** probar la base de datos en el servidor (la primera prueba real), cambios del validador del contrato (a la espera del sí), dirección pública por proyecto en Caddy, sección "Aplicación", Etapas 8 y 9.
 - **La máquina quedó apagada (desasignada) al cierre del 4 de noviembre**, para cuidar el crédito. Al retomar: portal de Azure, máquina `icase`, Iniciar. No borrar la IP ni el nombre DNS.
 
-### Avance del 5 al 7 de noviembre
+### Avance del 5 al 8 de noviembre
 
 Cambios de icase-tool (en `develop`, sin confirmar todavía):
 
@@ -162,16 +166,20 @@ Cambios de icase-tool (en `develop`, sin confirmar todavía):
 
 ### Cambios de código que lleva
 
-1. ~~**Validador del contrato**~~: hecho el 7 de noviembre (ver "Avance del 5 al 7 de noviembre").
+1. ~~**Validador del contrato**~~: hecho el 7 de noviembre (ver "Avance del 5 al 8 de noviembre").
 2. ~~**Runner** para Linux~~: hecho el 4 de noviembre. Escucha en `127.0.0.1` detrás de Caddy, siempre con token.
 3. **Caddy** con una dirección pública por proyecto. Con Supabase, **dos**: la de la web y la de su puerta de entrada (`api-gw`). La web se compila con `NEXT_PUBLIC_SUPABASE_URL` fijo; hoy es `localhost` con un puerto, lo que funciona en la PC pero no en el navegador del ingeniero. El runner debe compilar la web (y la vista web de Flutter, `SUPABASE_URL`) con la dirección pública de la puerta de entrada.
 4. **Sección "Aplicación"** en `ImplementacionFase.js`.
-5. **Rutas largas:** confirmar que `maxDuration = 300` cabe en el plan de Vercel.
+5. **Rutas largas:** confirmar que `maxDuration = 300` cabe en el plan de Vercel. Como todo se genera en local, en Vercel solo hace falta para "Levantar" y "Probar".
+6. **Runner de Azure al día:** es una copia de `runner/index.mjs` y de los tres archivos de `lib` que usa; desde el 4 de noviembre cambiaron la prueba de permisos (Jefe de guardia, Edge Functions), el inventario (permisos por columna) y el runner (contenedor `functions` en la prueba).
+7. ~~Etapa 8 (Backend)~~: hecha el 8 de noviembre (ver la sección de la Etapa 8).
 
 ### Pendientes de decisión
 
 - Preguntar al ingeniero si le basta que la aplicación se abra por una dirección pública con el motor de contenedores en un servidor propio.
-- Confirmar los cambios de esta semana en git (`develop`) y pasarlos a `main` para que Vercel los publique: la selección de modelo de Claude, la estructura con "Continuar", el validador del contrato y la navegación entre fases solo están en local.
+- Pasar `develop` a `main` para que Vercel publique lo de esta semana (selector de modelo de Claude, estructura con "Continuar", contrato, barra lateral, paso Backend). En `develop` ya está todo confirmado.
+- Antes de desplegar, ejecutar `supabase/backend_implementacion.sql` también en el Supabase que usa Vercel, si es otro.
+- La pantalla "Subir Foto Evidencia" (Parte en Curso, móvil) no tiene dónde guardarse en el diseño: decidir si se agrega o se quita del prototipo.
 - El aviso de costo de la base usa 10 centavos por archivo medidos con Sonnet; ya se escala por modelo, pero sigue siendo una estimación fija por archivo.
 
 ## Guía para retomar el trabajo

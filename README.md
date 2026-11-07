@@ -25,7 +25,7 @@ Acompañar a estudiantes y equipos de ingeniería de software desde la idea hast
 |---|---|
 | 01 Análisis | Preguntas de entrevista, actores, requerimientos funcionales y no funcionales (ISO/IEC 25010), diagrama de casos de uso |
 | 02 Diseño | Diagrama de clases, entidad-relación, prototipo de pantallas, árbol de navegación, arquitectura, diagrama de sistemas, informe PDF |
-| 03 Implementación | Stack técnico, estructura de carpetas, base de datos (migraciones y datos de prueba), contrato de API (en validación). *En construcción:* backend, web y móvil |
+| 03 Implementación | Stack técnico, estructura de carpetas, base de datos (migraciones y datos de prueba), contrato de API con prueba de permisos, backend (Edge Functions). *En construcción:* web y móvil |
 
 ## Stack
 
