@@ -118,6 +118,17 @@ export const PASOS = [
     ruta: "/api/generar-contrato",
     archivos: true,
   },
+  // Lógica de negocio que cumple el contrato: con Supabase, las Edge Functions; con Express, el
+  // servidor. Un archivo por petición, como la base de datos, y prueba con la del contrato.
+  {
+    clave: "impl_backend",
+    fase: "implementacion",
+    nombre: "Backend",
+    aprobacion: "impl_backend",
+    columna: "backend_implementacion",
+    ruta: "/api/generar-backend",
+    archivos: true,
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));

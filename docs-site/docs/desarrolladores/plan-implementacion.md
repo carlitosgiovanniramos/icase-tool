@@ -27,7 +27,8 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada; ahora conserva las piezas que salen bien si otra falla) |
 | 6. Paso "Base de datos" | Terminada (base de bomberos rehecha con Haiku 5.5 y probada 22/22) |
 | 7. Paso "Contrato / API" | Terminada (contrato de bomberos: 48 operaciones, 728/728 controles, 29/29 RF; permisos 119 correctas y 0 fallidas) |
-| 8 a 11 | Pendientes (ver "Cambios al plan por el tiempo") |
+| 8. Paso "Backend" | Terminada (bomberos: `crear-usuario` y `notificar-push` con Haiku 5.5; prueba de `crear-usuario` 3/3 correctas) |
+| 9 a 11 | Pendientes (ver "Cambios al plan por el tiempo") |
 
 Pendientes inmediatos:
 
@@ -1002,6 +1003,19 @@ Archivos principales: `lib/accionesContrato.js`, `lib/inventarioContrato.js`, `l
 4. Si un archivo falla, regenerar solo ese archivo con el error como contexto.
 
 **Terminado cuando:** las operaciones del contrato responden con datos de la base.
+
+#### Implementación (8 de noviembre)
+
+- Paso `impl_backend` en `PASOS`, columna `backend_implementacion` (`supabase/backend_implementacion.sql`, hay que ejecutarla en el SQL Editor), archivos en `archivos_proyecto` con `paso = 'impl_backend'`.
+- `lib/archivosBackend.js`: los archivos del backend salen de la estructura aprobada. Con Supabase, cada Edge Function (`supabase/functions/<nombre>/`) salvo el enrutador fijo `main`; con Express, los archivos de su pieza.
+- `lib/backend.js` y `/api/generar-backend`: un archivo por petición, como la base. El prompt lleva las operaciones edge del contrato que cumple la función (roles, entrada, salida), sus RF, los servicios externos, la guía de la pieza, los archivos ya escritos y las migraciones aprobadas. Revisión determinista con un reintento: `Deno.serve`, sin claves escritas, la clave de servicio por `Deno.env.get`, lee `Authorization` y responde 403 a los roles que el contrato no permite.
+- La página genera archivo por archivo y guarda el avance (`incompleto`, "Continuar backend", no se aprueba a medias); la cascada no lo genera sola si el contrato no está aprobado; sus archivos se editan en el explorador.
+- Prueba (`/api/probar-backend`): la prueba de permisos del contrato con el contenedor `functions` encendido. `lib/pruebaContrato.js` llama a las operaciones edge en `/functions/v1/<nombre>` como cada actor (con `conFunciones`; 30 s por llamada por el primer arranque de Deno), y el runner enciende `functions` cuando se pide. El backend no entra en la huella de la base, así que generarlo no invalida el contrato.
+- Para probar `crear-usuario`, el contrato de bomberos tiene ahora datos de prueba en esa operación.
+- Pruebas: `tests/contrato.test.mjs` pasa a 27 (Edge Function probada como cada actor; archivos del backend).
+- **Pendiente para el despliegue:** el runner de Azure es una copia: hay que actualizarlo (`runner/index.mjs` y `lib/pruebaContrato.js`).
+- **Bomberos (8 de noviembre):** Haiku 5.5 generó las dos funciones sin avisos. Revisadas en la conversación: `notificar-push` bien (relee la notificación de la base en vez de confiar en el cuerpo; menor: revisa la configuración de Firebase antes que la sesión). `crear-usuario` tenía la seguridad bien (401, `rol_actual()`, 403, clave de servicio después) pero creaba la cuenta y luego la invitaba por correo: Supabase no invita a un correo ya registrado y el Docker no tiene servidor de correo, así que siempre fallaba y borraba la cuenta. Corregida a mano (`respaldos/backend-bomberos/crear-usuario/index.ts`): contraseña temporal (la de "Generar otra" en el prototipo, o una generada que se devuelve una vez al administrador) y correo confirmado. Prueba en Docker: Administrador crea la cuenta; Bombero y Jefe de guardia, 403.
+- **Lección para la guía de Supabase:** sin servidor de correo, una función no debe depender de invitaciones ni de correos de confirmación.
 
 ---
 

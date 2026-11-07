@@ -418,7 +418,7 @@ const CONSULTAS_OPCIONALES = {
 //   servicio, modo: "tarea" (servicio de un solo uso que aplica los archivos, como migraciones de
 //     Supabase) o "servicio" (la base aplica sus scripts al crearse, como PostgreSQL)
 //   conexion: { usuario, baseDatos }, con ${VARIABLE} del .env si hace falta
-async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, inventario = false, contrato, actores = [] }) {
+async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, inventario = false, contrato, actores = [], funciones = false }) {
   if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
   if (!SERVICIO_VALIDO.test(String(servicio))) throw new ErrorRunner(400, "Servicio no válido.");
   if (!["tarea", "servicio"].includes(modo)) throw new ErrorRunner(400, "Modo de prueba no válido.");
@@ -488,8 +488,9 @@ async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, in
     if (inventario) resumen.inventario = await psql(CONSULTA_INVENTARIO);
     if (contrato) {
       const usuarios = await psql(CONSULTA_USUARIOS_CONTRATO);
-      await compose(idPrueba, ["up", "-d", "--wait", "rest", "auth", "api-gw"], { espera: 100_000 });
-      resumen.pruebaContrato = await probarPermisosContrato({ baseUrl: `http://127.0.0.1:${variables.SUPABASE_PORT}`, anonKey: variables.ANON_KEY, usuarios, actores, contrato });
+      // funciones: el backend (Edge Functions) ya está generado y se prueba con el contrato.
+      await compose(idPrueba, ["up", "-d", "--wait", "rest", "auth", "api-gw", ...(funciones ? ["functions"] : [])], { espera: 100_000 });
+      resumen.pruebaContrato = await probarPermisosContrato({ baseUrl: `http://127.0.0.1:${variables.SUPABASE_PORT}`, anonKey: variables.ANON_KEY, usuarios, actores, contrato, conFunciones: funciones, ...(funciones ? { presupuestoMs: 150_000 } : {}) });
     }
     return resumen;
   } finally {

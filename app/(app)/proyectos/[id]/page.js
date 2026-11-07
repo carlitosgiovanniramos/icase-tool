@@ -36,6 +36,8 @@ import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
+import FichaBackend from "./FichaBackend";
+import { archivosDeBackend } from "@/lib/archivosBackend";
 import FichaContrato, { PegarContrato } from "./FichaContrato";
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
@@ -848,6 +850,7 @@ export default function WorkspaceProyecto() {
   // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
     if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto, { retomar: opciones.retomar });
+    if (clave === "impl_backend") return generarBackend(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "prototipo") {
       const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
       if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
@@ -1307,6 +1310,7 @@ export default function WorkspaceProyecto() {
 
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
+    if (clave === "impl_backend" && claudeActivo() && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Se generará el contrato con Claude. Costo orientativo: ${rangoCostoClaude(0.2, 1)} según el diseño y los reintentos.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
       const ficha = artefactosRef.current.impl_bd;
@@ -1343,7 +1347,7 @@ export default function WorkspaceProyecto() {
         );
       }
     } catch (err) {
-      const guardado = clave === "impl_bd" && artefactosRef.current.impl_bd?.incompleto;
+      const guardado = ["impl_bd", "impl_backend"].includes(clave) && artefactosRef.current[clave]?.incompleto;
       mostrarError(
         err.message + (guardado ? '\n\nLos archivos ya generados quedaron guardados: "Continuar" sigue desde el que falló.' : ""),
         `No se pudo generar: ${PASO[clave].nombre}`
@@ -1363,6 +1367,8 @@ export default function WorkspaceProyecto() {
         // El contrato se inventaría sobre una base todavía sin revisar si la cascada lo
         // generara inmediatamente después de regenerar el SQL. Espera su aprobación.
         if (p.clave === "impl_contrato" && !fasesRef.current.impl_bd) return;
+        // El backend se genera sobre el contrato aprobado, no sobre uno recién regenerado.
+        if (p.clave === "impl_backend" && !fasesRef.current.impl_contrato) return;
         if (p.clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Costo orientativo del contrato con Claude: ${rangoCostoClaude(0.2, 1)}.`, "¿Actualizar contrato con Claude?", "Actualizar"))) return;
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
@@ -1442,6 +1448,10 @@ export default function WorkspaceProyecto() {
   // Aprobar un paso que cambió propaga el cambio: se regeneran automáticamente los pasos
   // siguientes que quedaron desactualizados, y cada uno queda pendiente de revisión.
   async function aprobarPaso(clave) {
+    if (clave === "impl_backend" && artefactosRef.current.impl_backend?.incompleto) {
+      mostrarError("Pulsa Continuar para generar los archivos que faltan.", "Backend incompleto");
+      return;
+    }
     if (clave === "impl_estructura" && artefactosRef.current.impl_estructura?.incompleto) {
       mostrarError("Pulsa Continuar para generar las piezas que faltan.", "Estructura incompleta");
       return;
@@ -1869,6 +1879,97 @@ export default function WorkspaceProyecto() {
     return { valor, modelo: resultado.modelo || modelo, advertencias: valor.revision };
   }
 
+  // --- Backend (Etapa 8): un archivo por petición, como la base; cada uno se guarda apenas llega.
+
+  async function cuerpoBackend() {
+    const a = artefactosRef.current;
+    const { contenedores, componentes, titulos, revision, ...stack } = a.impl_stack || {};
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      stack,
+      estructura: { archivos: a.impl_estructura?.archivos || [] },
+      contrato: { operaciones: a.impl_contrato?.operaciones || [] },
+      sql: await leerArchivosDePaso("impl_bd"),
+      indicaciones: contextoRef.current.indicaciones?.impl_backend,
+    };
+  }
+
+  function fichaBackend(archivos, prueba) {
+    return {
+      archivos: archivos.map(({ ruta, contenido, advertencias = [], editado }) => ({ ruta, lineas: contenido.trimEnd().split("\n").length, advertencias, ...(editado ? { editado } : {}) })),
+      prueba,
+      revision: archivos.flatMap((a) => (a.advertencias || []).map((x) => `${a.ruta}: ${x}`)),
+      actualizado: new Date().toISOString(),
+    };
+  }
+
+  // retomar: sigue una generación cortada, conservando los archivos ya generados (se pagaron).
+  async function generarBackend(avisar = () => {}, { retomar = false } = {}) {
+    const plan = archivosDeBackend(artefactosRef.current.impl_estructura);
+    if (!plan.length) throw new Error("La estructura de carpetas no tiene archivos de backend.");
+    const cuerpo = await cuerpoBackend();
+    const generados = [];
+    if (retomar) {
+      const guardados = await leerArchivosDePaso("impl_backend");
+      for (const a of artefactosRef.current.impl_backend?.archivos || []) {
+        const g = guardados.find((x) => x.ruta === a.ruta);
+        if (g && plan.some((p) => p.ruta === a.ruta)) generados.push({ ruta: a.ruta, contenido: g.contenido, advertencias: a.advertencias || [] });
+      }
+    }
+    let modelo;
+    let marcado = false;
+    for (const [i, a] of plan.entries()) {
+      if (generados.some((g) => g.ruta === a.ruta)) continue;
+      avisar(`Generando ${i + 1}/${plan.length}: ${a.ruta.split("/").slice(-2).join("/")}...`);
+      const data = await pedirIA(PASO.impl_backend.ruta, { ...cuerpo, archivo: a.ruta, anteriores: generados });
+      if (data.error) throw new Error(`${a.ruta}: ${data.error}`);
+      await guardarArchivoGenerado("impl_backend", a.ruta, data.contenido);
+      generados.push({ ruta: a.ruta, contenido: data.contenido, advertencias: data.advertencias || [] });
+      modelo = data.modelo_ia;
+      // El avance queda guardado: si la siguiente petición falla, "Continuar" sigue desde ahí.
+      await guardarArtefacto("impl_backend", { ...fichaBackend(generados, null), incompleto: generados.length < plan.length, total: plan.length });
+      if (!marcado) {
+        await marcarCambio("impl_backend", {}, modelo, { silencioso: true });
+        marcado = true;
+      }
+    }
+    await borrarArchivosDePaso("impl_backend", plan.map((a) => a.ruta));
+    const valor = fichaBackend(generados, null);
+    return { valor, modelo, advertencias: valor.revision };
+  }
+
+  // Edición a mano de un archivo del backend desde el explorador: el paso pierde la aprobación y la
+  // prueba anterior deja de valer.
+  async function guardarArchivoBackendEditado(archivo, contenido) {
+    try {
+      const ficha = artefactosRef.current.impl_backend;
+      if (!ficha) throw new Error("Este archivo no se puede editar.");
+      await guardarArchivoGenerado("impl_backend", archivo.ruta, contenido, "editado");
+      const archivos = ficha.archivos.map((a) =>
+        a.ruta === archivo.ruta ? { ...a, lineas: contenido.trimEnd().split("\n").length, advertencias: [], editado: true } : a
+      );
+      await guardarArtefacto("impl_backend", { ...ficha, archivos, prueba: null, revision: archivos.flatMap((a) => (a.advertencias || []).map((x) => `${a.ruta}: ${x}`)), actualizado: new Date().toISOString() });
+      await marcarCambio("impl_backend");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, `No se pudo guardar ${archivo.ruta}`);
+      return false;
+    }
+  }
+
+  async function probarBackend() {
+    setCargando({ paso: "probar:impl_backend" });
+    try {
+      const { prueba, error } = await pedirJson("/api/probar-backend", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId: id }) });
+      if (error) throw new Error(error);
+      const operacionesEdge = (artefactosRef.current.impl_contrato?.operaciones || []).filter((o) => o.tipo === "edge").map((o) => o.id);
+      await guardarArtefacto("impl_backend", { ...artefactosRef.current.impl_backend, prueba, operacionesEdge });
+    } catch (error) { mostrarError(error.message, "No se pudo probar el backend"); }
+    finally { setCargando(null); }
+  }
+
   // "Probar de nuevo": aplica los archivos actuales desde cero. Si tuvo que corregir alguno, es
   // un cambio del paso (pierde la aprobación); si no, solo se actualiza el resultado.
   async function reprobarBD() {
@@ -1893,6 +1994,7 @@ export default function WorkspaceProyecto() {
   // Edición a mano de un archivo de la base desde el explorador. Como toda edición, el paso pierde
   // la aprobación; la prueba anterior ya no vale y queda pendiente ("Probar de nuevo").
   async function guardarArchivoEditado(archivo, contenido) {
+    if (archivo.paso === "impl_backend") return guardarArchivoBackendEditado(archivo, contenido);
     try {
       const ficha = artefactosRef.current.impl_bd;
       if (archivo.paso !== "impl_bd" || !ficha) throw new Error("Este archivo no se puede editar.");
@@ -2444,11 +2546,13 @@ export default function WorkspaceProyecto() {
     impl_estructura: !!fasesAprobadas.impl_stack,
     impl_bd: !!fasesAprobadas.impl_estructura,
     impl_contrato: !!fasesAprobadas.impl_bd && !pendientes.impl_bd,
+    impl_backend: !!fasesAprobadas.impl_contrato && !pendientes.impl_contrato,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
   // La generación de la base se cortó: se ofrece seguir desde el archivo que faltaba.
   const bdIncompleta = !!artefactos.impl_bd?.incompleto && pendientes.impl_bd !== "desactualizado";
+  const backendIncompleto = !!artefactos.impl_backend?.incompleto && pendientes.impl_backend !== "desactualizado";
 
   // En cada fase se abre inicialmente el primer paso pendiente; los demás se abren a elección.
   const pasosDeFase = (clave) => PASOS.filter((p) => p.fase === PASO[clave].fase);
@@ -2637,7 +2741,9 @@ export default function WorkspaceProyecto() {
             onFaseAnterior={() => setVista("diseno")}
             // Se edita el código que generó un paso mientras ese paso se puede trabajar.
             editable={(a) =>
-              a.origen === "generado" && a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta && !ocupado
+              a.origen === "generado" && !ocupado &&
+              ((a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta) ||
+                (a.paso === "impl_backend" && trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto))
             }
             onGuardarArchivo={guardarArchivoEditado}
             // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
@@ -2647,6 +2753,7 @@ export default function WorkspaceProyecto() {
               artefactos.impl_stack?.externos,
               (artefactos.impl_estructura?.archivos || []).map((a) => a.ruta),
               artefactos.impl_bd?.actualizado,
+              artefactos.impl_backend?.actualizado,
             ])}
           >
             <TituloPaso
@@ -2988,6 +3095,46 @@ export default function WorkspaceProyecto() {
                   {artefactos.impl_contrato && trabajable("impl_contrato") && <div className="mt-4 flex gap-3 flex-wrap">
                     <BotonAprobar aprobado={!!fasesAprobadas.impl_contrato} onClick={() => aprobarPaso("impl_contrato")} etiqueta="Contrato de API" disabled={ocupado || !contratoAprobable(artefactos.impl_contrato) || !!artefactos.impl_contrato.prueba?.fallidas} />
                     {!fasesAprobadas.impl_contrato && <BotonRechazar etiqueta="Contrato de API" onClick={() => rechazarPaso("impl_contrato", "¿Rechazar el contrato?")} disabled={ocupado} />}
+                  </div>}
+                </>}
+              </>
+            )}
+
+            {visible("impl_backend") && (
+              <>
+                <TituloPaso color={PALETA.marron} estado={estadoPaso("impl_backend")} modelo={modelos.impl_backend}
+                  onActualizar={trabajable("impl_backend") ? () => actualizarPaso("impl_backend") : undefined}
+                  deshabilitado={ocupado} onAlternar={() => alternarPaso("impl_backend")} abierto={pasoAbierto("impl_backend")}>
+                  Backend
+                </TituloPaso>
+                {pasoAbierto("impl_backend") && <>
+                  {trabajable("impl_backend") && !bloqueado("impl_backend") && <CampoIndicaciones clave="impl_backend" valor={contexto.indicaciones?.impl_backend} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: al crear una cuenta, envía el correo de invitación en español" />}
+                  <ControlesPaso clave="impl_backend" esperando={!trabajable("impl_backend")} bloqueado={bloqueado("impl_backend")} enEdicion={enEdicion("impl_backend")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
+                    {backendIncompleto ? (
+                      <>
+                        <BotonGenerar onClick={() => generarPaso("impl_backend", { retomar: true })} disabled={ocupado} cargando={generando("impl_backend")} textoCargando={cargando?.detalle || "Generando..."} color={PALETA.marron}>
+                          Continuar backend ({artefactos.impl_backend.archivos.length}/{artefactos.impl_backend.total})
+                        </BotonGenerar>
+                        {!generando("impl_backend") && <BotonGenerar onClick={() => regenerarPaso("impl_backend")} secundario disabled={ocupado} color={PALETA.marron}>Empezar de cero</BotonGenerar>}
+                      </>
+                    ) : (
+                      <BotonGenerar onClick={() => regenerarPaso("impl_backend")} secundario={!!artefactos.impl_backend} disabled={ocupado} cargando={generando("impl_backend")} textoCargando={cargando?.detalle || "Generando..."} color={PALETA.marron}>
+                        {artefactos.impl_backend ? "Regenerar" : "Generar"} backend
+                      </BotonGenerar>
+                    )}
+                    {artefactos.impl_backend && <BotonEliminar onClick={() => eliminarPaso("impl_backend", "¿Eliminar el backend?")} disabled={ocupado} title="Eliminar backend" />}
+                  </ControlesPaso>
+                  {artefactos.impl_backend && (
+                    <FichaBackend
+                      backend={artefactos.impl_backend}
+                      onProbar={trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto ? probarBackend : undefined}
+                      probando={generando("probar:impl_backend")}
+                      deshabilitado={ocupado}
+                    />
+                  )}
+                  {artefactos.impl_backend && trabajable("impl_backend") && !backendIncompleto && <div className="mt-4 flex gap-3 flex-wrap">
+                    <BotonAprobar aprobado={!!fasesAprobadas.impl_backend} onClick={() => aprobarPaso("impl_backend")} etiqueta="Backend" disabled={ocupado || !!artefactos.impl_backend.prueba?.fallidas} />
+                    {!fasesAprobadas.impl_backend && <BotonRechazar etiqueta="Backend" onClick={() => rechazarPaso("impl_backend", "¿Rechazar el backend?")} disabled={ocupado} />}
                   </div>}
                 </>}
               </>

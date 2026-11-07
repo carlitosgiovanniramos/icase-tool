@@ -168,6 +168,31 @@ test("un actor con preposición encuentra su usuario: Jefe de guardia es jefe_gu
   const prueba = await probarPermisosContrato({ baseUrl: "http://127.0.0.1:8000", anonKey: "anon", usuarios: [{ email: "jefe_guardia@prueba.local", rol: "jefe_guardia" }], actores: ctx.analisis.actores, contrato: validarContrato(copia, ctx), fetchImpl });
   assert.equal(prueba.resultados.find((r) => r.operacion === "autenticacion").estado, "correcta");
 });
+test("con el backend encendido, una Edge Function se prueba como cada actor", async () => {
+  const edge = { ...clonar(op), id: "crear", tipo: "edge", recurso: "crear-usuario", metodo: "POST", descripcion: "Crea una cuenta.", prueba: { cuerpo: { email: "x@prueba.local" } } };
+  assert.deepEqual(peticionDePrueba(edge, "Recepcionista"), { ruta: "/functions/v1/crear-usuario", metodo: "POST", cuerpo: { email: "x@prueba.local" } });
+  const fetchImpl = async (url, opciones) => {
+    if (url.includes("/auth/")) return Response.json({ access_token: JSON.parse(opciones.body).email.startsWith("recep") ? "recep" : "mecanico" });
+    return opciones.headers.Authorization === "Bearer recep" ? Response.json({ id: "nuevo" }) : Response.json({ error: "Sin permiso" }, { status: 403 });
+  };
+  const contrato = { operaciones: [edge] };
+  const usuarios = [{ email: "recepcionista@prueba.local", rol: "Recepcionista" }, { email: "mecanico@prueba.local", rol: "Mecánico" }];
+  const sinFunciones = await probarPermisosContrato({ baseUrl: "http://x", anonKey: "a", usuarios, actores: contexto.analisis.actores, contrato, fetchImpl });
+  assert.equal(sinFunciones.pendientes, 1);
+  const conFunciones = await probarPermisosContrato({ baseUrl: "http://x", anonKey: "a", usuarios, actores: contexto.analisis.actores, contrato, fetchImpl, conFunciones: true });
+  assert.deepEqual(conFunciones.resultados.filter((r) => r.operacion === "crear").map((r) => r.estado), ["correcta", "correcta"]);
+});
+test("los archivos del backend son las Edge Functions, sin el enrutador fijo", async () => {
+  const { archivosDeBackend } = await import("../lib/archivosBackend.js");
+  const estructura = { archivos: [
+    { ruta: "supabase/functions/notificar-push/index.ts", pieza: "supabase" },
+    { ruta: "supabase/functions/main/index.ts", pieza: "supabase" },
+    { ruta: "supabase/migrations/0001.sql", pieza: "supabase" },
+    { ruta: "supabase/functions/crear-usuario/index.ts", pieza: "supabase" },
+    { ruta: "web/app/page.js", pieza: "nextjs" },
+  ] };
+  assert.deepEqual(archivosDeBackend(estructura).map((a) => a.ruta), ["supabase/functions/crear-usuario/index.ts", "supabase/functions/notificar-push/index.ts"]);
+});
 test("usuarios no identificables dejan la prueba sin verificar", async () => {
   const prueba = await probarPermisosContrato({ baseUrl: "http://127.0.0.1:8000", anonKey: "anon", usuarios: [], actores: contexto.analisis.actores, contrato: validarContrato(resultado, contexto), fetchImpl: () => { throw new Error("No debe llamar"); } });
   assert.equal(prueba.ok, false); assert.ok(prueba.inconclusas > 0);
