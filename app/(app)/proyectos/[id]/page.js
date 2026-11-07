@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   pedirIA,
   claudeActivo,
+  costoConModeloClaude,
   costoEstimadoPantalla,
   registrarCostoPantalla,
 } from "@/lib/preferenciaClaude";
@@ -35,7 +36,7 @@ import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
-import FichaContrato from "./FichaContrato";
+import FichaContrato, { PegarContrato } from "./FichaContrato";
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
@@ -592,6 +593,9 @@ const SIN_ARTEFACTOS = Object.fromEntries(PASOS.map((p) => [p.clave, null]));
 // error siguiente) y costo estimado por archivo con Claude, para avisar antes de generar.
 const CORRECCIONES_BD = 3;
 const COSTO_ARCHIVO_BD_CLAUDE = 0.1;
+// Rango de costo medido con Sonnet 5, llevado al modelo de Claude elegido (ej. "$0,01 a $0,05").
+const rangoCostoClaude = (desde, hasta) =>
+  [desde, hasta].map((usd) => `$${costoConModeloClaude(usd).toFixed(2).replace(".", ",")}`).join(" a ");
 
 // Plataformas por defecto del prototipo: las del contexto del análisis que aplican (Web/Móvil).
 function plataformasDePrototipo(contexto) {
@@ -1069,7 +1073,7 @@ export default function WorkspaceProyecto() {
 
   // Costo estimado de generar la base de datos con Claude (un archivo por petición).
   function costoBD(cantidad = archivosDeBaseDatos(artefactosRef.current.impl_estructura).length) {
-    return `Costo estimado con Claude: ~$${(cantidad * COSTO_ARCHIVO_BD_CLAUDE).toFixed(2)} (${cantidad} archivos), más las correcciones si la prueba falla.`;
+    return `Costo estimado con Claude: ~$${costoConModeloClaude(cantidad * COSTO_ARCHIVO_BD_CLAUDE).toFixed(2)} (${cantidad} archivos), más las correcciones si la prueba falla.`;
   }
 
   // lote: generación de varias pantallas (muestra el botón "Detener").
@@ -1303,7 +1307,7 @@ export default function WorkspaceProyecto() {
 
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
-    if (clave === "impl_contrato" && claudeActivo() && !(await confirmar("Se generará el contrato con Claude. Costo orientativo: $0,20 a $1,00 según el diseño y los reintentos.", "¿Generar con Claude?", "Generar"))) return;
+    if (clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Se generará el contrato con Claude. Costo orientativo: ${rangoCostoClaude(0.2, 1)} según el diseño y los reintentos.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
       const ficha = artefactosRef.current.impl_bd;
       const faltan = retomar && ficha?.incompleto ? ficha.total - ficha.archivos.length : undefined;
@@ -1359,7 +1363,7 @@ export default function WorkspaceProyecto() {
         // El contrato se inventaría sobre una base todavía sin revisar si la cascada lo
         // generara inmediatamente después de regenerar el SQL. Espera su aprobación.
         if (p.clave === "impl_contrato" && !fasesRef.current.impl_bd) return;
-        if (p.clave === "impl_contrato" && claudeActivo() && !(await confirmar("Costo orientativo del contrato con Claude: $0,20 a $1,00.", "¿Actualizar contrato con Claude?", "Actualizar"))) return;
+        if (p.clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Costo orientativo del contrato con Claude: ${rangoCostoClaude(0.2, 1)}.`, "¿Actualizar contrato con Claude?", "Actualizar"))) return;
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
           const { valor, modelo, detenido, advertencias } = await pedirPaso(p.clave, {
@@ -1438,6 +1442,10 @@ export default function WorkspaceProyecto() {
   // Aprobar un paso que cambió propaga el cambio: se regeneran automáticamente los pasos
   // siguientes que quedaron desactualizados, y cada uno queda pendiente de revisión.
   async function aprobarPaso(clave) {
+    if (clave === "impl_estructura" && artefactosRef.current.impl_estructura?.incompleto) {
+      mostrarError("Pulsa Continuar para generar las piezas que faltan.", "Estructura incompleta");
+      return;
+    }
     if (clave === "impl_contrato" && !contratoAprobable(artefactosRef.current.impl_contrato)) {
       mostrarError("Corrige los errores y cubre todas las acciones antes de aprobar.", "Contrato incompleto");
       return;
@@ -1597,11 +1605,29 @@ export default function WorkspaceProyecto() {
     }
   }
 
+  // "Continuar" la estructura: genera solo las piezas que fallaron y conserva las que ya salieron.
+  async function continuarEstructura() {
+    setCargando({ paso: "impl_estructura" });
+    try {
+      const { archivos, piezas, modelo } = artefactosRef.current.impl_estructura;
+      const data = await pedirIA(PASO.impl_estructura.ruta, { ...cuerpoEstructura(), indicaciones: contextoRef.current.indicaciones?.impl_estructura, previo: { archivos, piezas, modelo } });
+      if (data.error) throw new Error(data.error);
+      const { modelo_ia, advertencias = [], ...estructura } = data;
+      await guardarArtefacto("impl_estructura", { ...estructura, revision: advertencias });
+      await marcarCambio("impl_estructura", {}, modelo_ia);
+      if (advertencias.length) mostrarInfo(textoAdvertencias(advertencias), "Estructura de carpetas: revisa antes de aprobar");
+    } catch (err) {
+      mostrarError(err.message, "No se pudo continuar: Estructura de carpetas");
+    } finally {
+      setCargando(null);
+    }
+  }
+
   // "Ampliar con IA" de la estructura de carpetas: cada pieza aplica la instrucción a su lista.
   async function ampliarEstructura(instruccion) {
     setCargando({ paso: "ampliar:impl_estructura" });
     try {
-      const actual = { archivos: artefactosRef.current.impl_estructura?.archivos || [] };
+      const actual = { archivos: artefactosRef.current.impl_estructura?.archivos || [], piezas: artefactosRef.current.impl_estructura?.piezas };
       const data = await pedirIA(PASO.impl_estructura.ruta, { ...cuerpoEstructura(), actual, instruccion });
       if (data.error) throw new Error(data.error);
       const { modelo_ia: modelo, advertencias = [], ...estructura } = data;
@@ -1652,7 +1678,7 @@ export default function WorkspaceProyecto() {
   }
 
   async function ampliarContrato(instruccion) {
-    if (claudeActivo() && !(await confirmar("Costo orientativo con Claude: $0,20 a $1,00, según el diseño y los reintentos.", "¿Modificar con Claude?", "Modificar"))) return false;
+    if (claudeActivo() && !(await confirmar(`Costo orientativo con Claude: ${rangoCostoClaude(0.2, 1)}, según el diseño y los reintentos.`, "¿Modificar con Claude?", "Modificar"))) return false;
     setCargando({ paso: "ampliar:impl_contrato" });
     try {
       const data = await pedirIA(PASO.impl_contrato.ruta, { proyectoId: id, actual: artefactosRef.current.impl_contrato, instruccion, indicaciones: contextoRef.current.indicaciones?.impl_contrato });
@@ -2580,6 +2606,12 @@ export default function WorkspaceProyecto() {
 
       <div className="print:hidden">{aviso}</div>
 
+      {["analisis", "diseno", "implementacion"].includes(vista) && (
+        <button onClick={() => setVista("resumen")} className="block mb-3 text-sm font-semibold text-gray-600 hover:text-gray-900">
+          ← Resumen
+        </button>
+      )}
+
       {/* ===================== INFORME ===================== */}
       {vista === "informe" &&
         (fasesAprobadas.analisis && disenoAprobado ? (
@@ -2602,7 +2634,7 @@ export default function WorkspaceProyecto() {
         (disenoAprobado || artefactos.impl_stack ? (
           <ImplementacionFase
             proyectoId={id}
-            onVolver={() => setVista("resumen")}
+            onFaseAnterior={() => setVista("diseno")}
             // Se edita el código que generó un paso mientras ese paso se puede trabajar.
             editable={(a) =>
               a.origen === "generado" && a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta && !ocupado
@@ -2747,16 +2779,35 @@ export default function WorkspaceProyecto() {
                   onEditar={desbloquearPaso}
                   onCancelarEdicion={cancelarEdicion}
                 >
-                  <BotonGenerar
-                    onClick={() => regenerarPaso("impl_estructura")}
-                    secundario={!!artefactos.impl_estructura}
-                    disabled={ocupado}
-                    cargando={generando("impl_estructura")}
-                    textoCargando="Generando (una pieza a la vez puede tardar unos minutos)..."
-                    color={PALETA.marron}
-                  >
-                    {artefactos.impl_estructura ? "Regenerar" : "Generar"} estructura de carpetas
-                  </BotonGenerar>
+                  {artefactos.impl_estructura?.incompleto ? (
+                    <>
+                      <BotonGenerar
+                        onClick={continuarEstructura}
+                        disabled={ocupado}
+                        cargando={generando("impl_estructura")}
+                        textoCargando="Generando las piezas que faltan..."
+                        color={PALETA.marron}
+                      >
+                        Continuar estructura (falta {artefactos.impl_estructura.faltan.map((f) => f.titulo).join(", ")})
+                      </BotonGenerar>
+                      {!generando("impl_estructura") && (
+                        <BotonGenerar onClick={() => regenerarPaso("impl_estructura")} secundario disabled={ocupado} color={PALETA.marron}>
+                          Empezar de cero
+                        </BotonGenerar>
+                      )}
+                    </>
+                  ) : (
+                    <BotonGenerar
+                      onClick={() => regenerarPaso("impl_estructura")}
+                      secundario={!!artefactos.impl_estructura}
+                      disabled={ocupado}
+                      cargando={generando("impl_estructura")}
+                      textoCargando="Generando (una pieza a la vez puede tardar unos minutos)..."
+                      color={PALETA.marron}
+                    >
+                      {artefactos.impl_estructura ? "Regenerar" : "Generar"} estructura de carpetas
+                    </BotonGenerar>
+                  )}
 
                   {artefactos.impl_estructura && (
                     <BotonEliminar
@@ -2931,6 +2982,7 @@ export default function WorkspaceProyecto() {
                     </BotonGenerar>
                     {artefactos.impl_contrato && <BotonEliminar onClick={() => eliminarPaso("impl_contrato", "¿Eliminar el contrato de API?")} disabled={ocupado} title="Eliminar contrato" />}
                   </ControlesPaso>
+                  {!artefactos.impl_contrato && trabajable("impl_contrato") && !bloqueado("impl_contrato") && <div className="mt-3"><PegarContrato deshabilitado={ocupado} onGuardar={guardarContrato} /></div>}
                   {artefactos.impl_contrato && <FichaContrato key={artefactos.impl_contrato.actualizado} contrato={artefactos.impl_contrato} editable={trabajable("impl_contrato") && !bloqueado("impl_contrato")} deshabilitado={ocupado} onGuardar={guardarContrato} onProbar={probarContrato} />}
                   {artefactos.impl_contrato && trabajable("impl_contrato") && !bloqueado("impl_contrato") && <AmpliarConIA descripcion="Describe qué ajustar en las operaciones, sus roles o sus datos de prueba." ejemplo="Ej: corrige los argumentos de las RPC de firma" onEnviar={ampliarContrato} cargando={generando("ampliar:impl_contrato")} deshabilitado={ocupado} />}
                   {artefactos.impl_contrato && trabajable("impl_contrato") && <div className="mt-4 flex gap-3 flex-wrap">
@@ -2984,12 +3036,6 @@ export default function WorkspaceProyecto() {
                 Continuar a Diseño →
               </button>
             )}
-            <button
-              onClick={() => setVista("resumen")}
-              className="text-white/70 hover:text-white text-sm font-semibold"
-            >
-              ← Volver
-            </button>
           </div>
         </div>
 
@@ -3225,6 +3271,12 @@ export default function WorkspaceProyecto() {
               <h2 className="text-2xl font-bold text-white">Diseño</h2>
             </div>
             <div className="flex items-center gap-4">
+              <button
+                onClick={() => setVista("analisis")}
+                className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
+              >
+                ← Volver a Análisis
+              </button>
               {fasesAprobadas.analisis && disenoAprobado && (
                 <button
                   onClick={() => setVista("implementacion")}
@@ -3233,12 +3285,6 @@ export default function WorkspaceProyecto() {
                   Continuar a Implementación →
                 </button>
               )}
-              <button
-                onClick={() => setVista("resumen")}
-                className="text-white/70 hover:text-white text-sm font-semibold"
-              >
-                ← Volver
-              </button>
             </div>
           </div>
 

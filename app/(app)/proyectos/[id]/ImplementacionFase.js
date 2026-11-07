@@ -544,7 +544,7 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
 // stack, y con ellas los archivos fijos y los servicios del proyecto.
 // editable(archivo) / onGuardarArchivo(archivo, contenido): edición del código generado; la
 // página decide qué se puede editar y guarda el cambio en su paso.
-export default function ImplementacionFase({ proyectoId, onVolver, recarga, editable, onGuardarArchivo, children }) {
+export default function ImplementacionFase({ proyectoId, onFaseAnterior, recarga, editable, onGuardarArchivo, children }) {
   const [archivos, setArchivos] = useState(null);
   const [generados, setGenerados] = useState(0);
   const [servicios, setServicios] = useState([]);
@@ -575,8 +575,11 @@ export default function ImplementacionFase({ proyectoId, onVolver, recarga, edit
           <span className="text-xs font-bold tracking-widest uppercase text-white/60">Fase 03</span>
           <h2 className="text-2xl font-bold text-white">Implementación</h2>
         </div>
-        <button onClick={onVolver} className="text-white/70 hover:text-white text-sm font-semibold">
-          ← Volver
+        <button
+          onClick={onFaseAnterior}
+          className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
+        >
+          ← Volver a Diseño
         </button>
       </div>
 

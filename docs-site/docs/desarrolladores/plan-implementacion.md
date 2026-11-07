@@ -7,28 +7,27 @@ sidebar_position: 6
 
 Guía de construcción de la fase de Implementación de icase-tool: cómo se usa lo aprobado en Análisis y Diseño, qué entrega cada etapa y cuándo se da por terminada. Es el documento técnico interno del equipo: decisiones, estado de cada etapa y guía para retomar el trabajo.
 
-## Estado actual (3 de noviembre de 2026)
+## Estado actual (7 de noviembre de 2026)
 
-> La implementación de bomberos se eliminó para repetirla desde cero con el despliegue en Azure. Lo que sigue es el "Plan de la semana". Las notas de bomberos de esta sección describen el estado anterior a ese borrado.
+**Se está preparando la presentación desplegada (ver "Plan de la semana"). La cadena de Implementación de bomberos se rehízo desde cero: stack, estructura, base y contrato de API. El contrato se escribió a mano (ver "Avance del 5 al 7 de noviembre") y su prueba de permisos dio 119 correctas, 0 fallidas, 16 sin verificar (operaciones sin datos de prueba posibles) y 4 pendientes de integración (Auth y la Edge Function). Con su aprobación la Etapa 7 queda terminada. Lo siguiente es la Etapa 8, achicada.**
 
-**La Etapa 6 (Base de datos) está terminada. La Etapa 7 (Contrato / API) está implementada: el código está en `develop` (commit `9aebdeb`), su migración ya está aplicada en el Supabase de icase-tool y pasan sus 18 pruebas automatizadas. Falta cumplir su criterio de cierre: generar, probar y aprobar el contrato con bomberos y con el taller.** La Etapa 8 (Backend) sigue pendiente. La documentación del proyecto ya está construida: ver "Documentación del proyecto".
-- **Bomberos:**
-  - estructura aprobada (76 archivos);
-  - base generada con Gemini y corregida a mano (`0001`, `0004`, `0006` y `seed.sql`);
-  - prueba en contenedores con 22 de 22 tablas, todas con RLS, políticas y datos de prueba, y 3 usuarios;
-  - la prueba ya ejecuta las firmas con hash, el cierre de partes y la entrega de bitácoras.
-- **El taller** pasó la prueba fuera de la interfaz. Falta generar su base desde la interfaz como segundo proyecto.
+- **Bomberos (rehecho desde el 3 de noviembre):**
+  - stack técnico aprobado (Next.js, Flutter y Supabase con alta disponibilidad del panel web; `firebase_core` agregado a mano);
+  - estructura de carpetas aprobada: 129 archivos (Next.js 50, Flutter 58, Supabase 21), 36/36 pantallas, 22/22 tablas, 14/14 módulos, 29/29 RF. Flutter y Supabase los generó Claude Sonnet 5; la pieza Next.js se cortó por el límite de tokens y la escribió Claude en la conversación, pasó el validador del código sin avisos y se insertó con SQL (ver "Avance del 5 al 7 de noviembre");
+  - base de datos generada con Claude Haiku 5.5 (unos 20 centavos), revisada archivo por archivo, con 5 archivos corregidos y probada de nuevo: 22/22 tablas con RLS, políticas y datos, y 3 usuarios.
+- **Azure:** máquina, Docker, runner y Caddy con HTTPS funcionando; Vercel conectado. La máquina se apaga cuando no se usa.
+- **El taller** no se rehízo; entra solo si sobra tiempo.
 
 | Etapa | Estado |
 |---|---|
 | 1. Proyecto de referencia hecho a mano | Terminada |
 | 2. Base de la fase dentro de icase-tool | Terminada |
 | 3. Piezas del catálogo | Terminada |
-| 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada) |
-| 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada) |
-| 6. Paso "Base de datos" | Terminada (base de bomberos probada 22/22) |
-| **7. Paso "Contrato / API"** | **Implementada (código, migración aplicada, 18 pruebas); falta aprobar el contrato de bomberos y del taller** |
-| 8 a 11 | Pendientes |
+| 4. Paso "Stack técnico" | Terminada (ficha de bomberos aprobada de nuevo el 6 de noviembre) |
+| 5. Paso "Estructura de carpetas" | Terminada (estructura de bomberos aprobada; ahora conserva las piezas que salen bien si otra falla) |
+| 6. Paso "Base de datos" | Terminada (base de bomberos rehecha con Haiku 5.5 y probada 22/22) |
+| 7. Paso "Contrato / API" | Terminada (contrato de bomberos: 48 operaciones, 728/728 controles, 29/29 RF; permisos 119 correctas y 0 fallidas) |
+| 8 a 11 | Pendientes (ver "Cambios al plan por el tiempo") |
 
 Pendientes inmediatos:
 
@@ -41,8 +40,8 @@ Pendientes inmediatos:
    - pasar `develop` a `main` y hacer push: los enlaces de la documentación a los archivos de GitHub apuntan a `main`;
    - dar acceso al docente si el repositorio es privado;
    - confirmar la licencia (se puso MIT a nombre de CCAJ Software Solutions).
-2. **Base de bomberos:** aprobarla en la interfaz, si todavía no está aprobada. Al aprobarla se habilita el paso siguiente.
-3. **Cerrar la Etapa 7 (Contrato / API):** con la base aprobada y Docker encendido, generar el contrato, revisar sus operaciones y lo que falta, ejecutar "Probar permisos" y aprobarlo. Hacerlo con bomberos y con el taller. Al aprobar los dos, marcar la etapa como terminada; la siguiente es la Etapa 8 (Backend).
+2. **Base de bomberos:** aprobarla en la interfaz (ya probada con las correcciones). Al aprobarla se habilita el Contrato de API.
+3. **Cerrar la Etapa 7 (Contrato / API):** con Docker encendido y Claude Haiku 5.5, generar el contrato de bomberos, revisar sus operaciones y lo que falta, ejecutar "Probar permisos" y aprobarlo. Por el tiempo, el taller queda para después. La siguiente es la Etapa 8 (Backend), achicada.
 4. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
 5. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
 6. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
@@ -83,12 +82,14 @@ Vercel (icase-tool)  ──HTTPS + token──▶  Azure: Ubuntu + Docker + runn
 
 | Día | Usuario | Claude |
 |---|---|---|
-| 1 (3 nov) | Crear la máquina en Azure y pasar la IP y el usuario | Validador del contrato (5 cambios) y este plan |
-| 2 | Regenerar base y contrato de bomberos con Gemini gratis, probar permisos y aprobar (cierra la Etapa 7) | Runner para servidor: escucha desde fuera con token, carpeta de trabajo en Linux, Caddy con HTTPS. Instalar Docker y el runner por SSH |
-| 3 | Poner `RUNNER_URL` y `RUNNER_TOKEN` en Vercel y probar que levanta la base desde ahí | Sección "Aplicación" en Implementación: estado, Levantar, "Abrir aplicación" y usuarios de prueba |
-| 4 a 5 | Revisar y aprobar lo generado | Etapa 8 achicada (con Supabase, solo la Edge Function de crear usuario) y Etapa 9 (Web) |
-| 6 | Ensayo completo desde Vercel, con la PC apagada | Móvil solo si hay tiempo; correcciones |
-| 7 | Margen | Capturas que faltan, plan y CHANGELOG |
+| 1 (3 nov) | Crear la máquina en Azure y pasar la IP y el usuario | Docker en el servidor y este plan (hecho) |
+| 2 (4 nov) | Nombre DNS y variables en Vercel | Runner en Linux, Caddy con HTTPS (hecho) |
+| 3 a 5 (5 a 7 nov) | Regenerar stack, estructura y base de bomberos en local | Estructura con "Continuar", pieza Next.js, selector de modelo de Claude, revisión de la base, validador del contrato (hecho) |
+| 6 (8 nov) | Contrato de API de bomberos con Haiku: generar, probar permisos y aprobar (cierra la Etapa 7) | Sección "Aplicación" y dirección pública por proyecto en Caddy; Etapa 8 achicada (Edge Function `crear-usuario`) |
+| 7 (9 nov) | Revisar y aprobar lo generado | Etapa 9 (Web) |
+| 8 (10 nov) | Subir a `main`, ensayo completo desde Vercel con la PC apagada | Correcciones, capturas, CHANGELOG |
+
+Se trabaja primero en local (más barato y sin el límite de tiempo de Vercel) y al final se despliega: Azure solo se enciende para probar que "Levantar" y la dirección pública funcionan allá.
 
 ### Avance del día 1 (3 de noviembre)
 
@@ -103,6 +104,52 @@ Vercel (icase-tool)  ──HTTPS + token──▶  Azure: Ubuntu + Docker + runn
   5. regenerar la cadena de bomberos (stack, estructura, base y contrato; el usuario eliminó todo desde "Stack técnico");
   6. cambios del validador del contrato, a la espera del sí del usuario.
 
+### Avance del día 2 (4 de noviembre)
+
+- Nombre DNS de la máquina: `icase-tool.chilecentral.cloudapp.azure.com` (región Chile Central, tamaño Standard B2as v2: 2 vCPU y 8 GiB).
+- En el servidor: Node 22, Caddy con HTTPS (certificado real, reenvía a `127.0.0.1:4100`) y el runner como servicio `icase-runner` (en `~/icase-runner`, token en `~/icase-runner.env`, proyectos en `/srv/icase-workspaces`). Los dos arrancan solos.
+- Comprobado desde internet: sin token o con token malo, 401; con el token correcto, 200.
+- El runner usa por defecto `/srv/icase-workspaces` en Linux (`runner/index.mjs`); en Windows no cambia.
+- Vercel (rama `main`, merge del PR #17 desde `develop`) tiene `RUNNER_URL` y `RUNNER_TOKEN`; el panel de ejecución de un proyecto muestra los servicios en "sin crear" y sin error, o sea, conecta.
+- El token del servidor está en `azure/runner.env` (ignorada por git). El de `.env.local` es otro: es el del runner de la PC.
+- **Falta:** probar la base de datos en el servidor (la primera prueba real), cambios del validador del contrato (a la espera del sí), dirección pública por proyecto en Caddy, sección "Aplicación", Etapas 8 y 9.
+- **La máquina quedó apagada (desasignada) al cierre del 4 de noviembre**, para cuidar el crédito. Al retomar: portal de Azure, máquina `icase`, Iniciar. No borrar la IP ni el nombre DNS.
+
+### Avance del 5 al 7 de noviembre
+
+Cambios de icase-tool (en `develop`, sin confirmar todavía):
+
+- **Estructura de carpetas: lo que sale bien no se pierde** (`lib/estructura.js`, `page.js`). Las piezas se generan en paralelo; antes, si una fallaba (corte por límite de tokens o saturación), se descartaban todas aunque ya estuvieran pagadas. Ahora se guardan las que salieron, la ficha queda `incompleto` con `faltan`, el botón pasa a "Continuar estructura (falta X)" y genera solo esas piezas; "Empezar de cero" sigue disponible. No se puede aprobar una estructura incompleta. En "Ampliar con IA", la pieza que falla conserva su lista. Pruebas: `tests/estructura-parcial.test.mjs` (3).
+- **Pieza Next.js escrita a mano e insertada por SQL:** Claude Sonnet 5 se cortó en la pieza más grande. Se escribió en la conversación, se pasó por `validarPieza` con los datos reales del diseño (23/23 pantallas web, 6/6 módulos, sin avisos) y se insertó con `respaldos/estructura-bomberos/completar-estructura.sql` en el SQL Editor de Supabase. Ese SQL guarda antes una copia en el esquema `respaldos` (con RLS), solo actúa si la estructura sigue incompleta y corrige 5 propósitos (firma sin hash en la app, adjuntos detrás de la interfaz local, orden de las políticas `0002`/`0003`, push opcional en `0016`) y agrega la Edge Function `crear-usuario` (RF01).
+- **Elegir el modelo de Claude** (`lib/modelosClaude.js`, nuevo): al activar "Usar Claude", la barra lateral muestra "Modelo de Claude" con Haiku 5.5 ($0,10/$0,50 por millón), Sonnet 5, Sonnet 5.5 y Opus 5.5. La preferencia viaja como `usarClaude: "claude:<id>"`; sin elección se usa `CLAUDE_MODELO` (en `.env.local`: `claude-haiku-5-5`, con `CLAUDE_MAX_TOKENS=64000`). Los avisos de costo se escalan al precio del modelo elegido y el gasto se calcula con su precio real (Haiku cobra más con entradas de más de 100.000 tokens). La etiqueta del paso muestra "Claude Haiku 5.5". Prueba: `tests/modelo-claude.test.mjs`.
+- **Lección:** Haiku 5.5 es 20 veces más barato que Sonnet 5. La base de bomberos costó 20 centavos con Haiku y estaba bien hecha; con Sonnet se habían gastado unos 15 dólares en intentos. Para generar, usar Haiku y revisar con Claude en la conversación; Sonnet u Opus solo para un paso que no salga.
+- **Navegación entre fases:** Diseño tiene "← Volver a Análisis" e Implementación "← Volver a Diseño" en la barra de color; Análisis conserva "Continuar a Diseño". El antiguo "← Volver" pasó a ser "← Resumen", un enlace encima del encabezado de cada fase.
+- **Validador del contrato corregido** (`lib/validarContrato.js`), con el sí del usuario. En la primera generación con Gemini, unos 23 de 37 errores eran de las reglas, no del modelo. Reglas generales:
+  - acepta los nombres del SDK de Supabase para Auth (`auth.signInWithPassword` es login, `signOut` logout, `getSession` sesion…) y los normaliza;
+  - acepta guiones en los nombres de Edge Functions (`admin-crear-usuario`);
+  - cerrar sesión (operaciones solo de Auth) no tiene que cubrir un RF de la pantalla;
+  - una operación sin botón (consulta al cargar, token push) es una advertencia, no un error;
+  - el error de roles dice qué rol sobra y en qué RF, y compara nombres sin mayúsculas ni tildes.
+
+  Pruebas: `tests/contrato.test.mjs` pasa de 18 a 23.
+- **Contrato que no cabe en una respuesta** (`lib/contrato.js`, `lib/accionesContrato.js`), con el sí del usuario. El primer contrato de bomberos con Haiku se cortó a los 64.000 tokens y costó 30 centavos: el prototipo tiene 728 controles (460 distintos por pantalla) y el prompt llevaba la lista completa (138.000 caracteres) y las 19 migraciones, lo que subía la entrada a la tarifa alta de Haiku. Ahora los controles iguales de una pantalla forman un grupo que la IA asigna una vez (`agruparAcciones`, `expandirAsignaciones`; el id del grupo es el del primer control), la lista va compacta por pantalla (31.000 caracteres) y del SQL solo va el `seed.sql`. El validador sigue revisando los 728 controles. Pruebas: 24.
+- **Cambio menor en el runner:** carpeta de trabajo por defecto `/srv/icase-workspaces` en Linux.
+- **Contrato de bomberos escrito a mano** (8 de noviembre): con el agrupado, Haiku y Gemini se siguieron cortando en una sola respuesta, y el usuario prefirió no dividir la generación ni gastar más. Claude lo escribió en la conversación (48 operaciones con las tablas, funciones y datos del seed reales; 460 grupos de controles asignados por reglas) y lo validó con `validarContrato`: 728/728 controles, 29/29 RF, 0 errores. Archivo: `respaldos/contrato-bomberos/contrato.json`. Para meterlo, el paso tiene ahora **"Pegar contrato"** cuando aún no hay contrato: `revisar-contrato` lee el inventario en el proyecto desechable si no hay uno guardado y expande las asignaciones por grupo. El inventario cuenta también los permisos por columna (`notificacion` solo permite actualizar `leida`).
+- **Prueba de permisos del contrato:** la primera corrida dio 7 fallidas y 45 inconclusas, ninguna de seguridad. (1) `lib/pruebaContrato.js` no relacionaba el actor "Jefe de guardia" con el rol `jefe_guardia`: ahora ignora artículos y preposiciones (prueba nueva; 25 en total). (2) El seed no tenía registros en el estado que cada operación necesita, y la base usa `42501` también para reglas de negocio ("ya fue entregada"), así que se veían como permisos negados: se agregaron al seed el parte 7 (firmado, listo para cerrar), el parte 8 (incendio editable), las bitácoras vehiculares 3 a 6 y la bitácora de guardia 2 abierta (`respaldos/bd-bomberos/seed-agregar-al-final.sql`), y el contrato apunta a ellos. Resultado: 119 correctas, 0 fallidas.
+- Huecos del prototipo encontrados al escribir el contrato: no hay botones para asignar rol ni suspender cuentas (RF01), y "Subir Foto Evidencia" (Parte en Curso Móvil) no tiene dónde guardarse en el diseño. Quedan como advertencias para la Etapa 9.
+
+### Base de bomberos regenerada con Claude Haiku 5.5 (7 de noviembre)
+
+- Generada con Claude Haiku 5.5 por unos 20 centavos (con Sonnet se habían gastado unos 15 dólares en intentos anteriores): 22/22 tablas con RLS, políticas y datos, sin advertencias.
+- Revisión archivo por archivo con Claude. Los corregidos están en `respaldos/bd-bomberos/` (no se sube a git) para pegarlos en el explorador y probar una sola vez:
+  - `0002` y `0003`: el Bombero no veía el personal activo y no podía asignarlo a un parte (RF08).
+  - `0005`: `registrar_firma` se podía llamar desde la API con un contenido inventado; ahora solo la usan las funciones de negocio.
+  - `0007`: el hash de la firma del parte no cubría el detalle por tipo ni los pacientes; se reemplaza `parte_contenido_firma` al final del archivo.
+  - `0012` y `0014`: `null not in (...)` dejaba a un usuario suspendido leer el contenido de cualquier parte o bitácora vehicular.
+- Con las correcciones pegadas, la prueba en contenedores volvió a pasar (7 de noviembre, 13:02): 22/22 tablas con RLS, políticas y datos, y 3 usuarios.
+- Decisión del usuario: un Jefe de guardia puede avalar un parte que él mismo atendió y firmó.
+- **Pendiente para la Etapa 8:** el aviso de RF30 "parte pendiente de completar o firmar" necesita una tarea programada (`pg_cron`), no un trigger. El tipo `parte_pendiente` ya existe en `notificacion`.
+
 ### Cambios al plan por el tiempo
 
 - Un solo proyecto completo para la demo: bomberos. El taller entra solo si sobra tiempo.
@@ -114,21 +161,17 @@ Vercel (icase-tool)  ──HTTPS + token──▶  Azure: Ubuntu + Docker + runn
 
 ### Cambios de código que lleva
 
-1. **Validador del contrato** (`lib/validarContrato.js`). En la primera generación con Gemini 3.8 Flash, unos 23 de 37 errores venían de las reglas y no del modelo. Reglas generales, válidas para cualquier proyecto:
-   - aceptar los nombres de Supabase para Auth (`signInWithPassword` es login, `signOut` es logout);
-   - permitir guiones en los nombres de las Edge Functions;
-   - no exigir un RF de la pantalla a cerrar sesión ni a las demás operaciones de Auth;
-   - una operación sin botón (consulta al cargar, token push) queda como advertencia, no como error;
-   - el error de roles dice qué rol sobra y en qué RF, y compara nombres sin importar mayúsculas ni tildes.
-2. **Runner** (`runner/index.mjs`): dirección y carpeta configurables, también en Linux; siempre con token.
-3. **Caddy** con una dirección pública por proyecto.
+1. ~~**Validador del contrato**~~: hecho el 7 de noviembre (ver "Avance del 5 al 7 de noviembre").
+2. ~~**Runner** para Linux~~: hecho el 4 de noviembre. Escucha en `127.0.0.1` detrás de Caddy, siempre con token.
+3. **Caddy** con una dirección pública por proyecto. Con Supabase, **dos**: la de la web y la de su puerta de entrada (`api-gw`). La web se compila con `NEXT_PUBLIC_SUPABASE_URL` fijo; hoy es `localhost` con un puerto, lo que funciona en la PC pero no en el navegador del ingeniero. El runner debe compilar la web (y la vista web de Flutter, `SUPABASE_URL`) con la dirección pública de la puerta de entrada.
 4. **Sección "Aplicación"** en `ImplementacionFase.js`.
 5. **Rutas largas:** confirmar que `maxDuration = 300` cabe en el plan de Vercel.
 
 ### Pendientes de decisión
 
 - Preguntar al ingeniero si le basta que la aplicación se abra por una dirección pública con el motor de contenedores en un servidor propio.
-- El usuario debe dar el sí para los cambios del validador antes de aplicarlos (los generadores aprobados no se tocan sin un sí).
+- Confirmar los cambios de esta semana en git (`develop`) y pasarlos a `main` para que Vercel los publique: la selección de modelo de Claude, la estructura con "Continuar", el validador del contrato y la navegación entre fases solo están en local.
+- El aviso de costo de la base usa 10 centavos por archivo medidos con Sonnet; ya se escala por modelo, pero sigue siendo una estimación fija por archivo.
 
 ## Guía para retomar el trabajo
 
@@ -936,6 +979,7 @@ Archivos principales: `lib/accionesContrato.js`, `lib/inventarioContrato.js`, `l
 - La cascada espera a que la base regenerada vuelva a aprobarse antes de inspeccionarla. Errores de estructura/cobertura y permisos fallidos bloquean aprobar; las pruebas pendientes requieren reconocimiento explícito en la interfaz.
 - Validación técnica del 24 de octubre: 18 pruebas automatizadas; lint de los archivos modificados; compilación de Next.js y Docusaurus. Integración real con Supabase desechable: inventario, login de dos actores, CRUD, RPC con restricción de rol y rollback (16 comprobaciones). Segundo stack: inventario de órdenes de taller con PostgreSQL sin Supabase. Generación con IA gratuita probada para Supabase y Express (2 operaciones por caso, cobertura completa). Esto no sustituye la validación de bomberos y taller con sus datos actuales.
 - Revisión del 1 de noviembre: la columna `contrato_implementacion` existe en el Supabase de icase-tool y las 18 pruebas pasan. No se comprobó si ya hay contratos de bomberos o del taller generados o aprobados: Docker estaba apagado y la base de icase-tool solo muestra los proyectos con la sesión del usuario.
+- Validador corregido el 7 de noviembre tras la primera generación real con bomberos (Gemini 3.8 Flash, 37 errores, unos 23 de las reglas): nombres de Auth del SDK de Supabase, guiones en Edge Functions, cerrar sesión sin RF de pantalla, operaciones sin botón como advertencia y error de roles con el rol y el RF. 23 pruebas.
 - Comandos: `node --test tests/contrato.test.mjs`; `node tests/contrato-docker.mjs` para Docker. Para incluir generación con modelos gratuitos: establecer `PROBAR_IA=1` y ejecutar `node --env-file=.env.local tests/contrato-docker.mjs`. La prueba crea sus propios proyectos temporales y usuarios, y no usa datos de los proyectos reales.
 
 **Terminado cuando:** el contrato está aprobado y cubre todas las acciones del prototipo, después de revisar los resultados de permisos y sus pendientes de integración.
