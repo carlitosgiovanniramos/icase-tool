@@ -37,7 +37,9 @@ import FichaStack from "./FichaStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
 import FichaBackend from "./FichaBackend";
+import FichaFrontend from "./FichaFrontend";
 import { archivosDeBackend } from "@/lib/archivosBackend";
+import { archivosDeFrontend, plataformasDeFrontend, capaDe } from "@/lib/archivosFrontend";
 import FichaContrato, { PegarContrato } from "./FichaContrato";
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
@@ -1369,6 +1371,8 @@ export default function WorkspaceProyecto() {
         if (p.clave === "impl_contrato" && !fasesRef.current.impl_bd) return;
         // El backend se genera sobre el contrato aprobado, no sobre uno recién regenerado.
         if (p.clave === "impl_backend" && !fasesRef.current.impl_contrato) return;
+        // El frontend (decenas de archivos por plataforma) se regenera solo desde su paso.
+        if (p.clave === "impl_frontend") return;
         if (p.clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Costo orientativo del contrato con Claude: ${rangoCostoClaude(0.2, 1)}.`, "¿Actualizar contrato con Claude?", "Actualizar"))) return;
         setProgreso({ indice: i, total: pasos.length, nombre: p.nombre });
         try {
@@ -1448,6 +1452,17 @@ export default function WorkspaceProyecto() {
   // Aprobar un paso que cambió propaga el cambio: se regeneran automáticamente los pasos
   // siguientes que quedaron desactualizados, y cada uno queda pendiente de revisión.
   async function aprobarPaso(clave) {
+    if (clave === "impl_frontend") {
+      const plataformas = Object.entries(artefactosRef.current.impl_frontend?.plataformas || {});
+      if (!plataformas.length || plataformas.some(([, d]) => d.incompleto)) {
+        mostrarError("Genera por completo cada plataforma empezada (Continuar).", "Frontend incompleto");
+        return;
+      }
+      if (plataformas.some(([, d]) => !d.compilacion?.ok)) {
+        mostrarError("Cada plataforma generada tiene que compilar sin errores: pulsa Compilar y corregir.", "Frontend sin compilar");
+        return;
+      }
+    }
     if (clave === "impl_backend" && artefactosRef.current.impl_backend?.incompleto) {
       mostrarError("Pulsa Continuar para generar los archivos que faltan.", "Backend incompleto");
       return;
@@ -1940,6 +1955,181 @@ export default function WorkspaceProyecto() {
     return { valor, modelo, advertencias: valor.revision };
   }
 
+  // --- Frontend (Etapa 9): por plataforma, por capas y de a varios archivos a la vez. Cada archivo
+  // se guarda apenas llega; "Continuar" sigue desde los que faltan.
+
+  const LOTE_FRONTEND = 4;
+  const CORRECCIONES_FRONTEND = 3;
+
+  function cuerpoFrontend(plataforma) {
+    const a = artefactosRef.current;
+    const { contenedores, componentes, titulos, revision, ...stack } = a.impl_stack || {};
+    return {
+      nombre: proyectoRef.current.nombre,
+      descripcion: proyectoRef.current.prompt,
+      analisis: a.analisis,
+      stack,
+      estructura: { archivos: a.impl_estructura?.archivos || [] },
+      plataforma,
+      contrato: {
+        operaciones: a.impl_contrato?.operaciones || [],
+        acciones: (a.impl_contrato?.acciones || []).map(({ pantalla, nombre, tipo, operaciones, motivo }) => ({ pantalla, nombre, tipo, operaciones, motivo })),
+      },
+      arbol: a.arbol,
+      indicaciones: contextoRef.current.indicaciones?.impl_frontend,
+    };
+  }
+
+  // Solo las pantallas del prototipo que implementa el archivo (cada una pesa unos 200.000 caracteres).
+  const pantallasDeArchivo = (archivo) =>
+    (artefactosRef.current.prototipo || [])
+      .filter((p) => (archivo.pantallas || []).includes(p.nombre))
+      .map(({ nombre, plataforma, html }) => ({ nombre, plataforma, html }));
+
+  // Guarda la ficha con los archivos de una plataforma; las demás plataformas quedan como estaban.
+  async function guardarFichaFrontend(plataforma, archivos, total, compilacion = null) {
+    const actual = artefactosRef.current.impl_frontend || { plataformas: {} };
+    const plataformas = {
+      ...actual.plataformas,
+      [plataforma]: {
+        archivos: archivos.map(({ ruta, contenido, advertencias = [], corregido, editado }) => ({ ruta, lineas: contenido.trimEnd().split("\n").length, advertencias, ...(corregido ? { corregido } : {}), ...(editado ? { editado } : {}) })),
+        total,
+        incompleto: archivos.length < total,
+        compilacion,
+      },
+    };
+    const valor = {
+      plataformas,
+      revision: Object.values(plataformas).flatMap((d) => d.archivos.flatMap((a) => (a.advertencias || []).map((x) => `${a.ruta}: ${x}`))),
+      actualizado: new Date().toISOString(),
+    };
+    await guardarArtefacto("impl_frontend", valor);
+    return valor;
+  }
+
+  // Los archivos ya guardados de una plataforma, con su contenido.
+  async function archivosFrontendGuardados(plataforma) {
+    const datos = artefactosRef.current.impl_frontend?.plataformas?.[plataforma];
+    const guardados = await leerArchivosDePaso("impl_frontend");
+    return (datos?.archivos || [])
+      .map((a) => ({ ...a, contenido: guardados.find((g) => g.ruta === a.ruta)?.contenido }))
+      .filter((a) => a.contenido != null);
+  }
+
+  async function generarFrontend(plataforma, retomar) {
+    const plan = archivosDeFrontend(artefactosRef.current.impl_estructura, plataforma);
+    if (!plan.length) return;
+    const nombre = plataforma === "web" ? "la web" : "la app móvil";
+    if (!retomar && artefactosRef.current.impl_frontend?.plataformas?.[plataforma]?.archivos?.length && !(await confirmar(`Se volverán a generar los ${plan.length} archivos de ${nombre}.`, "¿Regenerar?", "Regenerar"))) return;
+    if (claudeActivo() && !(await confirmar(`Se generará ${nombre} con Claude: ${plan.length} archivos. Costo orientativo: ${rangoCostoClaude(0.1 * plan.length, 0.3 * plan.length)}.`, "¿Generar con Claude?", "Generar"))) return;
+
+    setCargando({ paso: `generar:${plataforma}`, detalle: "Preparando..." });
+    const generados = retomar ? await archivosFrontendGuardados(plataforma) : [];
+    const base = cuerpoFrontend(plataforma);
+    let modelo;
+    let marcado = false;
+    try {
+      for (const capa of [...new Set(plan.map(capaDe))].sort((x, y) => x - y)) {
+        const pendientes = plan.filter((a) => capaDe(a) === capa && !generados.some((g) => g.ruta === a.ruta));
+        for (let i = 0; i < pendientes.length; i += LOTE_FRONTEND) {
+          const lote = pendientes.slice(i, i + LOTE_FRONTEND);
+          setCargando({ paso: `generar:${plataforma}`, detalle: `Generando ${generados.length + 1}-${generados.length + lote.length} de ${plan.length}...` });
+          const anteriores = generados.map(({ ruta, contenido }) => ({ ruta, contenido }));
+          const resultados = await Promise.allSettled(
+            lote.map((a) => pedirIA(PASO.impl_frontend.ruta, { ...base, archivo: a.ruta, anteriores, pantallas: pantallasDeArchivo(a) }))
+          );
+          let fallo;
+          for (const [j, r] of resultados.entries()) {
+            const data = r.status === "fulfilled" ? r.value : null;
+            if (!data || data.error) {
+              fallo ??= `${lote[j].ruta}: ${data?.error || r.reason?.message}`;
+              continue;
+            }
+            await guardarArchivoGenerado("impl_frontend", lote[j].ruta, data.contenido);
+            generados.push({ ruta: lote[j].ruta, contenido: data.contenido, advertencias: data.advertencias || [] });
+            modelo = data.modelo_ia;
+          }
+          // El avance queda guardado aunque falle un archivo del lote.
+          await guardarFichaFrontend(plataforma, generados, plan.length);
+          if (!marcado && modelo) {
+            await marcarCambio("impl_frontend", {}, modelo, { silencioso: true });
+            marcado = true;
+          }
+          if (fallo) throw new Error(fallo);
+        }
+      }
+      const todas = plataformasDeFrontend(artefactosRef.current.impl_estructura).flatMap((p) => archivosDeFrontend(artefactosRef.current.impl_estructura, p).map((a) => a.ruta));
+      await borrarArchivosDePaso("impl_frontend", todas);
+      await marcarCambio("impl_frontend", {}, modelo);
+      const avisos = generados.flatMap((g) => (g.advertencias || []).map((x) => `${g.ruta}: ${x}`));
+      mostrarInfo(avisos.length ? textoAdvertencias(avisos) : `Se generaron los ${plan.length} archivos. Pulsa Compilar y corregir para probarla en Docker.`, `Frontend: ${nombre}`);
+    } catch (err) {
+      mostrarError(`${err.message}\n\nLos archivos ya generados quedaron guardados: "Continuar" sigue desde los que faltan.`, `No se pudo generar ${nombre}`);
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  // Compila la plataforma en Docker; si falla, corrige con el error el archivo que lo causó y vuelve a
+  // compilar, hasta CORRECCIONES_FRONTEND veces.
+  async function compilarFrontend(plataforma) {
+    const plan = archivosDeFrontend(artefactosRef.current.impl_estructura, plataforma);
+    setCargando({ paso: `compilar:${plataforma}`, detalle: "Compilando (varios minutos)..." });
+    try {
+      let corregidos = 0;
+      for (;;) {
+        const data = await pedirJson("/api/compilar-frontend", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId: id, plataforma }) });
+        if (data.error) throw new Error(data.error);
+        const archivos = await archivosFrontendGuardados(plataforma);
+        const compilacion = { ok: data.ok, fecha: data.fecha, archivo: data.archivo, salida: String(data.salida || "").slice(-5000) };
+        await guardarFichaFrontend(plataforma, archivos, plan.length, compilacion);
+        if (data.ok || !data.archivo || corregidos >= CORRECCIONES_FRONTEND) {
+          if (data.ok) mostrarInfo("Compila sin errores.", plataforma === "web" ? "Web" : "App móvil");
+          else mostrarError(data.archivo ? `No compila después de ${corregidos} correcciones. Revisa el error de ${data.archivo}.` : "No compila y no se encontró el archivo que lo causa. Revisa el error.", "Compilación");
+          break;
+        }
+        corregidos++;
+        setCargando({ paso: `compilar:${plataforma}`, detalle: `Corrigiendo ${data.archivo.split("/").pop()} (${corregidos}/${CORRECCIONES_FRONTEND})...` });
+        const archivo = plan.find((a) => a.ruta === data.archivo);
+        const actual = archivos.find((a) => a.ruta === data.archivo)?.contenido;
+        const correccion = await pedirIA(PASO.impl_frontend.ruta, {
+          ...cuerpoFrontend(plataforma),
+          archivo: data.archivo,
+          anteriores: archivos.map(({ ruta, contenido }) => ({ ruta, contenido })),
+          pantallas: pantallasDeArchivo(archivo),
+          error: data.salida,
+          actual,
+        });
+        if (correccion.error) throw new Error(correccion.error);
+        await guardarArchivoGenerado("impl_frontend", data.archivo, correccion.contenido);
+        const conCorreccion = archivos.map((a) => (a.ruta === data.archivo ? { ...a, contenido: correccion.contenido, advertencias: correccion.advertencias || [], corregido: true } : a));
+        await guardarFichaFrontend(plataforma, conCorreccion, plan.length, compilacion);
+        await marcarCambio("impl_frontend", {}, correccion.modelo_ia, { silencioso: true });
+        setCargando({ paso: `compilar:${plataforma}`, detalle: "Compilando de nuevo..." });
+      }
+    } catch (err) {
+      mostrarError(err.message, "No se pudo compilar");
+    } finally {
+      setCargando(null);
+    }
+  }
+
+  async function guardarArchivoFrontendEditado(archivo, contenido) {
+    try {
+      const plataforma = Object.entries(artefactosRef.current.impl_frontend?.plataformas || {}).find(([, d]) => d.archivos.some((a) => a.ruta === archivo.ruta))?.[0];
+      if (!plataforma) throw new Error("Este archivo no se puede editar.");
+      await guardarArchivoGenerado("impl_frontend", archivo.ruta, contenido, "editado");
+      const plan = archivosDeFrontend(artefactosRef.current.impl_estructura, plataforma);
+      const archivos = (await archivosFrontendGuardados(plataforma)).map((a) => (a.ruta === archivo.ruta ? { ...a, contenido, advertencias: [], editado: true } : a));
+      await guardarFichaFrontend(plataforma, archivos, plan.length);
+      await marcarCambio("impl_frontend");
+      return true;
+    } catch (err) {
+      mostrarError(err.message, `No se pudo guardar ${archivo.ruta}`);
+      return false;
+    }
+  }
+
   // Edición a mano de un archivo del backend desde el explorador: el paso pierde la aprobación y la
   // prueba anterior deja de valer.
   async function guardarArchivoBackendEditado(archivo, contenido) {
@@ -1995,6 +2185,7 @@ export default function WorkspaceProyecto() {
   // la aprobación; la prueba anterior ya no vale y queda pendiente ("Probar de nuevo").
   async function guardarArchivoEditado(archivo, contenido) {
     if (archivo.paso === "impl_backend") return guardarArchivoBackendEditado(archivo, contenido);
+    if (archivo.paso === "impl_frontend") return guardarArchivoFrontendEditado(archivo, contenido);
     try {
       const ficha = artefactosRef.current.impl_bd;
       if (archivo.paso !== "impl_bd" || !ficha) throw new Error("Este archivo no se puede editar.");
@@ -2547,6 +2738,7 @@ export default function WorkspaceProyecto() {
     impl_bd: !!fasesAprobadas.impl_estructura,
     impl_contrato: !!fasesAprobadas.impl_bd && !pendientes.impl_bd,
     impl_backend: !!fasesAprobadas.impl_contrato && !pendientes.impl_contrato,
+    impl_frontend: !!fasesAprobadas.impl_backend && !pendientes.impl_backend,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2743,7 +2935,8 @@ export default function WorkspaceProyecto() {
             editable={(a) =>
               a.origen === "generado" && !ocupado &&
               ((a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta) ||
-                (a.paso === "impl_backend" && trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto))
+                (a.paso === "impl_backend" && trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto) ||
+                (a.paso === "impl_frontend" && trabajable("impl_frontend") && !bloqueado("impl_frontend")))
             }
             onGuardarArchivo={guardarArchivoEditado}
             // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
@@ -2754,6 +2947,7 @@ export default function WorkspaceProyecto() {
               (artefactos.impl_estructura?.archivos || []).map((a) => a.ruta),
               artefactos.impl_bd?.actualizado,
               artefactos.impl_backend?.actualizado,
+              artefactos.impl_frontend?.actualizado,
             ])}
           >
             <TituloPaso
@@ -3135,6 +3329,35 @@ export default function WorkspaceProyecto() {
                   {artefactos.impl_backend && trabajable("impl_backend") && !backendIncompleto && <div className="mt-4 flex gap-3 flex-wrap">
                     <BotonAprobar aprobado={!!fasesAprobadas.impl_backend} onClick={() => aprobarPaso("impl_backend")} etiqueta="Backend" disabled={ocupado || !!artefactos.impl_backend.prueba?.fallidas} />
                     {!fasesAprobadas.impl_backend && <BotonRechazar etiqueta="Backend" onClick={() => rechazarPaso("impl_backend", "¿Rechazar el backend?")} disabled={ocupado} />}
+                  </div>}
+                </>}
+              </>
+            )}
+
+            {visible("impl_frontend") && (
+              <>
+                <TituloPaso color={PALETA.marron} estado={estadoPaso("impl_frontend")} modelo={modelos.impl_frontend}
+                  deshabilitado={ocupado} onAlternar={() => alternarPaso("impl_frontend")} abierto={pasoAbierto("impl_frontend")}>
+                  Frontend
+                </TituloPaso>
+                {pasoAbierto("impl_frontend") && <>
+                  {trabajable("impl_frontend") && !bloqueado("impl_frontend") && <CampoIndicaciones clave="impl_frontend" valor={contexto.indicaciones?.impl_frontend} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: en la tabla de partes, muestra primero los abiertos" />}
+                  <ControlesPaso clave="impl_frontend" esperando={!trabajable("impl_frontend")} bloqueado={bloqueado("impl_frontend")} enEdicion={enEdicion("impl_frontend")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
+                    {artefactos.impl_frontend && <BotonEliminar onClick={() => eliminarPaso("impl_frontend", "¿Eliminar la web y la app generadas?")} disabled={ocupado} title="Eliminar frontend" />}
+                  </ControlesPaso>
+                  <FichaFrontend
+                    ficha={artefactos.impl_frontend}
+                    plataformas={plataformasDeFrontend(artefactos.impl_estructura).map((clave) => ({ clave, total: archivosDeFrontend(artefactos.impl_estructura, clave).length }))}
+                    editable={trabajable("impl_frontend") && !bloqueado("impl_frontend")}
+                    deshabilitado={ocupado}
+                    ocupado={cargando?.paso}
+                    detalle={cargando?.detalle}
+                    onGenerar={generarFrontend}
+                    onCompilar={compilarFrontend}
+                  />
+                  {artefactos.impl_frontend && trabajable("impl_frontend") && <div className="mt-4 flex gap-3 flex-wrap">
+                    <BotonAprobar aprobado={!!fasesAprobadas.impl_frontend} onClick={() => aprobarPaso("impl_frontend")} etiqueta="Frontend" disabled={ocupado} />
+                    {!fasesAprobadas.impl_frontend && <BotonRechazar etiqueta="Frontend" onClick={() => rechazarPaso("impl_frontend", "¿Rechazar el frontend?")} disabled={ocupado} />}
                   </div>}
                 </>}
               </>

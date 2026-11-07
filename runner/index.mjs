@@ -291,6 +291,40 @@ async function sincronizar(id, archivos, firma) {
   return { archivos: destinos.length };
 }
 
+// Compila las imágenes de unos servicios (la web, la app) en un proyecto aparte (<id>-compilar), sin
+// levantarlos ni tocar el proyecto del usuario. Devuelve si compiló y la salida, para corregir el
+// archivo que falló.
+async function compilar(id, { archivos, servicios = [] }) {
+  if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
+  if (!servicios.length) throw new ErrorRunner(400, "No se indicó qué compilar.");
+  for (const s of servicios) if (!SERVICIO_VALIDO.test(s)) throw new ErrorRunner(400, `Servicio no válido: ${s}`);
+  const idPrueba = `${id}-compilar`;
+  const carpeta = carpetaDe(idPrueba);
+  const estado = estadoDe(idPrueba);
+  if (estado.operacion) throw new ErrorRunner(409, "Ya hay una compilación en curso para este proyecto.");
+  estado.operacion = "compilando";
+  try {
+    await rm(carpeta, { recursive: true, force: true });
+    await mkdir(carpeta, { recursive: true });
+    for (const a of archivos) {
+      const destino = rutaSegura(carpeta, a.ruta);
+      await mkdir(path.dirname(destino), { recursive: true });
+      await writeFile(destino, String(a.contenido ?? ""), "utf8");
+    }
+    const ejemplo = leerVariables(archivos.find((a) => a.ruta === ".env.example")?.contenido);
+    await writeFile(path.join(carpeta, ".env"), escribirVariables(completarVariables(ejemplo, {})), "utf8");
+    let salida = "";
+    try {
+      await compose(idPrueba, ["build", ...servicios], { espera: ESPERA_LARGA_MS, alSalir: (s) => (salida = s) });
+      return { ok: true, salida: salida.slice(-20_000) };
+    } catch (err) {
+      return { ok: false, salida: String(err.salida || salida || err.message).slice(-20_000) };
+    }
+  } finally {
+    estado.operacion = null;
+  }
+}
+
 async function contenedores(id) {
   const salida = await compose(id, ["ps", "-a", "--format", "json"]);
   const texto = salida.trim();
@@ -565,6 +599,7 @@ const servidor = http.createServer(async (req, res) => {
     if (ruta === "POST detener") return responder(res, 200, await detener(id, await leerCuerpo(req)));
     if (ruta === "POST eliminar") return responder(res, 200, await detener(id, { eliminar: true }));
     if (ruta === "POST probarbd") return responder(res, 200, await probarBaseDatos(id, await leerCuerpo(req)));
+    if (ruta === "POST compilar") return responder(res, 200, await compilar(id, await leerCuerpo(req)));
     throw new ErrorRunner(404, "Ruta no encontrada.");
   } catch (err) {
     if (!(err instanceof ErrorRunner)) console.error(err);

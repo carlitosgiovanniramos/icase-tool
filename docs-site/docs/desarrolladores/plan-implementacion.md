@@ -30,7 +30,7 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 6. Paso "Base de datos" | Terminada (base de bomberos rehecha con Haiku 5.5 y probada 22/22) |
 | 7. Paso "Contrato / API" | Terminada (contrato de bomberos: 48 operaciones, 728/728 controles, 29/29 RF; permisos 119 correctas y 0 fallidas) |
 | 8. Paso "Backend" | Terminada (bomberos: `crear-usuario` y `notificar-push` con Haiku 5.5; prueba de `crear-usuario` 3/3 correctas) |
-| **9. Paso "Web"** | **Siguiente** (en la interfaz figura como "Frontend"; se construirá para servir también a la app móvil) |
+| **9. Paso "Web"** | **Implementado (8 de noviembre) como paso "Frontend" para web y móvil; falta generar, compilar y aprobar la web de bomberos** |
 | 10. Paso "Móvil" | Opcional, si da el tiempo |
 | 11. Cierre y publicación | El 10 de noviembre: subir a `main`, Azure, dirección pública por proyecto y ensayo |
 
@@ -1041,6 +1041,23 @@ Archivos principales: `lib/accionesContrato.js`, `lib/inventarioContrato.js`, `l
 4. Validar en contenedores: la aplicación compila y abre.
 
 **Terminado cuando:** la web funciona en el navegador, con la navegación del árbol aprobado y datos reales.
+
+#### Implementación (8 de noviembre): paso "Frontend" para la web y la app
+
+Un solo paso, `impl_frontend` ("Frontend" en la interfaz), para las dos plataformas: cubre esta etapa y deja lista la Etapa 10.
+
+- Columna `frontend_implementacion` (`supabase/frontend_implementacion.sql`, hay que ejecutarla en el SQL Editor); archivos en `archivos_proyecto` con `paso = 'impl_frontend'`. La ficha guarda por plataforma sus archivos, si quedó incompleta y la última compilación.
+- `lib/archivosFrontend.js`: los archivos de cada plataforma salen de la estructura aprobada (web: piezas `nextjs` o `react`; móvil: `flutter`) y se generan **por capas**: configuración, estilos, modelos, servicios, componentes, navegación y páginas. Cada capa recibe el código de las anteriores.
+- `lib/frontend.js` y `/api/generar-frontend`: un archivo por petición, **de a 4 en paralelo** dentro de cada capa. Cada archivo recibe:
+  - la guía y los **archivos fijos** de la pieza, con su código (por ejemplo `lib/supabase/navegador.js`);
+  - la lista de archivos de su plataforma (rutas exactas para importar) y el código de las capas anteriores;
+  - si es una página, **el HTML y el CSS de su pantalla del prototipo** (hasta 70.000 caracteres la primera; 20.000 las variantes de una ruta dinámica), **los controles de la pantalla con lo que hace cada uno según el contrato** y las operaciones que usan, con sus esquemas;
+  - el árbol de navegación para el menú y las páginas.
+- Revisión determinista con un reintento: importaciones relativas que existen en la estructura o en los fijos; sin el alias `@/` si no hay `jsconfig.json`; paquetes importados que están en `package.json` o `pubspec.yaml`; `"use client"` cuando hay estado o eventos; `export default` en páginas y layouts; sin claves escritas; en Flutter, las importaciones `package:<app>/` que existen.
+- **Compilar y corregir** (`/api/compilar-frontend` y la operación `compilar` del runner): arma el proyecto con todo lo generado, construye en Docker la imagen de la plataforma (`docker compose build` del servicio que se construye desde `web/` o `movil/`, en un proyecto aparte `<id>-compilar`) y, si falla, ubica el archivo citado en el error, lo regenera con el error y vuelve a compilar, hasta 3 veces.
+- La página genera cada plataforma con su botón ("Generar web", "Generar móvil"), guarda cada archivo apenas llega y ofrece "Continuar"; la cascada no lo regenera solo; no se aprueba con una plataforma incompleta o sin compilar; los archivos se editan en el explorador.
+- Pruebas: `tests/frontend.test.mjs` (6: capas, importaciones, "use client", paquetes, Flutter, archivo que falló) y `tests/frontend-prompt.test.mjs` (contexto de una página).
+- **Lo que falta comprobar con bomberos:** que la web compile con las 3 correcciones automáticas y que, levantada, inicie sesión y muestre datos reales. La estimación con Haiku: 50 archivos web por unos 50 centavos a 1,50 dólares (las páginas llevan su pantalla del prototipo, de unos 200.000 caracteres).
 
 ---
 
