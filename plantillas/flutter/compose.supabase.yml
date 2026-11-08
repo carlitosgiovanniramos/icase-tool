@@ -2,7 +2,8 @@ services:
   movil:
     build:
       args:
-        SUPABASE_URL: http://localhost:${SUPABASE_PORT:-8000}
+        # La fija el runner: localhost en la PC, la dirección pública HTTPS en el servidor.
+        SUPABASE_URL: ${SUPABASE_URL_PUBLICA:-http://localhost:8000}
         SUPABASE_ANON_KEY: ${ANON_KEY}
     depends_on:
       api-gw:

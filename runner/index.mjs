@@ -7,6 +7,11 @@
 //   RUNNER_PORT              puerto del runner (por defecto 4100)
 //   WORKSPACES_DIR           carpeta de trabajo de los proyectos (por defecto C:\icase-workspaces en Windows, /srv/icase-workspaces en Linux)
 //   RUNNER_INACTIVIDAD_MIN   minutos sin uso antes de apagar un proyecto (por defecto 60)
+//   DIRECCION_PUBLICA        nombre DNS del servidor (en Azure). Con él, cada puerto de un proyecto se publica
+//                            por HTTPS con Caddy en el puerto + 10000, y la web y la app se compilan con la
+//                            dirección pública de Supabase. Sin él (la PC), todo queda en localhost.
+//   CADDY_PROYECTOS          carpeta con un sitio de Caddy por proyecto (por defecto /srv/icase-caddy)
+//   CADDY_CONFIG             Caddyfile principal, que importa esa carpeta (por defecto /etc/caddy/Caddyfile)
 
 import http from "node:http";
 import net from "node:net";
@@ -27,6 +32,11 @@ const MAX_CUERPO = 20 * 1024 * 1024;
 const MAX_SALIDA = 100_000; // caracteres de salida de docker que se conservan por proyecto
 const ESPERA_CORTA_MS = 60_000; // estado, logs
 const ESPERA_LARGA_MS = 15 * 60_000; // construir imágenes y levantar
+const DIRECCION_PUBLICA = (process.env.DIRECCION_PUBLICA || "").trim();
+const CADDY_PROYECTOS = process.env.CADDY_PROYECTOS || "/srv/icase-caddy";
+const CADDY_CONFIG = process.env.CADDY_CONFIG || "/etc/caddy/Caddyfile";
+const DESPLAZAMIENTO_PUBLICO = 10_000;
+const NO_HTTP = /DB|POSTGRES|MYSQL|MONGO|REDIS/; // puertos que no son páginas ni APIs HTTP
 
 // Toda variable de .env que termina en _PORT es un puerto de la PC donde se publica un contenedor;
 // su valor en .env.example es el primer puerto que se prueba.
@@ -208,6 +218,51 @@ async function asignarPuertos(variables, encendido) {
   return variables;
 }
 
+// Dirección con que se abre un puerto del proyecto: en el servidor, HTTPS por Caddy en el puerto + 10000
+// (el mismo certificado del nombre DNS); en la PC, localhost.
+function direccionDe(clave, puerto) {
+  if (DIRECCION_PUBLICA && !NO_HTTP.test(clave) && puerto + DESPLAZAMIENTO_PUBLICO <= 65535) {
+    return `https://${DIRECCION_PUBLICA}:${puerto + DESPLAZAMIENTO_PUBLICO}`;
+  }
+  return `http://localhost:${puerto}`;
+}
+
+const direcciones = (variables) =>
+  Object.fromEntries(Object.entries(variables).filter(([k, v]) => ES_PUERTO.test(k) && Number(v)).map(([k, v]) => [k, direccionDe(k, Number(v))]));
+
+// La web y la vista web de la app se compilan con la dirección de Supabase que verá el navegador.
+function conDireccionPublica(variables) {
+  if (variables.SUPABASE_PORT) variables.SUPABASE_URL_PUBLICA = direccionDe("SUPABASE_PORT", Number(variables.SUPABASE_PORT));
+  return variables;
+}
+
+function ejecutar(comando, argumentos) {
+  return new Promise((resolver, rechazar) => {
+    const proceso = spawn(comando, argumentos, { stdio: ["ignore", "pipe", "pipe"] });
+    let salida = "";
+    proceso.stdout.on("data", (d) => (salida += d));
+    proceso.stderr.on("data", (d) => (salida += d));
+    proceso.on("error", rechazar);
+    proceso.on("close", (codigo) => (codigo === 0 ? resolver(salida) : rechazar(new Error(salida.trim().slice(-500) || `${comando} terminó con ${codigo}`))));
+  });
+}
+
+// En el servidor, un sitio de Caddy por puerto del proyecto (<id>.caddy en CADDY_PROYECTOS, que importa
+// el Caddyfile principal) y se recarga Caddy. Si no se puede, el proyecto se levanta igual.
+async function publicarEnCaddy(id, variables) {
+  if (!DIRECCION_PUBLICA) return;
+  const sitios = Object.entries(variables)
+    .filter(([k, v]) => ES_PUERTO.test(k) && !NO_HTTP.test(k) && Number(v) && Number(v) + DESPLAZAMIENTO_PUBLICO <= 65535)
+    .map(([k, v]) => `# ${k}\n${DIRECCION_PUBLICA}:${Number(v) + DESPLAZAMIENTO_PUBLICO} {\n\treverse_proxy 127.0.0.1:${Number(v)}\n}\n`);
+  try {
+    await mkdir(CADDY_PROYECTOS, { recursive: true });
+    await writeFile(path.join(CADDY_PROYECTOS, `${id}.caddy`), `# Proyecto ${id}: lo escribe el runner al levantarlo.\n${sitios.join("\n")}`, "utf8");
+    await ejecutar("caddy", ["reload", "--config", CADDY_CONFIG, "--adapter", "caddyfile"]);
+  } catch (err) {
+    console.error(`No se pudo publicar ${id} en Caddy:`, err.message);
+  }
+}
+
 // Claves que piden las piezas en .env.example, generadas una vez por proyecto:
 //   {{secreto:hex:N}} / {{secreto:base64:N}}   N bytes aleatorios
 //   {{jwt:<rol>}}                               JWT HS256 firmado con JWT_SECRET (claves de Supabase)
@@ -312,7 +367,7 @@ async function compilar(id, { archivos, servicios = [] }) {
       await writeFile(destino, String(a.contenido ?? ""), "utf8");
     }
     const ejemplo = leerVariables(archivos.find((a) => a.ruta === ".env.example")?.contenido);
-    await writeFile(path.join(carpeta, ".env"), escribirVariables(completarVariables(ejemplo, {})), "utf8");
+    await writeFile(path.join(carpeta, ".env"), escribirVariables(conDireccionPublica(completarVariables(ejemplo, {}))), "utf8");
     let salida = "";
     try {
       await compose(idPrueba, ["build", ...servicios], { espera: ESPERA_LARGA_MS, alSalir: (s) => (salida = s) });
@@ -356,7 +411,9 @@ function levantar(id, servicios = []) {
       const variables = await leerEnv(carpeta);
       if (!variables) throw new ErrorRunner(400, "Primero hay que sincronizar los archivos del proyecto.");
       const encendido = (await contenedores(id)).some((c) => c.estado === "running");
-      await writeFile(path.join(carpeta, ".env"), escribirVariables(await asignarPuertos(variables, encendido)), "utf8");
+      const asignadas = conDireccionPublica(await asignarPuertos(variables, encendido));
+      await writeFile(path.join(carpeta, ".env"), escribirVariables(asignadas), "utf8");
+      await publicarEnCaddy(id, asignadas);
 
       await compose(id, ["up", "-d", "--build", "--wait", "--remove-orphans", ...servicios], {
         espera: ESPERA_LARGA_MS,
@@ -390,6 +447,8 @@ async function consultarEstado(id) {
     puertos: Object.fromEntries(
       Object.entries(variables).filter(([k]) => ES_PUERTO.test(k)).map(([k, v]) => [k, Number(v)])
     ),
+    // Dirección con que se abre cada puerto ({ WEB_PORT: "https://...:13001", ... }).
+    direcciones: direcciones(variables),
   };
 }
 
