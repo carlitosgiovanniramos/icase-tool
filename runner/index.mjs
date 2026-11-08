@@ -7,6 +7,11 @@
 //   RUNNER_PORT              puerto del runner (por defecto 4100)
 //   WORKSPACES_DIR           carpeta de trabajo de los proyectos (por defecto C:\icase-workspaces en Windows, /srv/icase-workspaces en Linux)
 //   RUNNER_INACTIVIDAD_MIN   minutos sin uso antes de apagar un proyecto (por defecto 60)
+//   DIRECCION_PUBLICA        nombre DNS del servidor (en Azure). Con él, cada puerto de un proyecto se publica
+//                            por HTTPS con Caddy en el puerto + 10000, y la web y la app se compilan con la
+//                            dirección pública de Supabase. Sin él (la PC), todo queda en localhost.
+//   CADDY_PROYECTOS          carpeta con un sitio de Caddy por proyecto (por defecto /srv/icase-caddy)
+//   CADDY_CONFIG             Caddyfile principal, que importa esa carpeta (por defecto /etc/caddy/Caddyfile)
 
 import http from "node:http";
 import net from "node:net";
@@ -27,6 +32,11 @@ const MAX_CUERPO = 20 * 1024 * 1024;
 const MAX_SALIDA = 100_000; // caracteres de salida de docker que se conservan por proyecto
 const ESPERA_CORTA_MS = 60_000; // estado, logs
 const ESPERA_LARGA_MS = 15 * 60_000; // construir imágenes y levantar
+const DIRECCION_PUBLICA = (process.env.DIRECCION_PUBLICA || "").trim();
+const CADDY_PROYECTOS = process.env.CADDY_PROYECTOS || "/srv/icase-caddy";
+const CADDY_CONFIG = process.env.CADDY_CONFIG || "/etc/caddy/Caddyfile";
+const DESPLAZAMIENTO_PUBLICO = 10_000;
+const NO_HTTP = /DB|POSTGRES|MYSQL|MONGO|REDIS/; // puertos que no son páginas ni APIs HTTP
 
 // Toda variable de .env que termina en _PORT es un puerto de la PC donde se publica un contenedor;
 // su valor en .env.example es el primer puerto que se prueba.
@@ -208,6 +218,51 @@ async function asignarPuertos(variables, encendido) {
   return variables;
 }
 
+// Dirección con que se abre un puerto del proyecto: en el servidor, HTTPS por Caddy en el puerto + 10000
+// (el mismo certificado del nombre DNS); en la PC, localhost.
+function direccionDe(clave, puerto) {
+  if (DIRECCION_PUBLICA && !NO_HTTP.test(clave) && puerto + DESPLAZAMIENTO_PUBLICO <= 65535) {
+    return `https://${DIRECCION_PUBLICA}:${puerto + DESPLAZAMIENTO_PUBLICO}`;
+  }
+  return `http://localhost:${puerto}`;
+}
+
+const direcciones = (variables) =>
+  Object.fromEntries(Object.entries(variables).filter(([k, v]) => ES_PUERTO.test(k) && Number(v)).map(([k, v]) => [k, direccionDe(k, Number(v))]));
+
+// La web y la vista web de la app se compilan con la dirección de Supabase que verá el navegador.
+function conDireccionPublica(variables) {
+  if (variables.SUPABASE_PORT) variables.SUPABASE_URL_PUBLICA = direccionDe("SUPABASE_PORT", Number(variables.SUPABASE_PORT));
+  return variables;
+}
+
+function ejecutar(comando, argumentos) {
+  return new Promise((resolver, rechazar) => {
+    const proceso = spawn(comando, argumentos, { stdio: ["ignore", "pipe", "pipe"] });
+    let salida = "";
+    proceso.stdout.on("data", (d) => (salida += d));
+    proceso.stderr.on("data", (d) => (salida += d));
+    proceso.on("error", rechazar);
+    proceso.on("close", (codigo) => (codigo === 0 ? resolver(salida) : rechazar(new Error(salida.trim().slice(-500) || `${comando} terminó con ${codigo}`))));
+  });
+}
+
+// En el servidor, un sitio de Caddy por puerto del proyecto (<id>.caddy en CADDY_PROYECTOS, que importa
+// el Caddyfile principal) y se recarga Caddy. Si no se puede, el proyecto se levanta igual.
+async function publicarEnCaddy(id, variables) {
+  if (!DIRECCION_PUBLICA) return;
+  const sitios = Object.entries(variables)
+    .filter(([k, v]) => ES_PUERTO.test(k) && !NO_HTTP.test(k) && Number(v) && Number(v) + DESPLAZAMIENTO_PUBLICO <= 65535)
+    .map(([k, v]) => `# ${k}\n${DIRECCION_PUBLICA}:${Number(v) + DESPLAZAMIENTO_PUBLICO} {\n\treverse_proxy 127.0.0.1:${Number(v)}\n}\n`);
+  try {
+    await mkdir(CADDY_PROYECTOS, { recursive: true });
+    await writeFile(path.join(CADDY_PROYECTOS, `${id}.caddy`), `# Proyecto ${id}: lo escribe el runner al levantarlo.\n${sitios.join("\n")}`, "utf8");
+    await ejecutar("caddy", ["reload", "--config", CADDY_CONFIG, "--adapter", "caddyfile"]);
+  } catch (err) {
+    console.error(`No se pudo publicar ${id} en Caddy:`, err.message);
+  }
+}
+
 // Claves que piden las piezas en .env.example, generadas una vez por proyecto:
 //   {{secreto:hex:N}} / {{secreto:base64:N}}   N bytes aleatorios
 //   {{jwt:<rol>}}                               JWT HS256 firmado con JWT_SECRET (claves de Supabase)
@@ -291,6 +346,40 @@ async function sincronizar(id, archivos, firma) {
   return { archivos: destinos.length };
 }
 
+// Compila las imágenes de unos servicios (la web, la app) en un proyecto aparte (<id>-compilar), sin
+// levantarlos ni tocar el proyecto del usuario. Devuelve si compiló y la salida, para corregir el
+// archivo que falló.
+async function compilar(id, { archivos, servicios = [] }) {
+  if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
+  if (!servicios.length) throw new ErrorRunner(400, "No se indicó qué compilar.");
+  for (const s of servicios) if (!SERVICIO_VALIDO.test(s)) throw new ErrorRunner(400, `Servicio no válido: ${s}`);
+  const idPrueba = `${id}-compilar`;
+  const carpeta = carpetaDe(idPrueba);
+  const estado = estadoDe(idPrueba);
+  if (estado.operacion) throw new ErrorRunner(409, "Ya hay una compilación en curso para este proyecto.");
+  estado.operacion = "compilando";
+  try {
+    await rm(carpeta, { recursive: true, force: true });
+    await mkdir(carpeta, { recursive: true });
+    for (const a of archivos) {
+      const destino = rutaSegura(carpeta, a.ruta);
+      await mkdir(path.dirname(destino), { recursive: true });
+      await writeFile(destino, String(a.contenido ?? ""), "utf8");
+    }
+    const ejemplo = leerVariables(archivos.find((a) => a.ruta === ".env.example")?.contenido);
+    await writeFile(path.join(carpeta, ".env"), escribirVariables(conDireccionPublica(completarVariables(ejemplo, {}))), "utf8");
+    let salida = "";
+    try {
+      await compose(idPrueba, ["build", ...servicios], { espera: ESPERA_LARGA_MS, alSalir: (s) => (salida = s) });
+      return { ok: true, salida: salida.slice(-20_000) };
+    } catch (err) {
+      return { ok: false, salida: String(err.salida || salida || err.message).slice(-20_000) };
+    }
+  } finally {
+    estado.operacion = null;
+  }
+}
+
 async function contenedores(id) {
   const salida = await compose(id, ["ps", "-a", "--format", "json"]);
   const texto = salida.trim();
@@ -322,7 +411,9 @@ function levantar(id, servicios = []) {
       const variables = await leerEnv(carpeta);
       if (!variables) throw new ErrorRunner(400, "Primero hay que sincronizar los archivos del proyecto.");
       const encendido = (await contenedores(id)).some((c) => c.estado === "running");
-      await writeFile(path.join(carpeta, ".env"), escribirVariables(await asignarPuertos(variables, encendido)), "utf8");
+      const asignadas = conDireccionPublica(await asignarPuertos(variables, encendido));
+      await writeFile(path.join(carpeta, ".env"), escribirVariables(asignadas), "utf8");
+      await publicarEnCaddy(id, asignadas);
 
       await compose(id, ["up", "-d", "--build", "--wait", "--remove-orphans", ...servicios], {
         espera: ESPERA_LARGA_MS,
@@ -356,6 +447,8 @@ async function consultarEstado(id) {
     puertos: Object.fromEntries(
       Object.entries(variables).filter(([k]) => ES_PUERTO.test(k)).map(([k, v]) => [k, Number(v)])
     ),
+    // Dirección con que se abre cada puerto ({ WEB_PORT: "https://...:13001", ... }).
+    direcciones: direcciones(variables),
   };
 }
 
@@ -418,7 +511,7 @@ const CONSULTAS_OPCIONALES = {
 //   servicio, modo: "tarea" (servicio de un solo uso que aplica los archivos, como migraciones de
 //     Supabase) o "servicio" (la base aplica sus scripts al crearse, como PostgreSQL)
 //   conexion: { usuario, baseDatos }, con ${VARIABLE} del .env si hace falta
-async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, inventario = false, contrato, actores = [] }) {
+async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, inventario = false, contrato, actores = [], funciones = false }) {
   if (!Array.isArray(archivos) || !archivos.length) throw new ErrorRunner(400, "No llegaron archivos.");
   if (!SERVICIO_VALIDO.test(String(servicio))) throw new ErrorRunner(400, "Servicio no válido.");
   if (!["tarea", "servicio"].includes(modo)) throw new ErrorRunner(400, "Modo de prueba no válido.");
@@ -488,8 +581,9 @@ async function probarBaseDatos(id, { archivos, servicio, modo, conexion = {}, in
     if (inventario) resumen.inventario = await psql(CONSULTA_INVENTARIO);
     if (contrato) {
       const usuarios = await psql(CONSULTA_USUARIOS_CONTRATO);
-      await compose(idPrueba, ["up", "-d", "--wait", "rest", "auth", "api-gw"], { espera: 100_000 });
-      resumen.pruebaContrato = await probarPermisosContrato({ baseUrl: `http://127.0.0.1:${variables.SUPABASE_PORT}`, anonKey: variables.ANON_KEY, usuarios, actores, contrato });
+      // funciones: el backend (Edge Functions) ya está generado y se prueba con el contrato.
+      await compose(idPrueba, ["up", "-d", "--wait", "rest", "auth", "api-gw", ...(funciones ? ["functions"] : [])], { espera: 100_000 });
+      resumen.pruebaContrato = await probarPermisosContrato({ baseUrl: `http://127.0.0.1:${variables.SUPABASE_PORT}`, anonKey: variables.ANON_KEY, usuarios, actores, contrato, conFunciones: funciones, ...(funciones ? { presupuestoMs: 150_000 } : {}) });
     }
     return resumen;
   } finally {
@@ -564,6 +658,7 @@ const servidor = http.createServer(async (req, res) => {
     if (ruta === "POST detener") return responder(res, 200, await detener(id, await leerCuerpo(req)));
     if (ruta === "POST eliminar") return responder(res, 200, await detener(id, { eliminar: true }));
     if (ruta === "POST probarbd") return responder(res, 200, await probarBaseDatos(id, await leerCuerpo(req)));
+    if (ruta === "POST compilar") return responder(res, 200, await compilar(id, await leerCuerpo(req)));
     throw new ErrorRunner(404, "Ruta no encontrada.");
   } catch (err) {
     if (!(err instanceof ErrorRunner)) console.error(err);

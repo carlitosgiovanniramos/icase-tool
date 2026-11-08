@@ -118,6 +118,29 @@ export const PASOS = [
     ruta: "/api/generar-contrato",
     archivos: true,
   },
+  // Lógica de negocio que cumple el contrato: con Supabase, las Edge Functions; con Express, el
+  // servidor. Un archivo por petición, como la base de datos, y prueba con la del contrato.
+  {
+    clave: "impl_backend",
+    fase: "implementacion",
+    nombre: "Backend",
+    aprobacion: "impl_backend",
+    columna: "backend_implementacion",
+    ruta: "/api/generar-backend",
+    archivos: true,
+  },
+  // La web y la app: cada plataforma se genera aparte, por capas y con varios archivos a la vez, y se
+  // prueba compilando su imagen en Docker. La columna guarda, por plataforma, los archivos y la
+  // última compilación.
+  {
+    clave: "impl_frontend",
+    fase: "implementacion",
+    nombre: "Frontend",
+    aprobacion: "impl_frontend",
+    columna: "frontend_implementacion",
+    ruta: "/api/generar-frontend",
+    archivos: true,
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));

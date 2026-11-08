@@ -133,7 +133,7 @@ async function estadoConEnlaces(base) {
   const enlaces = encendido
     ? Object.entries(estado.puertos || {})
         .filter(([variable]) => nombres[variable])
-        .map(([variable, puerto]) => ({ nombre: nombres[variable], url: `http://localhost:${puerto}` }))
+        .map(([variable, puerto]) => ({ nombre: nombres[variable], url: estado.direcciones?.[variable] || `http://localhost:${puerto}` }))
     : [];
   return { ...estado, enlaces };
 }

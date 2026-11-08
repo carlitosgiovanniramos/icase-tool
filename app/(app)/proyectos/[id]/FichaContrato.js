@@ -2,6 +2,31 @@
 
 import { useState } from "react";
 
+// Primer contrato pegado a mano (JSON con operaciones y acciones), sin generarlo con IA. Se valida igual
+// que una edición, contra el inventario de la base probada.
+export function PegarContrato({ deshabilitado, onGuardar }) {
+  const [texto, setTexto] = useState(null);
+  const [error, setError] = useState("");
+  async function guardar() {
+    let actual;
+    try { actual = JSON.parse(texto); } catch { setError("El JSON no es válido."); return; }
+    setError("");
+    if (await onGuardar(actual)) setTexto(null);
+  }
+  if (texto === null) return <button disabled={deshabilitado} onClick={() => setTexto("")} className="border px-3 py-2 text-sm disabled:opacity-50">Pegar contrato</button>;
+  return (
+    <div className="mt-3 text-sm">
+      <label className="block mb-2" htmlFor="contrato-pegado">Operaciones y acciones (JSON)</label>
+      <textarea id="contrato-pegado" value={texto} onChange={(e) => setTexto(e.target.value)} disabled={deshabilitado} spellCheck={false} className="w-full h-72 border p-3 font-mono text-xs" />
+      {error && <p role="alert" className="text-red-700">{error}</p>}
+      <div className="flex gap-3 mt-2">
+        <button disabled={deshabilitado || !texto.trim()} onClick={guardar} className="border px-3 py-2 disabled:opacity-50">Validar y guardar</button>
+        <button disabled={deshabilitado} onClick={() => { setTexto(null); setError(""); }} className="border px-3 py-2">Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 export default function FichaContrato({ contrato, editable, deshabilitado, onGuardar, onProbar }) {
   const [borrador, setBorrador] = useState(null);
   const [error, setError] = useState("");
