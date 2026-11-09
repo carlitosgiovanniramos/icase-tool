@@ -74,10 +74,20 @@ Después, la app móvil con la misma lista y, al final, el APK.
 | 13 | Web · Personal y Movimientos | El patrón aprobado en Usuarios (tabla a todo el ancho y ficha al estilo del prototipo en un sheet) se aplica a Personal (etiquetas de tipo y estado sobrias; cargo y guardia editables en el sheet con "Guardar") y a Movimiento de unidades (tabla de hojas con fecha, guardia, responsable, movimientos, recorrido y estado; la hoja completa en un sheet ancho con kilometrajes, movimientos, "Continuar la hoja" y PDF). La ficha compartida queda en `globals.css` (`fi-…`) | Hecha, por probar |
 | 14 | Web · todas | El atributo hidden no ocultaba los botones que el CSS del prototipo muestra con display (por ejemplo "Generar Parte" con el administrador, que solo consulta partes): regla global `[hidden]{display:none !important}` | Hecha, por probar |
 | 15 | Web · Emergencias | Lista de partes con el estilo de las demás tablas: filtros con etiqueta (búsqueda por número o dirección, mes, estado) y chips, columnas del prototipo de cada tipo, estado con cuadrito, Ver y PDF como botones, la fila abre el parte y 6 por página | Hecha, por probar |
+| 16 | Web · Jefe de guardia · Bitácoras | Tabla de bitácoras a todo el ancho (número, período, guardia, jefe, registro y estado) con filtros por año, mes, guardia y estado; la bitácora completa en un sheet ancho (personal, novedades, actividades por día, pendientes, entrega) con "Continuar la bitácora" y PDF; el menú lateral solo navega | Hecha, por probar |
 | 12 | Web · todas | Esquinas rectas en todo (tarjetas, filtros, botones, etiquetas, paneles y formularios) con una regla global, y estilo sobrio: sin degradados ni avatares de colores | Hecha, por probar |
 | 10 | Web · Administrador · Crear usuario | El correo había perdido el estilo (el CSS del prototipo solo cubre `input[type="text"]`); se valida en su campo (formato y correo repetido), muestra la ficha de la persona elegida y el rol sugerido, copia la contraseña temporal y, al crear la cuenta, una confirmación con el correo y la contraseña para entregarlos | Hecha, por probar |
 | 11 | icase-tool · Ejecución | Botón "Borrar datos" (borra la base y los archivos del proyecto, también con los contenedores sin crear); el runner ya lo permitía, el panel no lo ofrecía | Hecha (commit `c587632`, en `develop`) |
 | 7 | Web · todas · tablas | Tablas y sus tarjetas sin bordes redondeados; la tabla de Personal ya no se corta ni pierde la paginación y se ordena por lo que se ve | Hecha, por probar |
+
+
+**Para retomar (al cerrar el 8 de noviembre):**
+
+1. **Aplicar y probar lo último:** `actualizar-web.sql` es acumulado (16 archivos: todas las correcciones de la web). Pegar → "Compilar y corregir" de la web → "Actualizar y reiniciar" → Ctrl + F5. Los SQL de base y contrato ya ejecutados: `correccion-personal.sql`, `correccion-turnos.sql` y `correccion-vehiculos.sql` (los turnos y las guardias "1" y "2" necesitan haber levantado con "Borrar datos").
+2. **Web, lo que falta modernizar con el mismo estilo** (tabla a todo el ancho, filtros con etiqueta y chips, sheet al estilo del prototipo, esquinas rectas, errores en su campo): los formularios de parte (cinco tipos), el de bitácora, el de movimiento y la página de Inicio. Después, la prueba por rol del plan de arriba con el bombero y el jefe de guardia.
+3. **App móvil:** la misma prueba por pantalla y, al final, el APK de Android con la dirección pública.
+4. **Publicar las correcciones:** merge de `develop` a `main` (lo hace el usuario; incluye el botón "Borrar datos"), encender la VM, en icase-tool desde Vercel: "Borrar datos" → "Levantar" de bomberos, y probar desde el celular con datos móviles.
+5. **VM de respaldo** con la cuenta de la compañera del usuario (pasos ya enviados) y el ensayo de la presentación del 10 de noviembre.
 
 Pendientes inmediatos:
 
