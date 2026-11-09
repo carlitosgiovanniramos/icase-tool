@@ -49,7 +49,8 @@ export default function FaseStepper({ fasesAprobadas, hayDiseno, vista, onNavega
       bloqueado: !disenoAprobado,
     },
     {
-      // No se aprueba: es el documento con las dos fases, disponible cuando ambas lo están.
+      // No se aprueba: es el documento con las fases aprobadas (Análisis y Diseño, y la Implementación
+      // cuando también lo está); se habilita con Análisis y Diseño aprobados.
       clave: "informe",
       numero: "4",
       nombre: "Informe",
