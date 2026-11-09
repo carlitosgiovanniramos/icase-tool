@@ -404,6 +404,26 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
     }
   }
 
+  // Apaga el proyecto y borra su base y sus archivos (volúmenes de Docker): al levantarlo de nuevo se
+  // aplican las migraciones y los datos de prueba desde cero. Sirve también con los contenedores sin crear.
+  async function borrarDatos() {
+    const ok = await confirmar(
+      "Se borran la base de datos y los archivos subidos del proyecto. Al levantarlo se crean de nuevo con los datos de prueba.",
+      "¿Borrar los datos?",
+      "Borrar datos"
+    );
+    if (!ok) return;
+    setEnviando(true);
+    try {
+      await llamar(proyectoId, "detener", { borrarDatos: true });
+      await consultar();
+    } catch (err) {
+      mostrarError(err.message, "No se pudieron borrar los datos");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
   async function detener() {
     const ok = await confirmar("Los datos de la base se conservan.", "¿Detener los contenedores?", "Detener");
     if (!ok) return;
@@ -466,6 +486,15 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
             className="border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
           >
             {estado?.operacion === "deteniendo" ? "Deteniendo..." : "Detener"}
+          </button>
+        )}
+        {hayArchivos && estado?.sincronizado && (
+          <button
+            onClick={borrarDatos}
+            disabled={ocupado}
+            className="border border-red-200 text-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-50 disabled:opacity-50"
+          >
+            Borrar datos
           </button>
         )}
         {!operando &&

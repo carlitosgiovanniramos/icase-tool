@@ -9,16 +9,19 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 
 ## Estado actual (8 de noviembre de 2026)
 
-**Se está preparando la presentación desplegada del 10 de noviembre (ver "Plan de la semana"). Las Etapas 1 a 8 están terminadas: la cadena de Implementación de bomberos se rehízo desde cero (stack, estructura, base, contrato de API y backend), todo probado en contenedores. Lo siguiente es la Etapa 9 (Web), la más importante para la presentación; después, el despliegue en Azure, y la Etapa 10 (Móvil) solo si da el tiempo.** Los cambios están en `develop` (commits `eb68c56` y `1861771`); falta pasarlos a `main` para que Vercel los publique.
+**Bomberos funciona completo y desplegado: la web y la app móvil corren en Azure con direcciones públicas HTTPS y se abren desde Vercel. Empezó la fase de correcciones: el usuario prueba todas las funciones (primero el panel web, después la móvil) y pasa lo que hay que corregir.** Todo está en `main` (PR #18 y #19, fusionados el 7 de noviembre); Vercel lo publica.
 
 - **Bomberos (rehecho desde el 3 de noviembre):**
   - stack técnico aprobado (Next.js, Flutter y Supabase con alta disponibilidad del panel web; `firebase_core` agregado a mano);
   - estructura de carpetas aprobada: 129 archivos (Next.js 50, Flutter 58, Supabase 21), 36/36 pantallas, 22/22 tablas, 14/14 módulos, 29/29 RF. Flutter y Supabase los generó Claude Sonnet 5; la pieza Next.js se cortó por el límite de tokens y la escribió Claude en la conversación, pasó el validador del código sin avisos y se insertó con SQL (ver "Avance del 5 al 8 de noviembre");
   - base de datos generada con Claude Haiku 5.5 (unos 20 centavos), revisada archivo por archivo, con 5 archivos corregidos y probada de nuevo: 22/22 tablas con RLS, políticas y datos, y 3 usuarios. Después se agregaron al seed registros para la prueba de permisos (partes 7 y 8, bitácoras vehiculares 3 a 6, bitácora de guardia 2);
   - contrato de API escrito a mano en la conversación y pegado con "Pegar contrato": 48 operaciones, 728/728 controles, 29/29 RF, 0 errores; prueba de permisos 119 correctas, 0 fallidas, 16 sin verificar (operaciones sin datos de prueba posibles) y 4 pendientes (Auth); aprobado;
-  - backend: `crear-usuario` y `notificar-push` generadas con Haiku 5.5; `crear-usuario` corregida a mano (contraseña temporal en vez de invitación por correo) y probada en Docker: Administrador crea la cuenta, Bombero y Jefe de guardia reciben 403.
-- **Azure:** máquina, Docker, runner y Caddy con HTTPS funcionando; Vercel conectado. La máquina se apaga cuando no se usa.
+  - backend: `crear-usuario` y `notificar-push` generadas con Haiku 5.5; `crear-usuario` corregida a mano (contraseña temporal en vez de invitación por correo) y probada en Docker: Administrador crea la cuenta, Bombero y Jefe de guardia reciben 403;
+  - **frontend escrito a mano, sin IA, e insertado con SQL** (ver "Frontend de bomberos y despliegue (7 de noviembre)"): la web (50 archivos) reutiliza el HTML y el CSS de cada pantalla del prototipo aprobado con sus scripts conectados a la base; la app móvil (58 archivos) es Flutter con el diseño del prototipo. Las dos pasan el validador del paso Frontend sin avisos, compilan en Docker y el paso está aprobado.
+- **Azure:** la máquina publica cada proyecto levantado por HTTPS (Caddy, puerto + 10000). Bomberos: web `https://icase-tool.chilecentral.cloudapp.azure.com:13000`, móvil `:18090` y API de Supabase `:18000`. La máquina se apaga (Detener, desasignada) cuando no se usa.
 - **El taller** no se rehízo; entra solo si sobra tiempo.
+
+**Usuarios de prueba de bomberos** (contraseña `Prueba123!`): `administrador@prueba.local`, `jefe_guardia@prueba.local` (Luis Fernando Paredes Ruiz, capitán, guardia A) y `bombero@prueba.local` (Carlos Andrés Mena Vásquez, guardia A).
 
 | Etapa | Estado |
 |---|---|
@@ -30,30 +33,81 @@ Guía de construcción de la fase de Implementación de icase-tool: cómo se usa
 | 6. Paso "Base de datos" | Terminada (base de bomberos rehecha con Haiku 5.5 y probada 22/22) |
 | 7. Paso "Contrato / API" | Terminada (contrato de bomberos: 48 operaciones, 728/728 controles, 29/29 RF; permisos 119 correctas y 0 fallidas) |
 | 8. Paso "Backend" | Terminada (bomberos: `crear-usuario` y `notificar-push` con Haiku 5.5; prueba de `crear-usuario` 3/3 correctas) |
-| **9. Paso "Web"** | **Implementado (8 de noviembre) como paso "Frontend" para web y móvil; falta generar, compilar y aprobar la web de bomberos** |
-| 10. Paso "Móvil" | Opcional, si da el tiempo |
-| 11. Cierre y publicación | El 10 de noviembre: subir a `main`, Azure, dirección pública por proyecto y ensayo |
+| 9. Paso "Web" | Terminada como paso "Frontend" (web y móvil). Bomberos: web de 50 archivos escrita a mano a partir del prototipo, compilada y aprobada |
+| 10. Paso "Móvil" | Terminada dentro del paso "Frontend". Bomberos: app Flutter de 58 archivos escrita a mano, compilada (vista web en Docker) |
+| 11. Cierre y publicación | Desplegado el 7 de noviembre (dirección pública por proyecto). **En curso: fase de correcciones**, VM de respaldo, APK de Android y ensayo |
+
+### Fase de correcciones (desde el 8 de noviembre)
+
+Se prueba bomberos desplegado, función por función y por rol, y se corrige lo que falle o no guste. Orden: primero el panel web, después la app móvil.
+
+**Cómo se corrige:** el código del frontend de bomberos se escribe a mano en `respaldos/frontend-bomberos/fuente/` (ignorada por git). `node respaldos/frontend-bomberos/armar.mjs web` (o `movil`) lo revisa con el validador del paso Frontend y regenera `insertar-web.sql` (o `insertar-movil.sql`); el usuario lo pega en el SQL Editor de Supabase, pulsa "Compilar y corregir" de esa plataforma (si compila a la primera no usa IA) y "Actualizar y reiniciar". Volver a ejecutar un SQL borra el resultado de compilación de esa plataforma: hay que recompilarla.
+
+- Para una corrección, `node respaldos/frontend-bomberos/armar.mjs web <rutas...>` genera `actualizar-web.sql` solo con esos archivos y la ficha (decenas de KB en vez de 700).
+- Los cambios de base o contrato van en su propio SQL (`correccion-personal.sql`, `correccion-turnos.sql`, `correccion-vehiculos.sql`): editan el texto de las migraciones, el seed y el contrato guardados, y se aplican al levantar con "Borrar datos".
+- Después de pegar el SQL: "Compilar y corregir" de la plataforma, "Actualizar y reiniciar" (copia los archivos al proyecto y reconstruye) y Ctrl + F5 en el navegador.
+- **Editor SQL de Supabase:** parte el script en sentencias antes de ejecutarlo y busca frases que parecen crear tablas. Por eso los SQL de corrección no llevan `$` (textos con funciones entre comillas simples, `$` como `¤` + `chr(36)`), ni la frase `create table`, ni `select … into`. Si aparece el aviso "Potential issue detected", se elige "Run without RLS": "Run and enable RLS" agrega un `alter table` sobre la base de icase-tool y falla.
+- Las pruebas de estos SQL se hacen antes en un PostgreSQL desechable (`postgres:17-alpine`), aplicando la corrección dos veces y ejecutando la migración y el seed resultantes.
+
+**Plan de prueba del panel web**, desde cero:
+
+0. Ejecución: Detener con "borrar datos" y Levantar, para empezar solo con los datos del seed.
+1. **Administrador:** inicio de sesión (también con contraseña errónea); menú sin Bitácoras; Personal (filtros, ficha, cambiar cargo y estado, agregar con cédula inválida, repetida y buena); Turnos de garita; Vehículos (filtro, ficha, mantenimiento, kilometraje, agregar con código repetido y nuevo); Usuarios (filtros, ficha, cambiar rol, suspender y reactivar, no puede suspenderse a sí mismo, crear cuenta con contraseña temporal); Emergencias (5 tipos, tarjetas, columnas, filtro por mes, sin "Generar Parte", Ver en solo lectura, PDF de un parte cerrado); cerrar sesión.
+2. **Bombero:** menú sin Personal ni Usuarios; un parte de cada tipo con sus campos especializados (pacientes; heridos y apoyo externo Sí y No; oficio, horas y croquis; tipo de trabajo); unidad en mantenimiento deshabilitada; cronología con "Actual" y despacho ECU; ubicación; firmar como bombero (el contenido queda fijo y aparece qué falta para cerrar); movimiento de unidades (salida, llegada, firma del conductor); Bitácoras solo consulta; la cuenta creada por el administrador entra con su contraseña temporal.
+3. **Jefe de guardia:** firmar y cerrar el parte del bombero (queda de solo lectura) y su PDF; intentar cerrar uno sin firmas; cerrar la hoja de movimiento con su aval; bitácora completa (personal, novedades, actividades de los dos días, pendientes) entregada con firma y su PDF; Personal sí, Usuarios no.
+4. **General:** diseño igual al prototipo, avisos claros, F5 mantiene la sesión, "← Salir" de los formularios, todo también desde el celular con datos móviles.
+
+Después, la app móvil con la misma lista y, al final, el APK.
+
+**Correcciones** (se anotan aquí a medida que llegan, con su estado):
+
+| # | Plataforma · rol · pantalla | Corrección | Estado |
+|---|---|---|---|
+| 1 | Web · Administrador · Personal | Filtros con etiqueta (búsqueda, guardia, tipo, estado, cargo), chips para quitarlos, tarjetas que filtran, tabla ordenable y ficha en panel lateral | Hecha, por probar |
+| 2 | Web · Administrador · Personal | 5 por página con números de página | Hecha, por probar |
+| 3 | Web · todos · formularios | Cada error en su campo con el motivo (falta, formato, cédula repetida con el nombre de quien la tiene); las reglas de la base se traducen a su campo | Hecha en Personal, por probar; el traductor sirve a todos los formularios |
+| 4 | Web · Administrador y Jefe · Personal | Editar cualquier dato de una persona (cédula incluida): `op_patch_personal` ampliado en el contrato | Hecha, por probar |
+| 5 | Datos · Personal | Guardias "1" y "2" ("Guardia Nro. 1") en vez de "A" y "B"; la guardia y el tipo (rentado o voluntario) son filtros distintos | Hecha, por probar (aplica al levantar con "borrar datos") |
+| 6 | Web y base · Turnos de garita | Asignar turnos desde un calendario del mes: 5 franjas por día (08:00–11:00 … 20:00–08:00), el administrador en cualquier guardia y el jefe solo en la suya; la base lo aplica con RLS (migración de turnos ampliada, probada en un PostgreSQL aparte), el contrato suma `op_post_turno`, `op_patch_turno` y `op_delete_turno`, y el seed trae turnos de noviembre de 2026 | Hecha, por probar (`correccion-turnos.sql`; aplica al levantar con "borrar datos") |
+| 8 | Web · Administrador · Vehículos | Rediseño: la flota como tarjetas (ícono de su clase, estado, barra de kilometraje), filtros con chips, 6 por página, tarjetas de métricas que filtran y ficha en panel lateral con sus últimos movimientos; editar cualquier dato de la unidad (`op_patch_vehiculo` ampliado, `correccion-vehiculos.sql`) con errores en su campo; Movimientos con el mismo estilo y paginación numerada. Los estilos comunes de Personal y Vehículos pasan a `globals.css` | Hecha, por probar |
+| 9 | Web · Administrador · Usuarios | Rediseño: tabla de cuentas a todo el ancho (nombre y grado, correo, rol, estado) con filtros con chips y páginas de 6; al tocar una fila se abre un sheet a la derecha con la ficha al estilo del prototipo: datos, rol editable ahí mismo con "Guardar", permisos del rol y acceso (restablecer contraseña, suspender o activar). El menú lateral solo navega. Tras tres versiones (lista con avatares y panel recargado; ficha fija a la derecha) el usuario aprobó tabla + sheet | Hecha, por probar |
+| 13 | Web · Personal y Movimientos | El patrón aprobado en Usuarios (tabla a todo el ancho y ficha al estilo del prototipo en un sheet) se aplica a Personal (etiquetas de tipo y estado sobrias; cargo y guardia editables en el sheet con "Guardar") y a Movimiento de unidades (tabla de hojas con fecha, guardia, responsable, movimientos, recorrido y estado; la hoja completa en un sheet ancho con kilometrajes, movimientos, "Continuar la hoja" y PDF). La ficha compartida queda en `globals.css` (`fi-…`) | Hecha, por probar |
+| 14 | Web · todas | El atributo hidden no ocultaba los botones que el CSS del prototipo muestra con display (por ejemplo "Generar Parte" con el administrador, que solo consulta partes): regla global `[hidden]{display:none !important}` | Hecha, por probar |
+| 15 | Web · Emergencias | Lista de partes con el estilo de las demás tablas: filtros con etiqueta (búsqueda por número o dirección, mes, estado) y chips, columnas del prototipo de cada tipo, estado con cuadrito, Ver y PDF como botones, la fila abre el parte y 6 por página | Hecha, por probar |
+| 16 | Web · Jefe de guardia · Bitácoras | Tabla de bitácoras a todo el ancho (número, período, guardia, jefe, registro y estado) con filtros por año, mes, guardia y estado; la bitácora completa en un sheet ancho (personal, novedades, actividades por día, pendientes, entrega) con "Continuar la bitácora" y PDF; el menú lateral solo navega | Hecha, por probar |
+| 12 | Web · todas | Esquinas rectas en todo (tarjetas, filtros, botones, etiquetas, paneles y formularios) con una regla global, y estilo sobrio: sin degradados ni avatares de colores | Hecha, por probar |
+| 10 | Web · Administrador · Crear usuario | El correo había perdido el estilo (el CSS del prototipo solo cubre `input[type="text"]`); se valida en su campo (formato y correo repetido), muestra la ficha de la persona elegida y el rol sugerido, copia la contraseña temporal y, al crear la cuenta, una confirmación con el correo y la contraseña para entregarlos | Hecha, por probar |
+| 11 | icase-tool · Ejecución | Botón "Borrar datos" (borra la base y los archivos del proyecto, también con los contenedores sin crear); el runner ya lo permitía, el panel no lo ofrecía | Hecha (commit `c587632`, en `develop`) |
+| 7 | Web · todas · tablas | Tablas y sus tarjetas sin bordes redondeados; la tabla de Personal ya no se corta ni pierde la paginación y se ordena por lo que se ve | Hecha, por probar |
+| 17 | Base, web y móvil · Partes | Los formularios web de parte (los del prototipo, hechos con los formularios reales de los bomberos) son la referencia; la móvil debe pedir lo mismo, tipo por tipo. Varias secciones de la web se veían pero no se guardaban. **Base** (`correccion-partes.sql`, fuente en `respaldos/frontend-bomberos/correccion-partes/`): canal "Otros"; en el parte provincia, cantón, parroquia, tipo de emergencia y sus observaciones, compañía, daños materiales, novedades (personal, vehículos, equipo, material y detalle), observaciones generales y visita de inspectores; tipo de lugar en prehospitalaria y trabajos varios; nombre del operativo; heridos y fallecidos con sus datos en `parte_victima` (la base cuenta cuántos). El bloqueo tras la firma cubre cualquier dato del parte y la firma cubre las secciones nuevas; contrato con los campos nuevos y `op_get_victimas`, `op_post_victima`, `op_delete_victima`; seed con esas secciones. Probada en PostgreSQL aparte (dos ejecuciones, 16 pruebas de conteo, bloqueo, firma y permisos). Ejecutada el 8 de noviembre: migración y contrato bien, pero solo 4 de los 6 cambios del seed, porque el seed guardado tiene otros espacios tras la descripción de los partes 3 y 4; `correccion-partes-arreglo.sql` los completa con una expresión regular (probado con espacios, tabulaciones y `
+`; debe dar 6). **Móvil:** se quitaron el contacto del alertante, el médico receptor y su cédula y el tipo de lugar en rescates (la web no los tiene); van en `actualizar-movil.sql` (4 archivos, validador sin problemas). Falta: la web guarda las secciones nuevas y la móvil copia los cinco formularios web | Base aplicada (falta el arreglo del seed y levantar con "Borrar datos"); web y móvil pendientes |
+
+
+**Para retomar (al cerrar el 8 de noviembre):**
+
+1. **Aplicar y probar lo último:** `actualizar-web.sql` es acumulado (16 archivos: todas las correcciones de la web). Pegar → "Compilar y corregir" de la web → "Actualizar y reiniciar" → Ctrl + F5. Los SQL de base y contrato ya ejecutados: `correccion-personal.sql`, `correccion-turnos.sql` y `correccion-vehiculos.sql` (los turnos y las guardias "1" y "2" necesitan haber levantado con "Borrar datos"). Corrección 17: `correccion-partes.sql` ya ejecutado; faltan `correccion-partes-arreglo.sql` (debe dar `secciones_en_seed = 6`) y `actualizar-movil.sql` con "Compilar y corregir" de la móvil, y después "Borrar datos" y "Levantar". Hasta que la web guarde las filas de heridos, los heridos registrados desde la web cuentan 0 (la base los cuenta desde `parte_victima`).
+2. **Web, lo que falta modernizar con el mismo estilo** (tabla a todo el ancho, filtros con etiqueta y chips, sheet al estilo del prototipo, esquinas rectas, errores en su campo): los formularios de parte (cinco tipos), el de bitácora, el de movimiento y la página de Inicio. Después, la prueba por rol del plan de arriba con el bombero y el jefe de guardia.
+3. **App móvil:** la misma prueba por pantalla y, al final, el APK de Android con la dirección pública.
+4. **Publicar las correcciones:** merge de `develop` a `main` (lo hace el usuario; incluye el botón "Borrar datos"), encender la VM, en icase-tool desde Vercel: "Borrar datos" → "Levantar" de bomberos, y probar desde el celular con datos móviles.
+5. **VM de respaldo** con la cuenta de la compañera del usuario (pasos ya enviados) y el ensayo de la presentación del 10 de noviembre.
 
 Pendientes inmediatos:
 
-1. **Documentación (taller de clase).** Construida y publicada en `/docs`. Faltan cosas del usuario:
-   - las **3 capturas restantes** de la aplicación real, en `docs-site/static/img/capturas/`, con los nombres que indican los recuadros "Captura pendiente" (inicio de sesión, página de inicio, creación de proyecto, fases de Análisis y Diseño aprobadas, entrevista con IA, requerimientos, diagrama expandido, prototipo e informe ya incorporadas):
-     - `09-explorador`, `11-bomberos-stack` y `12-bomberos-base`;
-     - todas `.png`; la 07 y la 12 también aparecen en el README.
-
-     Después se reemplazan los recuadros por las imágenes.
-   - pasar `develop` a `main` y hacer push: los enlaces de la documentación a los archivos de GitHub apuntan a `main`;
+1. **Fase de correcciones** (arriba).
+2. **VM de respaldo** con la cuenta de Azure for Students de una compañera del usuario: ella crea la máquina (Ubuntu 24.04, 8 GiB, disco de 64 GiB, nombre DNS, regla 13000-19999) y pasa la llave, la IP y el nombre DNS; Claude instala Docker, Node, el runner como servicio, Caddy con HTTPS y `import /srv/icase-caddy/*.caddy`, `DIRECCION_PUBLICA`, un token nuevo y las imágenes. Solo si la principal falla se cambian `RUNNER_URL` y `RUNNER_TOKEN` en Vercel.
+3. **APK de Android** de la app móvil: compilarlo con el Flutter de la PC (tiene el Android SDK) apuntando a la API pública, con los permisos de internet, ubicación y cámara. Respaldo y opción para iPhone: "Agregar a pantalla de inicio" desde el navegador. Se hace al terminar las correcciones.
+4. **Ensayo de la presentación** desde Vercel con la PC apagada. Antes de presentar: encender la VM y pulsar "Levantar" (tarda pocos minutos: las imágenes y lo compilado quedan en la máquina).
+5. **Documentación (taller de clase).** Construida y publicada en `/docs`. Faltan cosas del usuario:
+   - las **3 capturas restantes** de la aplicación real, en `docs-site/static/img/capturas/`: `09-explorador`, `11-bomberos-stack` y `12-bomberos-base` (todas `.png`; la 07 y la 12 también aparecen en el README). Después se reemplazan los recuadros "Captura pendiente" por las imágenes;
    - dar acceso al docente si el repositorio es privado;
    - confirmar la licencia (se puso MIT a nombre de CCAJ Software Solutions).
-2. **Etapa 9 (Web):** construir el paso que genera la web archivo por archivo (cada página a partir de su pantalla del prototipo y con las operaciones del contrato), probarla compilando en Docker, generarla con Haiku para bomberos y revisarla en la conversación antes de aprobar. Debe agregar los botones que el prototipo no tiene: asignar rol, suspender cuenta y editar personal y vehículos.
-3. **Despliegue (10 de noviembre):** pasar `develop` a `main`; actualizar la copia del runner en Azure (`runner/index.mjs`, `lib/pruebaContrato.js`, `lib/inventarioContrato.js`); dirección pública por proyecto en Caddy (web y puerta de entrada de Supabase); sección "Aplicación"; ensayo completo desde Vercel con la PC apagada.
-4. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
-5. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
-6. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
+6. **Taller:** generar y probar su base desde la interfaz, como segundo proyecto, antes de dar por buenas las reglas nuevas para cualquier sistema.
+7. **Script del esquema base de Supabase:** la tabla `proyectos` se creó al inicio desde el panel y no hay un script que la cree desde cero. Para armarlo hay que confirmar sus columnas en el panel.
+8. **Propuestas sin respuesta del usuario.** **No están aplicadas:** esperar el sí.
+   - **Dockerfile de Flutter:** quitar el `\r` al leer el nombre de `pubspec.yaml` (`tr -d '\r'`), para que un archivo con saltos de línea de Windows no rompa la compilación de ningún proyecto.
    - **Docker apagado:** el panel consulta el estado cada 10 segundos y deja un `POST /api/implementacion 500` por consulta. Se propuso mostrar "Docker Desktop no está encendido" con un botón Reintentar, dejar de consultar hasta entonces y responder 503 en vez de 500.
    - **"Levantar" con Supabase:** `docker compose up --wait` termina con error cuando la tarea `migraciones` sale con código 0. El proyecto queda funcionando, pero el panel muestra "Docker devolvió un error.". Se propuso tratar como éxito la salida 0 de las tareas de un solo uso.
-   - **"Levantar" con solo la base generada:** desde la Etapa 6 hay código, así que el botón se habilita, pero la web y la app todavía no tienen archivos y su compilación falla. Se propuso levantar solo los servicios de las piezas que ya tienen código.
-   - **En Vercel:** cambiar "Falta RUNNER_TOKEN en .env.local" por "La ejecución en contenedores solo funciona con icase-tool en local" y dejar de consultar el estado (ver "Despliegue en Vercel").
+   - **"Levantar" sin el frontend generado:** la web y la app todavía no tienen archivos y su compilación falla (pasó con la móvil de bomberos antes de escribirla). Se propuso levantar solo los servicios de las piezas que ya tienen código.
    - **Costo estimado de la base con Claude:** hoy son 10 centavos por archivo, que acierta en bomberos pero duplica el costo real en el taller. Se propuso calcularlo con el tamaño del ER, las clases, los requerimientos y las tablas de cada archivo.
 
 ## Plan de la semana: presentación desplegada (3 al 10 de noviembre de 2026)
@@ -91,8 +145,9 @@ Vercel (icase-tool)  ──HTTPS + token──▶  Azure: Ubuntu + Docker + runn
 | 2 (4 nov) | Nombre DNS y variables en Vercel | Runner en Linux, Caddy con HTTPS (hecho) |
 | 3 a 5 (5 a 7 nov) | Regenerar stack, estructura y base de bomberos en local | Estructura con "Continuar", pieza Next.js, selector de modelo de Claude, revisión de la base, validador del contrato (hecho) |
 | 6 (8 nov) | Pegar contrato, probar permisos y aprobar; generar, probar y aprobar el backend | Contrato escrito a mano, "Pegar contrato", arreglos de la prueba de permisos, paso Backend completo (hecho) |
-| 7 (9 nov) | Generar la web de bomberos, revisarla y aprobarla | Paso Web; móvil si da el tiempo |
-| 8 (10 nov) | Subir a `main`, encender Azure, ensayo completo desde Vercel con la PC apagada | Runner de Azure al día, dirección pública por proyecto, sección "Aplicación", correcciones, CHANGELOG |
+| 7 (7 nov, adelantado) | Aprobar el frontend, pegar los SQL, encender Azure, merge de los PR #18 y #19 | Web y móvil de bomberos escritas a mano, dirección pública por proyecto, despliegue funcionando (hecho) |
+| 8 y 9 (8 y 9 nov) | Probar todo por rol y pasar las correcciones; VM de respaldo con la cuenta de la compañera | Correcciones, VM de respaldo, APK de Android, CHANGELOG |
+| 10 (10 nov) | Encender Azure, Levantar, presentar | Apoyo en vivo |
 
 Se trabaja primero en local (más barato y sin el límite de tiempo de Vercel) y al final se despliega: Azure solo se enciende para probar que "Levantar" y la dirección pública funcionan allá.
 
@@ -155,6 +210,25 @@ Cambios de icase-tool (en `develop`, sin confirmar todavía):
 - Decisión del usuario: un Jefe de guardia puede avalar un parte que él mismo atendió y firmó.
 - **Pendiente para la Etapa 8:** el aviso de RF30 "parte pendiente de completar o firmar" necesita una tarea programada (`pg_cron`), no un trigger. El tipo `parte_pendiente` ya existe en `notificacion`.
 
+### Frontend de bomberos y despliegue (7 de noviembre)
+
+**Frontend sin IA.** Generar la web y la app con Claude habría costado de 1 a 2,50 dólares con Haiku. Se escribieron a mano en la conversación y se insertaron con SQL, como el contrato:
+
+- **Web (50 archivos):** cada página monta el HTML y el CSS de su pantalla del prototipo aprobado (componente `Pantalla` de `GuardaSesion.js`) y adapta el script de la pantalla: los datos de muestra se reemplazan por los de la base con las operaciones del contrato (`lib/datos/*.js`), las firmas se trazan con `react-signature-canvas` y suben al bucket `firmas`, y el PDF sale con `pdf-lib`. Los formularios de los cinco tipos de parte están una sola vez en `FormularioParte.js`.
+- **Móvil (58 archivos):** Flutter con el diseño del prototipo (Material 3, colores y escudo), las 13 pantallas, modo sin conexión (SQLite en el teléfono y memoria en la vista web, con `id_local` que evita duplicar al sincronizar), emergencias abiertas en tiempo real, firmas con `signature` y croquis con `image_picker`. Firebase y Google Maps avisan que falta configuración. No se incluyó "Subir Foto Evidencia": la base no tiene dónde guardar esas fotos.
+- `respaldos/frontend-bomberos/armar.mjs` arma cada plataforma, la revisa con el validador del paso Frontend (0 avisos en las dos) y genera su SQL (`archivos_proyecto` y la ficha del paso; la otra plataforma no se toca). La web se compiló con `next build` y la móvil con `flutter analyze` y `flutter build web` en la PC antes de insertarlas.
+- **Saltos de línea:** el editor SQL de Supabase en Windows guarda `\r\n` al pegar; un `\r` en `pubspec.yaml` rompía el nombre de la app al compilarla en Linux. Los SQL quitan `chr(13)` al final.
+- Ajustes a lo que permite la base: el apoyo externo solo se registra en contra incendios y rescates; personal y vehículos asignados a un parte quedan fijos (la base suma y no quita); con la firma del bombero el contenido del parte no cambia.
+
+**Dirección pública por proyecto** (commit `546df84`):
+
+- Con `DIRECCION_PUBLICA` (en `~/icase-runner.env` de la máquina), el runner publica cada puerto del proyecto por HTTPS en Caddy en el puerto + 10000: escribe `/srv/icase-caddy/<id>.caddy`, que importa el Caddyfile principal, y recarga Caddy (sin `sudo`). Los puertos de bases de datos se excluyen.
+- La web y la vista web de Flutter se compilan con `SUPABASE_URL_PUBLICA`, que fija el runner (en la PC sigue siendo `http://localhost:<puerto>`); las plantillas `compose.supabase.yml` de Next.js y Flutter la usan.
+- Los enlaces del panel de Ejecución usan la dirección que devuelve el runner (`direcciones` en el estado).
+- En Azure: regla de entrada 1010 `proyectos-https` (TCP 13000-19999); runner y los tres archivos de `lib` actualizados; las 10 imágenes descargadas de antemano (Flutter pesa 7 GB) para que "Levantar" no pase de 15 minutos.
+- **Vercel no incluía los archivos con punto de `plantillas/`** (`public/.gitkeep`, `.dockerignore`), y la web no compilaba en el servidor (`"/app/public": not found`). `next.config.mjs` los incluye con `outputFileTracingIncludes`.
+- Comprobado desde internet: web y móvil 200, API 401 sin clave, CORS correcto e inicio de sesión del bombero contra la API pública con sus partes visibles según RLS.
+
 ### Cambios al plan por el tiempo
 
 - Un solo proyecto completo para la demo: bomberos. El taller entra solo si sobra tiempo.
@@ -168,18 +242,17 @@ Cambios de icase-tool (en `develop`, sin confirmar todavía):
 
 1. ~~**Validador del contrato**~~: hecho el 7 de noviembre (ver "Avance del 5 al 8 de noviembre").
 2. ~~**Runner** para Linux~~: hecho el 4 de noviembre. Escucha en `127.0.0.1` detrás de Caddy, siempre con token.
-3. **Caddy** con una dirección pública por proyecto. Con Supabase, **dos**: la de la web y la de su puerta de entrada (`api-gw`). La web se compila con `NEXT_PUBLIC_SUPABASE_URL` fijo; hoy es `localhost` con un puerto, lo que funciona en la PC pero no en el navegador del ingeniero. El runner debe compilar la web (y la vista web de Flutter, `SUPABASE_URL`) con la dirección pública de la puerta de entrada.
+3. ~~**Caddy** con una dirección pública por proyecto~~: hecho el 7 de noviembre (ver "Frontend de bomberos y despliegue"). Con Supabase, **dos**: la de la web y la de su puerta de entrada (`api-gw`). La web se compila con `NEXT_PUBLIC_SUPABASE_URL` fijo; hoy es `localhost` con un puerto, lo que funciona en la PC pero no en el navegador del ingeniero. El runner debe compilar la web (y la vista web de Flutter, `SUPABASE_URL`) con la dirección pública de la puerta de entrada.
 4. **Sección "Aplicación"** en `ImplementacionFase.js`.
 5. **Rutas largas:** confirmar que `maxDuration = 300` cabe en el plan de Vercel. Como todo se genera en local, en Vercel solo hace falta para "Levantar" y "Probar".
-6. **Runner de Azure al día:** es una copia de `runner/index.mjs` y de los tres archivos de `lib` que usa; desde el 4 de noviembre cambiaron la prueba de permisos (Jefe de guardia, Edge Functions), el inventario (permisos por columna) y el runner (contenedor `functions` en la prueba).
+6. ~~**Runner de Azure al día**~~ (7 de noviembre): es una copia de `runner/index.mjs` y de los tres archivos de `lib` que usa; desde el 4 de noviembre cambiaron la prueba de permisos (Jefe de guardia, Edge Functions), el inventario (permisos por columna) y el runner (contenedor `functions` en la prueba).
 7. ~~Etapa 8 (Backend)~~: hecha el 8 de noviembre (ver la sección de la Etapa 8).
 
 ### Pendientes de decisión
 
 - Preguntar al ingeniero si le basta que la aplicación se abra por una dirección pública con el motor de contenedores en un servidor propio.
-- Pasar `develop` a `main` para que Vercel publique lo de esta semana (selector de modelo de Claude, estructura con "Continuar", contrato, barra lateral, paso Backend). En `develop` ya está todo confirmado.
 - Antes de desplegar, ejecutar `supabase/backend_implementacion.sql` también en el Supabase que usa Vercel, si es otro.
-- La pantalla "Subir Foto Evidencia" (Parte en Curso, móvil) no tiene dónde guardarse en el diseño: decidir si se agrega o se quita del prototipo.
+- La pantalla "Subir Foto Evidencia" (Parte en Curso, móvil) no tiene dónde guardarse en el diseño: la app escrita a mano no la incluye; decidir si se agrega a la base o se quita del prototipo.
 - El aviso de costo de la base usa 10 centavos por archivo medidos con Sonnet; ya se escala por modelo, pero sigue siendo una estimación fija por archivo.
 
 ## Guía para retomar el trabajo
@@ -1027,7 +1100,7 @@ Archivos principales: `lib/accionesContrato.js`, `lib/inventarioContrato.js`, `l
 
 ---
 
-### Etapa 9. Paso "Web"
+### Etapa 9. Paso "Web" · Terminada (paso "Frontend")
 
 **Objetivo:** convertir las pantallas Web del prototipo en la aplicación web de la tecnología del diseño (Next.js, React...).
 
@@ -1061,7 +1134,7 @@ Un solo paso, `impl_frontend` ("Frontend" en la interfaz), para las dos platafor
 
 ---
 
-### Etapa 10. Paso "Móvil" (solo si la arquitectura tiene app móvil)
+### Etapa 10. Paso "Móvil" (solo si la arquitectura tiene app móvil) · Terminada (paso "Frontend")
 
 **Objetivo:** convertir las pantallas Móvil del prototipo en la app de la tecnología del diseño (Flutter...).
 
