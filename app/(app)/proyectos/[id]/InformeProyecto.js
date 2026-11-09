@@ -5,8 +5,10 @@ import { extraerExplicacion } from "@/lib/diagramas";
 import { plataformasDelArbol, ramaDelArbol } from "@/lib/arbol";
 import { textoCategoria } from "@/lib/iso25010";
 import { PALETA } from "../../../estilos";
+import { nombreLegible } from "./BadgeModelo";
 
-// Informe del proyecto: reúne las fases de Análisis y Diseño ya aprobadas en un solo documento,
+// Informe del proyecto: reúne las fases aprobadas (Análisis y Diseño, y la Implementación cuando también
+// está aprobada) en un solo documento,
 // con vista previa en pantalla y exportación a PDF (por el diálogo de impresión del navegador,
 // que conserva los diagramas como vectores y no necesita librerías). No genera contenido nuevo:
 // todo sale de lo que el proyecto ya tiene guardado.
@@ -207,6 +209,365 @@ function useRamasDelArbol(codigo, renderizar) {
   return listas ? plataformas.map((p) => ({ ...p, svg: ramas.svgs[p.id] })) : [];
 }
 
+// --- Fase de implementación -----------------------------------------------------------------------
+// Todo sale de lo que guarda cada paso (stack, estructura, base de datos, contrato, backend y frontend),
+// así sirve para cualquier proyecto: las tablas solo aparecen si el paso tiene esos datos.
+
+const fechaCorta = (iso) => (iso ? new Date(iso).toLocaleString("es", { dateStyle: "long", timeStyle: "short" }) : "");
+const fraccion = (par) => (Array.isArray(par) && par[1] ? `${par[0]} de ${par[1]}` : null);
+const NOMBRES_PLATAFORMA = { web: "Aplicación web", movil: "Aplicación móvil" };
+
+function Tabla({ columnas, filas, anchos = [], mono = [] }) {
+  if (!filas.length) return null;
+  return (
+    <table className="w-full border-collapse mb-4">
+      <thead>
+        <tr>
+          {columnas.map((c, i) => (
+            <th key={c} className={`${CELDA} text-left font-bold bg-gray-100 ${anchos[i] || ""}`}>
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {filas.map((fila, i) => (
+          <tr key={i} className="break-inside-avoid">
+            {fila.map((celda, j) => (
+              <td key={j} className={`${CELDA} ${mono.includes(j) ? "font-mono text-xs break-all" : ""}`}>
+                {celda === "" || celda == null ? "—" : celda}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// Tabla de dos columnas con los datos clave de un paso.
+function Resumen({ filas }) {
+  const visibles = filas.filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "");
+  if (!visibles.length) return null;
+  return (
+    <table className="w-full border-collapse mb-4">
+      <tbody>
+        {visibles.map(([etiqueta, valor]) => (
+          <tr key={etiqueta} className="break-inside-avoid">
+            <th className={`${CELDA} w-[34%] text-left font-bold bg-gray-100`}>{etiqueta}</th>
+            <td className={`${CELDA} whitespace-pre-line`}>{valor}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const APARTADOS_IMPLEMENTACION = [
+  { clave: "impl_stack", titulo: "Stack técnico", define: "Las tecnologías, contenedores, librerías y servicios externos con que se construye el diseño aprobado." },
+  { clave: "impl_estructura", titulo: "Estructura de carpetas", define: "Los archivos de cada pieza, su propósito y qué parte del diseño cubre cada uno." },
+  { clave: "impl_bd", titulo: "Base de datos", define: "Las migraciones y los datos de prueba, aplicados y probados en contenedores." },
+  { clave: "impl_contrato", titulo: "Contrato de API", define: "Las operaciones que expone el sistema, quién puede usarlas y la prueba de permisos." },
+  { clave: "impl_backend", titulo: "Backend", define: "La lógica de negocio que cumple el contrato y su prueba." },
+  { clave: "impl_frontend", titulo: "Frontend", define: "Las aplicaciones de cada plataforma y su compilación." },
+  { clave: "ejecucion", titulo: "Ejecución y despliegue", define: "Los contenedores que levantan el sistema y dónde se publica." },
+];
+
+// Cómo se obtuvo y cómo se verificó cada paso (el proceso de icase-tool, igual para cualquier proyecto).
+const COMO_SE_HIZO = {
+  impl_stack: {
+    obtuvo: "A partir de los diagramas de arquitectura y de sistemas aprobados: cada componente y cada tecnología del diseño se resolvió con una pieza del catálogo de icase-tool (plantillas de contenedores ya probadas).",
+    verifico: "El código revisa que cada componente del diseño tenga su pieza, que las librerías correspondan a las tecnologías elegidas y que los servicios externos sean solo los del diseño.",
+  },
+  impl_estructura: {
+    obtuvo: "Se generó la lista de archivos de cada pieza, con su propósito, a partir del prototipo, el modelo de datos, los módulos y los requerimientos.",
+    verifico: "El código mide la cobertura: que cada pantalla, tabla, módulo y requerimiento funcional tenga al menos un archivo que lo implemente.",
+  },
+  impl_bd: {
+    obtuvo: "Se generaron las migraciones y los datos de prueba, archivo por archivo, desde el diagrama entidad-relación y las reglas de negocio.",
+    verifico: "Se aplicaron en contenedores sobre una base vacía y se comprobó tabla por tabla el control de acceso, sus políticas, las filas de prueba y el acceso desde la API.",
+  },
+  impl_contrato: {
+    obtuvo: "Se definió cada operación a partir de la base de datos probada y de las acciones de cada pantalla del prototipo.",
+    verifico: "El código valida el contrato contra la base real; la prueba de permisos llama a cada operación como cada rol y compara el resultado con lo permitido.",
+  },
+  impl_backend: {
+    obtuvo: "Se generó la lógica que la base de datos no resuelve por sí sola (funciones del servidor) para cumplir las operaciones del contrato.",
+    verifico: "Se levantó junto con la base en contenedores y se llamó a cada función como cada rol del contrato.",
+  },
+  impl_frontend: {
+    obtuvo: "Se construyó cada plataforma por capas a partir del prototipo aprobado, conectando cada acción de pantalla con su operación del contrato.",
+    verifico: "El código valida cada archivo (rutas, importaciones y paquetes) y cada plataforma se compila en su imagen de Docker; los errores de compilación se corrigen antes de aprobar.",
+  },
+};
+const herramienta = (modelo) => (modelo ? (modelo === "manual" ? "Editado a mano" : nombreLegible(modelo)) : "—");
+
+function ComoSeHizo({ clave, modelo }) {
+  const c = COMO_SE_HIZO[clave];
+  if (!c) return null;
+  return (
+    <Parrafo>
+      <span className="font-semibold">Cómo se hizo. </span>
+      {`${c.obtuvo} ${c.verifico}${modelo ? ` Herramienta de generación: ${herramienta(modelo)}.` : ""}`}
+    </Parrafo>
+  );
+}
+
+function SeccionImplementacion({ numero, artefactos, modelos = {}, enlaces }) {
+  const stack = artefactos.impl_stack || {};
+  const estructura = artefactos.impl_estructura || {};
+  const bd = artefactos.impl_bd || {};
+  const contrato = artefactos.impl_contrato || {};
+  const backend = artefactos.impl_backend || {};
+  const frontend = artefactos.impl_frontend || {};
+  const titulo = (pieza) => stack.titulos?.[pieza] || pieza;
+  const apartados = APARTADOS_IMPLEMENTACION.filter((a) => a.clave === "ejecucion" || artefactos[a.clave]);
+  const n = (clave) => `${numero}.${apartados.findIndex((a) => a.clave === clave) + 1}`;
+  const archivosEstructura = estructura.archivos || [];
+  const plataformas = Object.entries(frontend.plataformas || {}).filter(([, d]) => d?.archivos?.length);
+  const totalArchivos =
+    archivosEstructura.length ||
+    (bd.archivos || []).length + (backend.archivos || []).length + plataformas.reduce((t, [, d]) => t + d.archivos.length, 0);
+  const prueba = bd.prueba;
+  const cobBd = prueba?.cobertura || {};
+  const cobEst = estructura.cobertura || {};
+
+  return (
+    <Seccion numero={numero} titulo="Fase de implementación" nuevaHoja>
+      <Parrafo>
+        {`En esta fase se construye el sistema a partir del diseño aprobado. Primero se eligen las tecnologías con que se implementa cada componente de la arquitectura (stack técnico) y se define la estructura de archivos de cada pieza. Después se generan y prueban, en contenedores, la base de datos, el contrato de la API con sus permisos, la lógica del backend y las aplicaciones de cada plataforma. El proyecto quedó con ${totalArchivos} archivos${plataformas.length ? ` y ${plataformas.length === 1 ? "una plataforma" : `${plataformas.length} plataformas`} (${plataformas.map(([c]) => NOMBRES_PLATAFORMA[c] || c).join(", ").toLowerCase()})` : ""}.`}
+      </Parrafo>
+      <Tabla
+        columnas={["Apartado", "Qué define"]}
+        anchos={["w-[34%]"]}
+        filas={apartados.map((a) => [<span key="t" className="font-semibold">{n(a.clave)} {a.titulo}</span>, a.define])}
+      />
+
+      <p className="text-sm font-bold text-gray-900 mt-6 mb-2 break-after-avoid">Metodología</p>
+      <Parrafo>
+        La implementación se realizó con icase-tool, paso a paso y en orden de dependencia: cada paso se obtiene a partir del diseño aprobado y de los pasos anteriores, el código lo revisa automáticamente, se prueba en contenedores Docker (cada proyecto tiene sus propios contenedores y su propia base de datos) y solo se avanza cuando se aprueba. Si un paso cambia, los siguientes quedan desactualizados hasta revisarlos de nuevo, de modo que lo aprobado siempre corresponde al mismo diseño.
+      </Parrafo>
+      <Tabla
+        columnas={["Paso", "Cómo se verificó", "Herramienta"]}
+        anchos={["w-[24%]", "", "w-[20%]"]}
+        filas={apartados
+          .filter((a) => COMO_SE_HIZO[a.clave])
+          .map((a) => [<span key="t" className="font-semibold">{a.titulo}</span>, COMO_SE_HIZO[a.clave].verifico, herramienta(modelos[a.clave])])}
+      />
+
+      {artefactos.impl_stack && (
+        <>
+          <Apartado numero={n("impl_stack")} titulo="Stack técnico" intro={stack.explicacion} />
+          <ComoSeHizo clave="impl_stack" modelo={modelos.impl_stack} />
+          <Resumen
+            filas={[
+              ["Piezas", (stack.piezas || []).map((p) => `${titulo(p.pieza)}${p.opcionales?.length ? ` (${p.opcionales.join(", ")})` : ""}`).join("\n")],
+              ["Alta disponibilidad", stack.altaDisponibilidad ? "Sí" : "No"],
+              ["Contenedores", (stack.contenedores || []).length],
+              ["Librerías", (stack.librerias || []).length],
+              ["Servicios externos", (stack.externos || []).map((x) => x.servicio).join(", ") || "Ninguno"],
+            ]}
+          />
+          {(stack.componentes || []).length > 0 && (
+            <>
+              <p className="text-sm font-bold text-gray-900 mt-4 mb-2 break-after-avoid">Cómo se implementa cada componente del diagrama de sistemas</p>
+              <Tabla
+                columnas={["Componente", "Tecnología", "Se implementa con", "RF"]}
+                filas={stack.componentes.map((c) => [c.nombre, c.tecnologia, c.pieza ? titulo(c.pieza) : c.resolucion, (c.requerimientos || []).join(", ")])}
+              />
+            </>
+          )}
+          {(stack.librerias || []).length > 0 && (
+            <>
+              <p className="text-sm font-bold text-gray-900 mt-4 mb-2 break-after-avoid">Librerías</p>
+              <Tabla
+                columnas={["Paquete", "En", "Para qué", "RF"]}
+                mono={[0]}
+                filas={stack.librerias.map((l) => [l.nombre, titulo(l.pieza), l.motivo, (l.requerimientos || []).join(", ")])}
+              />
+            </>
+          )}
+          {(stack.externos || []).length > 0 && (
+            <>
+              <p className="text-sm font-bold text-gray-900 mt-4 mb-2 break-after-avoid">Servicios externos</p>
+              <Tabla
+                columnas={["Servicio", "Variable de configuración", "Lo usa", "Nota"]}
+                mono={[1]}
+                filas={stack.externos.map((x) => [x.servicio, x.variable, (x.usadoPor || []).join(", "), x.nota])}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {artefactos.impl_estructura && (
+        <>
+          <Apartado
+            numero={n("impl_estructura")}
+            titulo="Estructura de carpetas"
+            intro={`El proyecto se organiza en ${Object.keys(estructura.piezas || {}).length} piezas con ${archivosEstructura.length} archivos. Cada archivo indica para qué sirve y qué parte del diseño cubre.`}
+          />
+          <ComoSeHizo clave="impl_estructura" modelo={modelos.impl_estructura} />
+          <Resumen
+            filas={[
+              ["Pantallas del prototipo cubiertas", fraccion(cobEst.pantallas)],
+              ["Tablas del modelo de datos cubiertas", fraccion(cobEst.tablas)],
+              ["Módulos cubiertos", fraccion(cobEst.modulos)],
+              ["Requerimientos funcionales cubiertos", fraccion(cobEst.requerimientos)],
+            ]}
+          />
+          {Object.entries(estructura.piezas || {}).map(([pieza, info]) => {
+            const suyos = archivosEstructura.filter((a) => a.pieza === pieza);
+            return (
+              <div key={pieza}>
+                <p className="text-sm font-bold text-gray-900 mt-4 mb-1 break-after-avoid">
+                  {info.titulo} <span className="font-mono font-normal text-gray-600">· {info.carpeta}/ · {suyos.length} archivos</span>
+                </p>
+                {info.notas && <Parrafo>{info.notas}</Parrafo>}
+                <Tabla
+                  columnas={["Archivo", "Para qué", "RF"]}
+                  anchos={["w-[38%]", "", "w-[16%]"]}
+                  mono={[0]}
+                  filas={suyos.map((a) => [a.ruta.slice((info.carpeta || "").length + 1) || a.ruta, a.proposito, (a.requerimientos || []).join(", ")])}
+                />
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {artefactos.impl_bd && (
+        <>
+          <Apartado
+            numero={n("impl_bd")}
+            titulo="Base de datos"
+            intro="Las migraciones crean las tablas, sus permisos y reglas, y los datos de prueba permiten usar el sistema desde el primer arranque. Se aplican en orden sobre una base vacía y se prueban en contenedores."
+          />
+          <ComoSeHizo clave="impl_bd" modelo={modelos.impl_bd} />
+          <Resumen
+            filas={[
+              ["Archivos", (bd.archivos || []).length],
+              ["Prueba en contenedores", prueba ? (prueba.ok ? `Correcta · ${fechaCorta(prueba.fecha)}` : prueba.ok === false ? `Falló al aplicar ${prueba.archivo || "la base"}` : "Sin probar") : "Sin probar"],
+              ["Tablas del modelo de datos", fraccion(cobBd.tablas)],
+              ["Tablas con reglas de acceso", fraccion(cobBd.rls)],
+              ["Tablas con datos de prueba", fraccion(cobBd.datos)],
+              ["Usuarios de prueba", typeof prueba?.usuarios === "number" ? prueba.usuarios : null],
+            ]}
+          />
+          <Tabla
+            columnas={["Archivo", "Líneas", "Tablas"]}
+            anchos={["w-[44%]", "w-[10%]"]}
+            mono={[0]}
+            filas={(bd.archivos || []).map((a) => [a.ruta, a.lineas, (a.tablas || []).join(", ")])}
+          />
+          {(prueba?.tablas || []).length > 0 && (
+            <>
+              <p className="text-sm font-bold text-gray-900 mt-4 mb-2 break-after-avoid">Resultado de la prueba por tabla</p>
+              <Tabla
+                columnas={["Tabla", "Reglas de acceso", "Políticas", "Filas de prueba"]}
+                mono={[0]}
+                filas={prueba.tablas.map((t) => [t.tabla, t.rls === true ? "Sí" : t.rls === false ? "No" : "", t.politicas, t.filas])}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {artefactos.impl_contrato && (
+        <>
+          <Apartado
+            numero={n("impl_contrato")}
+            titulo="Contrato de API"
+            intro="El contrato define cada operación que la aplicación puede pedir al sistema: qué recurso usa, qué roles la tienen permitida y qué requerimientos cumple. Las pantallas solo usan operaciones del contrato."
+          />
+          <ComoSeHizo clave="impl_contrato" modelo={modelos.impl_contrato} />
+          <Resumen
+            filas={[
+              ["Operaciones", (contrato.operaciones || []).length],
+              ["Acciones del prototipo cubiertas", fraccion(contrato.cobertura?.acciones)],
+              ["Requerimientos funcionales cubiertos", fraccion(contrato.cobertura?.requerimientos)],
+              [
+                "Prueba de permisos",
+                contrato.prueba
+                  ? `${contrato.prueba.correctas} correctas · ${contrato.prueba.fallidas} fallidas · ${contrato.prueba.inconclusas} sin verificar${contrato.prueba.pendientes ? ` · ${contrato.prueba.pendientes} pendientes` : ""}`
+                  : "Sin probar",
+              ],
+            ]}
+          />
+          <Tabla
+            columnas={["Operación", "Método y recurso", "Roles", "RF"]}
+            anchos={["w-[32%]", "w-[26%]"]}
+            filas={(contrato.operaciones || []).map((op) => [op.nombre, <span key="m" className="font-mono text-xs">{op.metodo} {op.recurso}</span>, (op.roles || []).join(", "), (op.requerimientos || []).join(", ")])}
+          />
+        </>
+      )}
+
+      {artefactos.impl_backend && (
+        <>
+          <Apartado
+            numero={n("impl_backend")}
+            titulo="Backend"
+            intro="Lógica de negocio que no resuelve la base de datos por sí sola. Se prueba llamando a cada función como cada rol del contrato."
+          />
+          <ComoSeHizo clave="impl_backend" modelo={modelos.impl_backend} />
+          <Resumen
+            filas={[
+              ["Archivos", (backend.archivos || []).length],
+              ["Prueba", backend.prueba ? `${backend.prueba.correctas} correctas · ${backend.prueba.fallidas} fallidas · ${backend.prueba.inconclusas} sin verificar · ${fechaCorta(backend.prueba.fecha)}` : "Sin probar"],
+            ]}
+          />
+          <Tabla columnas={["Archivo", "Líneas"]} anchos={["", "w-[14%]"]} mono={[0]} filas={(backend.archivos || []).map((a) => [a.ruta, a.lineas])} />
+        </>
+      )}
+
+      {artefactos.impl_frontend && (
+        <>
+          <Apartado
+            numero={n("impl_frontend")}
+            titulo="Frontend"
+            intro="Las aplicaciones con que cada actor usa el sistema, construidas sobre el prototipo aprobado y conectadas a las operaciones del contrato. Cada plataforma se compila en su contenedor."
+          />
+          <ComoSeHizo clave="impl_frontend" modelo={modelos.impl_frontend} />
+          <Resumen
+            filas={plataformas.map(([clave, d]) => [
+              NOMBRES_PLATAFORMA[clave] || clave,
+              `${d.archivos.length} archivos · ${d.archivos.reduce((t, a) => t + (a.lineas || 0), 0)} líneas · ${d.compilacion ? (d.compilacion.ok ? "compila" : "no compila") : "sin compilar"}`,
+            ])}
+          />
+          {plataformas.map(([clave, d]) => (
+            <div key={clave}>
+              <p className="text-sm font-bold text-gray-900 mt-4 mb-2 break-after-avoid">{NOMBRES_PLATAFORMA[clave] || clave}</p>
+              <Tabla columnas={["Archivo", "Líneas"]} anchos={["", "w-[14%]"]} mono={[0]} filas={d.archivos.map((a) => [a.ruta, a.lineas])} />
+            </div>
+          ))}
+        </>
+      )}
+
+      <Apartado
+        numero={n("ejecucion")}
+        titulo="Ejecución y despliegue"
+        intro="Cada pieza corre en su propio contenedor y todas se levantan juntas con Docker Compose, con su propia base de datos. Al levantarse se aplican las migraciones y los datos de prueba."
+      />
+      <Parrafo>
+        <span className="font-semibold">Cómo se hizo. </span>
+        icase-tool envía los archivos aprobados a un servicio que ejecuta Docker en el servidor; ese servicio levanta los contenedores del proyecto y publica por HTTPS una dirección por cada acceso (web, aplicación móvil y API), de modo que el sistema se puede abrir desde cualquier navegador o teléfono.
+      </Parrafo>
+      <Tabla
+        columnas={["Contenedor", "Qué es"]}
+        anchos={["w-[30%]"]}
+        mono={[0]}
+        filas={(stack.contenedores || []).map((c) => [c.nombre, `${c.descripcion}${c.tarea ? " (tarea de un solo uso)" : ""}`])}
+      />
+      {enlaces.length > 0 && (
+        <>
+          <p className="text-sm font-bold text-gray-900 mt-4 mb-2 break-after-avoid">Direcciones del sistema en ejecución</p>
+          <Tabla columnas={["Acceso", "Dirección"]} anchos={["w-[30%]"]} mono={[1]} filas={enlaces.map((e) => [e.nombre, e.url])} />
+        </>
+      )}
+    </Seccion>
+  );
+}
+
 // Lo que el proyecto propone, armado con el contexto y los resultados ya aprobados.
 function datosDePropuesta(contexto, analisis, prototipo) {
   const plataformas = enLista(contexto.plataformas).length
@@ -223,7 +584,7 @@ function datosDePropuesta(contexto, analisis, prototipo) {
   ].filter(([, valor]) => String(valor || "").trim());
 }
 
-export default function InformeProyecto({ proyecto, contexto = {}, artefactos, svgs, renderizar, onVolver }) {
+export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, artefactos, svgs, renderizar, implementacionAprobada, modelos, onVolver }) {
   const analisis = artefactos.analisis || {};
   const rf = analisis.requerimientos_funcionales || [];
   const rnf = analisis.requerimientos_no_funcionales || [];
@@ -235,6 +596,19 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
   const propuesta = datosDePropuesta(contexto, analisis, prototipo);
   const apartados = APARTADOS_DISENO.filter((a) => artefactos[a.clave]);
   const numero = (clave) => `5.${apartados.findIndex((a) => a.clave === clave) + 1}`;
+  const [enlaces, setEnlaces] = useState([]);
+  // Direcciones del sistema si está levantado (para el apartado de ejecución); sin runner, no se muestran.
+  useEffect(() => {
+    if (!implementacionAprobada || !proyectoId) return;
+    let cancelado = false;
+    fetch("/api/implementacion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proyectoId, accion: "estado" }) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => !cancelado && setEnlaces(d?.enlaces || []))
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [implementacionAprobada, proyectoId]);
   const [fecha] = useState(() =>
     new Date().toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })
   );
@@ -253,7 +627,10 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
         <button onClick={onVolver} className="text-sm font-semibold text-gray-600 hover:text-gray-900">
           ← Volver
         </button>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {!implementacionAprobada && (
+            <span className="text-xs text-gray-500">La implementación se agrega al aprobar su fase.</span>
+          )}
           <span className="text-xs text-gray-500">En el diálogo, elige &quot;Guardar como PDF&quot;.</span>
           <button
             onClick={exportar}
@@ -269,7 +646,7 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
         {/* --- Portada --- */}
         <header className="break-after-page min-h-[230mm] flex flex-col justify-center">
           <p className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-4">
-            Informe de análisis y diseño
+            {implementacionAprobada ? "Informe de análisis, diseño e implementación" : "Informe de análisis y diseño"}
           </p>
           <h1 className="text-4xl font-bold leading-tight mb-6" style={{ color: PALETA.navy }}>
             {proyecto.nombre}
@@ -285,6 +662,9 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
               <li>3. Propuesta de solución</li>
               <li>4. Fase de análisis: actores, requerimientos y casos de uso</li>
               <li>5. Fase de diseño: {apartados.map((a) => a.titulo.toLowerCase()).join(", ")}</li>
+              {implementacionAprobada && (
+                <li>6. Fase de implementación: metodología, stack técnico, estructura, base de datos, contrato de API, backend, frontend y ejecución</li>
+              )}
             </ol>
           </div>
         </header>
@@ -483,6 +863,9 @@ export default function InformeProyecto({ proyecto, contexto = {}, artefactos, s
             explicacion={extraerExplicacion(artefactos.sistema)}
           />
         </Seccion>
+
+        {/* ===================== IMPLEMENTACIÓN ===================== */}
+        {implementacionAprobada && <SeccionImplementacion numero="6" artefactos={artefactos} modelos={modelos} enlaces={enlaces} />}
       </article>
     </div>
   );

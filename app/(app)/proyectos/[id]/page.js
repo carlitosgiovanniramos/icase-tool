@@ -1609,6 +1609,15 @@ export default function WorkspaceProyecto() {
     await actualizarEnCascada(PASOS.filter((p) => p.fase === "implementacion"));
   }
 
+  // Aprobación general de la fase de Implementación: requiere sus seis pasos aprobados y habilita su
+  // contenido en el informe.
+  async function aprobarFaseImplementacion() {
+    await guardarFases((f) => {
+      f.implementacion = true;
+      return f;
+    });
+  }
+
   // "Ampliar con IA" del stack técnico: la IA modifica la ficha actual según la instrucción.
   async function ampliarStack(instruccion) {
     setCargando({ paso: "ampliar:impl_stack" });
@@ -2915,6 +2924,9 @@ export default function WorkspaceProyecto() {
             proyecto={proyecto}
             contexto={contexto}
             artefactos={artefactos}
+            implementacionAprobada={!!fasesAprobadas.implementacion}
+            modelos={modelos}
+            proyectoId={id}
             svgs={svgs}
             renderizar={renderizar}
             onVolver={() => setVista("resumen")}
@@ -3361,6 +3373,40 @@ export default function WorkspaceProyecto() {
                   </div>}
                 </>}
               </>
+            )}
+            {/* --- Aprobación general de la fase: requiere los seis pasos aprobados --- */}
+            {PASOS.filter((p) => p.fase === "implementacion").every((p) => fasesAprobadas[p.aprobacion]) && (
+              <div
+                className="mt-8 border-2 p-4 flex items-center justify-between gap-3 flex-wrap"
+                style={{ borderColor: fasesAprobadas.implementacion ? PALETA.oliva : PALETA.marron }}
+              >
+                <div>
+                  <p className="text-sm font-bold text-gray-900">Fase de Implementación</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {fasesAprobadas.implementacion
+                      ? "Aprobada. Ya forma parte del informe."
+                      : "Stack, estructura, base de datos, contrato, backend y frontend aprobados."}
+                  </p>
+                </div>
+                {fasesAprobadas.implementacion ? (
+                  <button
+                    onClick={() => setVista("informe")}
+                    style={{ backgroundColor: PALETA.navy }}
+                    className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+                  >
+                    Continuar al Informe →
+                  </button>
+                ) : (
+                  <button
+                    onClick={aprobarFaseImplementacion}
+                    disabled={ocupado}
+                    style={{ backgroundColor: PALETA.oliva }}
+                    className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
+                  >
+                    Aprobar fase de Implementación
+                  </button>
+                )}
+              </div>
             )}
           </ImplementacionFase>
         ) : (

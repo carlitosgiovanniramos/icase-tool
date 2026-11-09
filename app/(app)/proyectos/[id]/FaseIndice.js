@@ -37,11 +37,12 @@ export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
       bloqueado: !disenoAprobado,
     },
     {
-      // No se aprueba: es el documento con las dos fases, disponible cuando ambas lo están.
+      // No se aprueba: es el documento con las fases aprobadas (Análisis y Diseño, y la Implementación
+      // cuando también lo está); se habilita con Análisis y Diseño aprobados.
       clave: "informe",
       numero: "04",
       nombre: "Informe",
-      descripcion: "Documento con las dos fases, para revisar y exportar a PDF",
+      descripcion: "Documento con las fases aprobadas, para revisar y exportar a PDF",
       completado: false,
       bloqueado: !(analisisAprobado && disenoAprobado),
     },
