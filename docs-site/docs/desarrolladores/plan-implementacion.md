@@ -57,6 +57,13 @@ Después, la app móvil con la misma lista y, al final, el APK.
 
 | # | Plataforma · rol · pantalla | Corrección | Estado |
 |---|---|---|---|
+| 1 | Web · Administrador · Personal | Filtros con etiqueta (búsqueda, guardia, tipo, estado, cargo), chips para quitarlos, tarjetas que filtran, tabla ordenable y ficha en panel lateral | Hecha, por probar |
+| 2 | Web · Administrador · Personal | 5 por página con números de página | Hecha, por probar |
+| 3 | Web · todos · formularios | Cada error en su campo con el motivo (falta, formato, cédula repetida con el nombre de quien la tiene); las reglas de la base se traducen a su campo | Hecha en Personal, por probar; el traductor sirve a todos los formularios |
+| 4 | Web · Administrador y Jefe · Personal | Editar cualquier dato de una persona (cédula incluida): `op_patch_personal` ampliado en el contrato | Hecha, por probar |
+| 5 | Datos · Personal | Guardias "1" y "2" ("Guardia Nro. 1") en vez de "A" y "B"; la guardia y el tipo (rentado o voluntario) son filtros distintos | Hecha, por probar (aplica al levantar con "borrar datos") |
+| 6 | Web y base · Turnos de garita | Asignar turnos desde un calendario del mes: 5 franjas por día (08:00–11:00 … 20:00–08:00), el administrador en cualquier guardia y el jefe solo en la suya; la base lo aplica con RLS (migración de turnos ampliada, probada en un PostgreSQL aparte), el contrato suma `op_post_turno`, `op_patch_turno` y `op_delete_turno`, y el seed trae turnos de noviembre de 2026 | Hecha, por probar (`correccion-turnos.sql`; aplica al levantar con "borrar datos") |
+| 7 | Web · todas · tablas | Tablas y sus tarjetas sin bordes redondeados; la tabla de Personal ya no se corta ni pierde la paginación y se ordena por lo que se ve | Hecha, por probar |
 
 Pendientes inmediatos:
 
