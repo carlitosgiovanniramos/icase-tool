@@ -43,6 +43,12 @@ Se prueba bomberos desplegado, función por función y por rol, y se corrige lo 
 
 **Cómo se corrige:** el código del frontend de bomberos se escribe a mano en `respaldos/frontend-bomberos/fuente/` (ignorada por git). `node respaldos/frontend-bomberos/armar.mjs web` (o `movil`) lo revisa con el validador del paso Frontend y regenera `insertar-web.sql` (o `insertar-movil.sql`); el usuario lo pega en el SQL Editor de Supabase, pulsa "Compilar y corregir" de esa plataforma (si compila a la primera no usa IA) y "Actualizar y reiniciar". Volver a ejecutar un SQL borra el resultado de compilación de esa plataforma: hay que recompilarla.
 
+- Para una corrección, `node respaldos/frontend-bomberos/armar.mjs web <rutas...>` genera `actualizar-web.sql` solo con esos archivos y la ficha (decenas de KB en vez de 700).
+- Los cambios de base o contrato van en su propio SQL (`correccion-personal.sql`, `correccion-turnos.sql`, `correccion-vehiculos.sql`): editan el texto de las migraciones, el seed y el contrato guardados, y se aplican al levantar con "Borrar datos".
+- Después de pegar el SQL: "Compilar y corregir" de la plataforma, "Actualizar y reiniciar" (copia los archivos al proyecto y reconstruye) y Ctrl + F5 en el navegador.
+- **Editor SQL de Supabase:** parte el script en sentencias antes de ejecutarlo y busca frases que parecen crear tablas. Por eso los SQL de corrección no llevan `$` (textos con funciones entre comillas simples, `$` como `¤` + `chr(36)`), ni la frase `create table`, ni `select … into`. Si aparece el aviso "Potential issue detected", se elige "Run without RLS": "Run and enable RLS" agrega un `alter table` sobre la base de icase-tool y falla.
+- Las pruebas de estos SQL se hacen antes en un PostgreSQL desechable (`postgres:17-alpine`), aplicando la corrección dos veces y ejecutando la migración y el seed resultantes.
+
 **Plan de prueba del panel web**, desde cero:
 
 0. Ejecución: Detener con "borrar datos" y Levantar, para empezar solo con los datos del seed.
@@ -63,6 +69,10 @@ Después, la app móvil con la misma lista y, al final, el APK.
 | 4 | Web · Administrador y Jefe · Personal | Editar cualquier dato de una persona (cédula incluida): `op_patch_personal` ampliado en el contrato | Hecha, por probar |
 | 5 | Datos · Personal | Guardias "1" y "2" ("Guardia Nro. 1") en vez de "A" y "B"; la guardia y el tipo (rentado o voluntario) son filtros distintos | Hecha, por probar (aplica al levantar con "borrar datos") |
 | 6 | Web y base · Turnos de garita | Asignar turnos desde un calendario del mes: 5 franjas por día (08:00–11:00 … 20:00–08:00), el administrador en cualquier guardia y el jefe solo en la suya; la base lo aplica con RLS (migración de turnos ampliada, probada en un PostgreSQL aparte), el contrato suma `op_post_turno`, `op_patch_turno` y `op_delete_turno`, y el seed trae turnos de noviembre de 2026 | Hecha, por probar (`correccion-turnos.sql`; aplica al levantar con "borrar datos") |
+| 8 | Web · Administrador · Vehículos | Rediseño: la flota como tarjetas (ícono de su clase, estado, barra de kilometraje), filtros con chips, 6 por página, tarjetas de métricas que filtran y ficha en panel lateral con sus últimos movimientos; editar cualquier dato de la unidad (`op_patch_vehiculo` ampliado, `correccion-vehiculos.sql`) con errores en su campo; Movimientos con el mismo estilo y paginación numerada. Los estilos comunes de Personal y Vehículos pasan a `globals.css` | Hecha, por probar |
+| 9 | Web · Administrador · Usuarios | Rediseño: cuentas en una lista con avatar de iniciales y color por rol, filtros con chips (búsqueda, rol, estado) sincronizados con el menú lateral, 6 por página, tarjetas que filtran y ficha en panel lateral: rol con tres opciones y "Guardar rol", permisos del rol, restablecer contraseña y suspender o activar | Hecha, por probar |
+| 10 | Web · Administrador · Crear usuario | El correo había perdido el estilo (el CSS del prototipo solo cubre `input[type="text"]`); se valida en su campo (formato y correo repetido), muestra la ficha de la persona elegida y el rol sugerido, copia la contraseña temporal y, al crear la cuenta, una confirmación con el correo y la contraseña para entregarlos | Hecha, por probar |
+| 11 | icase-tool · Ejecución | Botón "Borrar datos" (borra la base y los archivos del proyecto, también con los contenedores sin crear); el runner ya lo permitía, el panel no lo ofrecía | Hecha (commit `c587632`, en `develop`) |
 | 7 | Web · todas · tablas | Tablas y sus tarjetas sin bordes redondeados; la tabla de Personal ya no se corta ni pierde la paginación y se ordena por lo que se ve | Hecha, por probar |
 
 Pendientes inmediatos:
