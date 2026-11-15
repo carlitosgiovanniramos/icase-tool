@@ -1,0 +1,7 @@
+# Flutter con documentación: la app recibe la dirección pública del sitio de documentación para mostrar
+# el enlace "Documentación" (--dart-define=DOCS_URL).
+services:
+  movil:
+    build:
+      args:
+        DOCS_URL: ${DOCS_URL_PUBLICA:-http://localhost:3200}

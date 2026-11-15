@@ -1,0 +1,7 @@
+# Next.js con documentación: la web recibe la dirección pública del sitio de documentación (la fija el
+# runner: localhost en la PC, la dirección HTTPS en el servidor) para mostrar el enlace "Documentación".
+services:
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_DOCS_URL: ${DOCS_URL_PUBLICA:-http://localhost:3200}

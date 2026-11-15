@@ -1,0 +1,18 @@
+{
+  "nombre": "docusaurus",
+  "titulo": "Documentación (Docusaurus)",
+  "capa": "documentacion",
+  "interna": true,
+  "reconoce": [],
+  "servicios": {
+    "docs": "Documentación del proyecto (Docusaurus): manual de usuario, desarrolladores y API"
+  },
+  "variables": {
+    "DOCS_PORT": "3200"
+  },
+  "enlaces": {
+    "DOCS_PORT": "Documentación"
+  },
+  "descripcion": "La agrega el paso Documentación de la Implementación: no se elige en el stack. Sitio estático compilado con Docusaurus y servido con nginx.",
+  "carpeta": "docs"
+}

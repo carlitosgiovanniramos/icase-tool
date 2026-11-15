@@ -230,9 +230,13 @@ function direccionDe(clave, puerto) {
 const direcciones = (variables) =>
   Object.fromEntries(Object.entries(variables).filter(([k, v]) => ES_PUERTO.test(k) && Number(v)).map(([k, v]) => [k, direccionDe(k, Number(v))]));
 
-// La web y la vista web de la app se compilan con la dirección de Supabase que verá el navegador.
+// La web y la vista web de la app se compilan con las direcciones que verá el navegador: por cada puerto
+// <NOMBRE>_PORT, <NOMBRE>_URL_PUBLICA (SUPABASE_URL_PUBLICA para la API, DOCS_URL_PUBLICA para la
+// documentación...).
 function conDireccionPublica(variables) {
-  if (variables.SUPABASE_PORT) variables.SUPABASE_URL_PUBLICA = direccionDe("SUPABASE_PORT", Number(variables.SUPABASE_PORT));
+  for (const [clave, valor] of Object.entries(variables)) {
+    if (ES_PUERTO.test(clave) && Number(valor)) variables[clave.replace(ES_PUERTO, "_URL_PUBLICA")] = direccionDe(clave, Number(valor));
+  }
   return variables;
 }
 

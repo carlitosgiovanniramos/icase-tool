@@ -10,7 +10,8 @@
     "web": "Panel web (Next.js)"
   },
   "integraciones": [
-    "supabase"
+    "supabase",
+    "docusaurus"
   ],
   "altaDisponibilidad": {
     "servicio": "web",

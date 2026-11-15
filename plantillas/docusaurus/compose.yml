@@ -1,0 +1,9 @@
+# Documentación del proyecto: Docusaurus compilado y servido con nginx. Su contenido (docs/docs y los
+# diagramas en docs/static) lo genera el paso "Documentación" a partir de todo lo aprobado.
+services:
+  docs:
+    build:
+      context: ./docs
+    restart: unless-stopped
+    ports:
+      - "${DOCS_PORT:-3200}:80"

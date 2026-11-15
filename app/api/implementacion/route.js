@@ -121,7 +121,7 @@ async function leerProyecto(supabase, id) {
 // Nombre de cada puerto según las piezas del catálogo ({ WEB_PORT: "Web", ... }).
 async function nombresDePuertos() {
   const nombres = {};
-  for (const ficha of await catalogo()) Object.assign(nombres, ficha.enlaces || {});
+  for (const ficha of await catalogo({ incluirInternas: true })) Object.assign(nombres, ficha.enlaces || {});
   return nombres;
 }
 
