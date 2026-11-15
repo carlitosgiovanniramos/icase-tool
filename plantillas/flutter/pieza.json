@@ -10,7 +10,8 @@
     "movil": "Vista previa web de la app móvil (Flutter)"
   },
   "integraciones": [
-    "supabase"
+    "supabase",
+    "docusaurus"
   ],
   "variables": {
     "MOVIL_PORT": "8090"

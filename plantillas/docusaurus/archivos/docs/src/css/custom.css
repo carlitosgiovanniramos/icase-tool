@@ -1,0 +1,23 @@
+/* Colores sobrios, esquinas rectas y tablas legibles. */
+:root {
+  --ifm-color-primary: #1f2a44;
+  --ifm-color-primary-dark: #1b2640;
+  --ifm-color-primary-darker: #19233b;
+  --ifm-color-primary-darkest: #141c30;
+  --ifm-color-primary-light: #233049;
+  --ifm-color-primary-lighter: #26334e;
+  --ifm-color-primary-lightest: #2d3c5b;
+  --ifm-global-radius: 0;
+  --ifm-code-font-size: 90%;
+}
+[data-theme="dark"] {
+  --ifm-color-primary: #9fb3d9;
+  --ifm-color-primary-dark: #8aa2cf;
+  --ifm-color-primary-darker: #7f99ca;
+  --ifm-color-primary-darkest: #5f7fbb;
+  --ifm-color-primary-light: #b4c4e3;
+  --ifm-color-primary-lighter: #bfcde8;
+  --ifm-color-primary-lightest: #dfe6f3;
+}
+table { display: table; width: 100%; font-size: 0.92rem; }
+.markdown img { border: 1px solid var(--ifm-color-emphasis-300); background: #fff; padding: 8px; }

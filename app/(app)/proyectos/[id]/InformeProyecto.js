@@ -270,6 +270,7 @@ const APARTADOS_IMPLEMENTACION = [
   { clave: "impl_contrato", titulo: "Contrato de API", define: "Las operaciones que expone el sistema, quién puede usarlas y la prueba de permisos." },
   { clave: "impl_backend", titulo: "Backend", define: "La lógica de negocio que cumple el contrato y su prueba." },
   { clave: "impl_frontend", titulo: "Frontend", define: "Las aplicaciones de cada plataforma y su compilación." },
+  { clave: "impl_documentacion", titulo: "Documentación", define: "El sitio de documentación del sistema: manual de usuario, desarrolladores y API." },
   { clave: "ejecucion", titulo: "Ejecución y despliegue", define: "Los contenedores que levantan el sistema y dónde se publica." },
 ];
 
@@ -294,6 +295,10 @@ const COMO_SE_HIZO = {
   impl_backend: {
     obtuvo: "Se generó la lógica que la base de datos no resuelve por sí sola (funciones del servidor) para cumplir las operaciones del contrato.",
     verifico: "Se levantó junto con la base en contenedores y se llamó a cada función como cada rol del contrato.",
+  },
+  impl_documentacion: {
+    obtuvo: "Se armó con todo lo aprobado del proyecto, sin IA: los roles, requerimientos y pantallas para el manual de usuario; la arquitectura, el stack, la estructura, la base de datos, el backend y el frontend para los desarrolladores; y cada operación del contrato, con su entrada y su salida, para la API.",
+    verifico: "El sitio se compila con Docusaurus en su propio contenedor y se publica junto con el sistema.",
   },
   impl_frontend: {
     obtuvo: "Se construyó cada plataforma por capas a partir del prototipo aprobado, conectando cada acción de pantalla con su operación del contrato.",
@@ -543,6 +548,25 @@ function SeccionImplementacion({ numero, artefactos, modelos = {}, enlaces }) {
         </>
       )}
 
+      {artefactos.impl_documentacion && (
+        <>
+          <Apartado
+            numero={n("impl_documentacion")}
+            titulo="Documentación"
+            intro="El sistema tiene su propio sitio de documentación, que se levanta en un contenedor junto con el resto y al que se llega desde el enlace «Documentación» de la aplicación."
+          />
+          <ComoSeHizo clave="impl_documentacion" modelo={modelos.impl_documentacion} />
+          <Resumen
+            filas={[
+              ["Manual de usuario", `${artefactos.impl_documentacion.manual} páginas: introducción, una por rol y la navegación del sistema`],
+              ["Desarrolladores", `${artefactos.impl_documentacion.desarrolladores} páginas: arquitectura, instalación, estructura, base de datos, requerimientos, backend y frontend`],
+              ["API", `${artefactos.impl_documentacion.api} páginas: introducción, acciones por pantalla y una por operación con su JSON de entrada y salida`],
+              ["Diagramas", artefactos.impl_documentacion.diagramas],
+            ]}
+          />
+        </>
+      )}
+
       <Apartado
         numero={n("ejecucion")}
         titulo="Ejecución y despliegue"
@@ -663,7 +687,7 @@ export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, a
               <li>4. Fase de análisis: actores, requerimientos y casos de uso</li>
               <li>5. Fase de diseño: {apartados.map((a) => a.titulo.toLowerCase()).join(", ")}</li>
               {implementacionAprobada && (
-                <li>6. Fase de implementación: metodología, stack técnico, estructura, base de datos, contrato de API, backend, frontend y ejecución</li>
+                <li>6. Fase de implementación: metodología, stack técnico, estructura, base de datos, contrato de API, backend, frontend, documentación y ejecución</li>
               )}
             </ol>
           </div>

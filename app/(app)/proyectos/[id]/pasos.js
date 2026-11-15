@@ -141,6 +141,17 @@ export const PASOS = [
     ruta: "/api/generar-frontend",
     archivos: true,
   },
+  // Documentación del proyecto (manual de usuario, desarrolladores y API) armada con todo lo aprobado,
+  // sin IA, para el sitio Docusaurus que corre en su propio contenedor (pieza "docusaurus"). Se genera
+  // en el navegador (lib/documentacion.js): los diagramas de Mermaid se dibujan ahí.
+  {
+    clave: "impl_documentacion",
+    fase: "implementacion",
+    nombre: "Documentación",
+    aprobacion: "impl_documentacion",
+    columna: "documentacion_implementacion",
+    archivos: true,
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));
@@ -155,6 +166,7 @@ export const PASOS_IMPLEMENTACION = [
   { clave: "impl_contrato", nombre: "Contrato de API" },
   { clave: "impl_backend", nombre: "Backend" },
   { clave: "impl_frontend", nombre: "Frontend" },
+  { clave: "impl_documentacion", nombre: "Documentación" },
 ];
 
 export function pasosDespuesDe(clave) {

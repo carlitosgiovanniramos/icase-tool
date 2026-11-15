@@ -12,9 +12,12 @@ RUN flutter create --platforms=web --project-name "$(grep '^name:' pubspec.yaml 
     && flutter pub get
 ARG SUPABASE_URL
 ARG SUPABASE_ANON_KEY
+# Dirección del sitio de documentación del proyecto (vacía si el proyecto aún no la tiene).
+ARG DOCS_URL
 RUN flutter build web --release \
       --dart-define=SUPABASE_URL=$SUPABASE_URL \
-      --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+      --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY \
+      --dart-define=DOCS_URL=$DOCS_URL
 
 # Etapa 2: solo los archivos compilados, servidos por nginx.
 FROM nginx:1.27-alpine

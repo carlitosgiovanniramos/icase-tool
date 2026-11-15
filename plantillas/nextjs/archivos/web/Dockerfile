@@ -7,8 +7,11 @@ COPY . .
 # Las variables NEXT_PUBLIC_ quedan fijas en el código del navegador al compilar.
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Dirección del sitio de documentación del proyecto (vacía si el proyecto aún no la tiene).
+ARG NEXT_PUBLIC_DOCS_URL
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_DOCS_URL=$NEXT_PUBLIC_DOCS_URL \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

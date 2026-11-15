@@ -41,6 +41,8 @@ import FichaFrontend from "./FichaFrontend";
 import { archivosDeBackend } from "@/lib/archivosBackend";
 import { archivosDeFrontend, plataformasDeFrontend, capaDe } from "@/lib/archivosFrontend";
 import FichaContrato, { PegarContrato } from "./FichaContrato";
+import FichaDocumentacion from "./FichaDocumentacion";
+import { generarDocumentacion, resumenDocumentacion } from "@/lib/documentacion";
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
@@ -847,10 +849,41 @@ export default function WorkspaceProyecto() {
     };
   }
 
+  // Documentación del proyecto: se arma con todo lo aprobado (lib/documentacion.js) y reemplaza los
+  // archivos anteriores del paso. Los diagramas que aún no se dibujaron se dibujan aquí.
+  async function generarPasoDocumentacion() {
+    const a = artefactosRef.current;
+    const dibujados = {};
+    for (const clave of ["casos_uso", "clases", "er", "arbol", "arquitectura", "sistema"]) {
+      if (!a[clave]) continue;
+      try {
+        dibujados[clave] = svgs[clave] || (await renderizar(a[clave]));
+      } catch (err) {
+        console.warn(`No se pudo dibujar ${clave} para la documentación:`, err);
+      }
+    }
+    const archivos = generarDocumentacion({
+      proyecto: proyectoRef.current,
+      contexto: contextoRef.current,
+      artefactos: a,
+      svgs: dibujados,
+      pantallas: planPrototipo(contextoRef.current.prototipo, a.prototipo),
+    });
+    await borrarArchivosDePaso("impl_documentacion", archivos.map((x) => x.ruta));
+    const ahora = new Date().toISOString();
+    const { error } = await supabase.from("archivos_proyecto").upsert(
+      archivos.map((x) => ({ proyecto_id: id, ruta: x.ruta, contenido: x.contenido, paso: "impl_documentacion", estado: "generado", hash: hashCodigo(x.contenido), actualizado_en: ahora })),
+      { onConflict: "proyecto_id,ruta" }
+    );
+    if (error) throw new Error(`No se pudo guardar la documentación: ${error.message}`);
+    return { valor: { ...resumenDocumentacion(archivos), actualizado: ahora }, modelo: null };
+  }
+
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
+    if (clave === "impl_documentacion") return generarPasoDocumentacion();
     if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "impl_backend") return generarBackend(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "prototipo") {
@@ -2195,6 +2228,19 @@ export default function WorkspaceProyecto() {
   async function guardarArchivoEditado(archivo, contenido) {
     if (archivo.paso === "impl_backend") return guardarArchivoBackendEditado(archivo, contenido);
     if (archivo.paso === "impl_frontend") return guardarArchivoFrontendEditado(archivo, contenido);
+    if (archivo.paso === "impl_documentacion") {
+      try {
+        await guardarArchivoGenerado("impl_documentacion", archivo.ruta, contenido, "editado");
+        const ficha = artefactosRef.current.impl_documentacion || {};
+        const archivos = (ficha.archivos || []).map((a) => (a.ruta === archivo.ruta ? { ...a, lineas: contenido.split("\n").length, editado: true } : a));
+        await guardarArtefacto("impl_documentacion", { ...ficha, archivos, actualizado: new Date().toISOString() });
+        await marcarCambio("impl_documentacion");
+        return true;
+      } catch (err) {
+        mostrarError(err.message, "No se pudo guardar el archivo");
+        return false;
+      }
+    }
     try {
       const ficha = artefactosRef.current.impl_bd;
       if (archivo.paso !== "impl_bd" || !ficha) throw new Error("Este archivo no se puede editar.");
@@ -2748,6 +2794,7 @@ export default function WorkspaceProyecto() {
     impl_contrato: !!fasesAprobadas.impl_bd && !pendientes.impl_bd,
     impl_backend: !!fasesAprobadas.impl_contrato && !pendientes.impl_contrato,
     impl_frontend: !!fasesAprobadas.impl_backend && !pendientes.impl_backend,
+    impl_documentacion: !!fasesAprobadas.impl_frontend && !pendientes.impl_frontend,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2948,7 +2995,8 @@ export default function WorkspaceProyecto() {
               a.origen === "generado" && !ocupado &&
               ((a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta) ||
                 (a.paso === "impl_backend" && trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto) ||
-                (a.paso === "impl_frontend" && trabajable("impl_frontend") && !bloqueado("impl_frontend")))
+                (a.paso === "impl_frontend" && trabajable("impl_frontend") && !bloqueado("impl_frontend")) ||
+                (a.paso === "impl_documentacion" && trabajable("impl_documentacion") && !bloqueado("impl_documentacion")))
             }
             onGuardarArchivo={guardarArchivoEditado}
             // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
@@ -2960,6 +3008,7 @@ export default function WorkspaceProyecto() {
               artefactos.impl_bd?.actualizado,
               artefactos.impl_backend?.actualizado,
               artefactos.impl_frontend?.actualizado,
+              artefactos.impl_documentacion?.actualizado,
             ])}
           >
             <TituloPaso
@@ -3374,7 +3423,30 @@ export default function WorkspaceProyecto() {
                 </>}
               </>
             )}
-            {/* --- Aprobación general de la fase: requiere los seis pasos aprobados --- */}
+            {visible("impl_documentacion") && (
+              <>
+                <TituloPaso color={PALETA.marron} estado={estadoPaso("impl_documentacion")} modelo={modelos.impl_documentacion}
+                  onActualizar={trabajable("impl_documentacion") ? () => actualizarPaso("impl_documentacion") : undefined}
+                  deshabilitado={ocupado} onAlternar={() => alternarPaso("impl_documentacion")} abierto={pasoAbierto("impl_documentacion")}>
+                  Documentación
+                </TituloPaso>
+                {pasoAbierto("impl_documentacion") && <>
+                  <ControlesPaso clave="impl_documentacion" esperando={!trabajable("impl_documentacion")} bloqueado={bloqueado("impl_documentacion")} enEdicion={enEdicion("impl_documentacion")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
+                    <BotonGenerar onClick={() => (artefactos.impl_documentacion ? regenerarPaso("impl_documentacion") : generarPaso("impl_documentacion"))} secundario={!!artefactos.impl_documentacion} disabled={ocupado} cargando={generando("impl_documentacion")} textoCargando="Generando..." color={PALETA.marron}>
+                      {artefactos.impl_documentacion ? "Regenerar" : "Generar"} documentación
+                    </BotonGenerar>
+                    {artefactos.impl_documentacion && <BotonEliminar onClick={() => eliminarPaso("impl_documentacion", "¿Eliminar la documentación generada?")} disabled={ocupado} title="Eliminar documentación" />}
+                  </ControlesPaso>
+                  <FichaDocumentacion ficha={artefactos.impl_documentacion} />
+                  {artefactos.impl_documentacion && trabajable("impl_documentacion") && <div className="mt-4 flex gap-3 flex-wrap">
+                    <BotonAprobar aprobado={!!fasesAprobadas.impl_documentacion} onClick={() => aprobarPaso("impl_documentacion")} etiqueta="Documentación" disabled={ocupado} />
+                    {!fasesAprobadas.impl_documentacion && <BotonRechazar etiqueta="Documentación" onClick={() => rechazarPaso("impl_documentacion", "¿Rechazar la documentación?")} disabled={ocupado} />}
+                  </div>}
+                </>}
+              </>
+            )}
+
+            {/* --- Aprobación general de la fase: requiere todos sus pasos aprobados --- */}
             {PASOS.filter((p) => p.fase === "implementacion").every((p) => fasesAprobadas[p.aprobacion]) && (
               <div
                 className="mt-8 border-2 p-4 flex items-center justify-between gap-3 flex-wrap"
@@ -3385,7 +3457,7 @@ export default function WorkspaceProyecto() {
                   <p className="text-xs text-gray-500 mt-0.5">
                     {fasesAprobadas.implementacion
                       ? "Aprobada. Ya forma parte del informe."
-                      : "Stack, estructura, base de datos, contrato, backend y frontend aprobados."}
+                      : "Stack, estructura, base de datos, contrato, backend, frontend y documentación aprobados."}
                   </p>
                 </div>
                 {fasesAprobadas.implementacion ? (

@@ -53,6 +53,22 @@ Los errores de cobertura y las contradicciones comprobadas de permisos impiden a
 Ejecuta una vez `supabase/contrato_implementacion.sql` en el SQL Editor del Supabase de I-CASE Tool. Para generar un inventario nuevo y probar permisos necesitas Docker y el runner local. Una versión desplegada puede regenerar el mapa con un inventario previamente guardado si los SQL y el stack no cambiaron.
 :::
 
+## 7. Documentación
+
+Disponible después de aprobar el frontend. **Generar documentación** arma el sitio de documentación del proyecto con todo lo aprobado, sin IA:
+
+- **Manual de usuario:** una página por rol (qué puede hacer, qué pantallas usa y el paso a paso de cada función) y la navegación del sistema (árbol de navegación y casos de uso).
+- **Desarrolladores:** arquitectura y stack, instalación con Docker, estructura del código, base de datos, requerimientos, backend y frontend.
+- **API:** introducción (acceso y roles), acciones por pantalla y **una página por operación** con su JSON de entrada y de salida.
+
+El sitio usa Docusaurus y corre en su **propio contenedor** (`docs`) al levantar el proyecto: aparece en el panel de **Ejecución** como "Documentación" y la web del proyecto muestra el enlace en su menú. Las páginas se pueden corregir a mano en el explorador de archivos.
+
+:::info Instalación
+Ejecuta una vez `supabase/documentacion_implementacion.sql` en el SQL Editor del Supabase de I-CASE Tool.
+:::
+
+Con todos los pasos aprobados aparece **Aprobar fase de Implementación**; al aprobarla, el informe incluye el capítulo de la implementación.
+
 ## Archivos del proyecto
 
 Debajo de los pasos está el **explorador de archivos**: el árbol del proyecto y el código de cada archivo.
