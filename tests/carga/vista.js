@@ -33,7 +33,7 @@ export const options = {
   summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)"],
 };
 
-export default function () {
+export default function visitarVista() {
   const r = http.get(`${URL}/`, { headers: { Cookie: COOKIE }, redirects: 0, tags: { vista: "proyectos" }, timeout: "30s" });
   // Con sesión válida responde 200 con "Mis proyectos"; una redirección a /login es un error de la prueba.
   const ok = check(r, {

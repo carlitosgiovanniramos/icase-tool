@@ -33,7 +33,7 @@ jobs:
           cache: npm
       - run: npm ci
       # La prueba de coherencia del caso de estudio se omite sola: sus datos no están en el repositorio.
-      - run: node --experimental-test-module-mocks --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=resultados-unitarias.xml tests/
+      - run: node --experimental-test-module-mocks --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=resultados-unitarias.xml "tests/*.test.mjs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

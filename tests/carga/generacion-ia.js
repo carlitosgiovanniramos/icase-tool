@@ -34,7 +34,7 @@ export const options = {
   summaryTrendStats: ["avg", "min", "med", "max", "p(95)"],
 };
 
-export default function () {
+export default function generarCasosDeUso() {
   const r = http.post(`${URL}/api/generar-casos-uso`, JSON.stringify({ analisis: ANALISIS, usarClaude: false }), {
     headers: { "Content-Type": "application/json", Cookie: COOKIE },
     redirects: 0,
