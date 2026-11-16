@@ -203,7 +203,8 @@ export async function POST(request) {
       return NextResponse.json(await runner("GET", `${base}/logs${consulta}`));
     }
 
-    return NextResponse.json(await runner("POST", `${base}/detener`, { borrarDatos: !!borrarDatos }));
+    // Borrar datos hace antes un respaldo de los volúmenes: puede tardar más que detener.
+    return NextResponse.json(await runner("POST", `${base}/detener`, { borrarDatos: !!borrarDatos }, borrarDatos ? 280_000 : 110_000));
   } catch (err) {
     return NextResponse.json({ error: err.message, salida: err.salida }, { status: err.estado || 500 });
   }

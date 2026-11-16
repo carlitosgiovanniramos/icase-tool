@@ -12,6 +12,7 @@
 //                            dirección pública de Supabase. Sin él (la PC), todo queda en localhost.
 //   CADDY_PROYECTOS          carpeta con un sitio de Caddy por proyecto (por defecto /srv/icase-caddy)
 //   CADDY_CONFIG             Caddyfile principal, que importa esa carpeta (por defecto /etc/caddy/Caddyfile)
+//   RUNNER_MAX_RESPALDOS     respaldos que se conservan por proyecto al borrar sus datos (por defecto 10)
 
 import http from "node:http";
 import net from "node:net";
@@ -19,7 +20,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { parse as leerYaml, stringify as escribirYaml } from "yaml";
 import { CONSULTA_INVENTARIO, CONSULTA_USUARIOS_CONTRATO } from "../lib/inventarioContrato.js";
 import { probarPermisosContrato } from "../lib/pruebaContrato.js";
@@ -37,6 +38,11 @@ const CADDY_PROYECTOS = process.env.CADDY_PROYECTOS || "/srv/icase-caddy";
 const CADDY_CONFIG = process.env.CADDY_CONFIG || "/etc/caddy/Caddyfile";
 const DESPLAZAMIENTO_PUBLICO = 10_000;
 const NO_HTTP = /DB|POSTGRES|MYSQL|MONGO|REDIS/; // puertos que no son páginas ni APIs HTTP
+// Respaldos de los datos antes de borrarlos: una carpeta por proyecto y fecha. Empieza con "_", así que
+// no choca con la carpeta de ningún proyecto (los identificadores empiezan con letra o número).
+const RESPALDOS = path.join(RAIZ, "_respaldos");
+const MAX_RESPALDOS = Number(process.env.RUNNER_MAX_RESPALDOS) || 10;
+const IMAGEN_RESPALDO = "alpine:3.20";
 
 // Toda variable de .env que termina en _PORT es un puerto de la PC donde se publica un contenedor;
 // su valor en .env.example es el primer puerto que se prueba.
@@ -461,13 +467,60 @@ async function logs(id, servicio) {
   return { logs: await compose(id, ["logs", "--no-color", "--tail", "200", ...(servicio ? [servicio] : [])]) };
 }
 
+// Respaldo de los datos del proyecto antes de borrarlos, para cualquier stack: el .env (las claves con que
+// se creó la base) y cada volumen de Docker del proyecto (base de datos, archivos subidos) comprimido en
+// .tar.gz, con los contenedores detenidos para que la copia sea consistente. Queda en
+// <WORKSPACES_DIR>/_respaldos/<id>/<fecha>/ con respaldo.json (qué tiene y cómo restaurarlo); se conservan
+// los últimos MAX_RESPALDOS. Sin volúmenes no hay nada que respaldar y devuelve null.
+async function respaldar(id) {
+  const lista = await docker(["volume", "ls", "-q", "--filter", `label=com.docker.compose.project=${nombreCompose(id)}`]);
+  const volumenes = lista.split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+  if (!volumenes.length) return null;
+
+  await compose(id, ["stop"], { espera: ESPERA_LARGA_MS });
+  const fecha = new Date();
+  const nombre = fecha.toISOString().slice(0, 19).replace(/:/g, "-");
+  const carpetaProyecto = path.join(RESPALDOS, id);
+  const destino = path.join(carpetaProyecto, nombre);
+  await mkdir(destino, { recursive: true });
+  try {
+    await copyFile(path.join(carpetaDe(id), ".env"), path.join(destino, ".env"));
+    for (const volumen of volumenes) {
+      await docker(["run", "--rm", "-v", `${volumen}:/datos:ro`, "-v", `${destino}:/respaldo`, IMAGEN_RESPALDO,
+        "tar", "czf", `/respaldo/${volumen}.tar.gz`, "-C", "/datos", "."], { espera: ESPERA_LARGA_MS });
+    }
+    await writeFile(path.join(destino, "respaldo.json"), JSON.stringify({
+      proyecto: id,
+      fecha: fecha.toISOString(),
+      volumenes,
+      restaurar: [
+        "Con el proyecto detenido y sus volúmenes creados (Levantar y Detener), por cada volumen:",
+        `docker run --rm -v <volumen>:/datos -v <esta carpeta>:/respaldo ${IMAGEN_RESPALDO} sh -c "rm -rf /datos/* && tar xzf /respaldo/<volumen>.tar.gz -C /datos"`,
+        "y copiar este .env a la carpeta del proyecto antes de levantarlo.",
+      ],
+    }, null, 2), "utf8");
+  } catch (err) {
+    await rm(destino, { recursive: true, force: true }).catch(() => {});
+    throw new ErrorRunner(500, `No se pudo hacer el respaldo; no se borró nada. ${err.message}`);
+  }
+
+  const anteriores = (await readdir(carpetaProyecto)).sort();
+  for (const viejo of anteriores.slice(0, Math.max(0, anteriores.length - MAX_RESPALDOS))) {
+    await rm(path.join(carpetaProyecto, viejo), { recursive: true, force: true }).catch(() => {});
+  }
+  return { nombre, carpeta: destino, volumenes: volumenes.length };
+}
+
 async function detener(id, { borrarDatos = false, eliminar = false } = {}) {
   const estado = estadoDe(id);
   if (estado.operacion) throw new ErrorRunner(409, "Ya hay una operación en curso para este proyecto.");
   const carpeta = carpetaDe(id);
   estado.operacion = "deteniendo";
   try {
+    let respaldo = null;
     if (await leerEnv(carpeta)) {
+      // Borrar datos: antes, siempre un respaldo; si falla, no se borra nada.
+      if (borrarDatos && !eliminar) respaldo = await respaldar(id);
       const argumentos = ["down"];
       if (borrarDatos || eliminar) argumentos.push("-v");
       if (eliminar) argumentos.push("--rmi", "local");
@@ -476,7 +529,7 @@ async function detener(id, { borrarDatos = false, eliminar = false } = {}) {
     if (eliminar) await rm(carpeta, { recursive: true, force: true });
     estado.encendido = false;
     estado.error = null;
-    return { detenido: true };
+    return { detenido: true, respaldo };
   } finally {
     estado.operacion = null;
   }

@@ -352,7 +352,7 @@ const ultimasLineas = (texto, n = 40) => String(texto || "").trimEnd().split("\n
 
 // servicios: [{ nombre, descripcion, tarea }] del docker-compose.yml del proyecto.
 function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
-  const { confirmar, mostrarError } = useAlert();
+  const { confirmar, mostrarError, mostrarInfo } = useAlert();
   const [estado, setEstado] = useState(null);
   const [errorEstado, setErrorEstado] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -405,18 +405,20 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
   }
 
   // Apaga el proyecto y borra su base y sus archivos (volúmenes de Docker): al levantarlo de nuevo se
-  // aplican las migraciones y los datos de prueba desde cero. Sirve también con los contenedores sin crear.
+  // aplican las migraciones y los datos de prueba desde cero. Antes, el runner guarda siempre un respaldo
+  // (si falla, no borra nada). Sirve también con los contenedores sin crear.
   async function borrarDatos() {
     const ok = await confirmar(
-      "Se borran la base de datos y los archivos subidos del proyecto. Al levantarlo se crean de nuevo con los datos de prueba.",
+      "Antes se guarda un respaldo. Luego se borran la base de datos y los archivos subidos, y al levantarlo se crean de nuevo con los datos de prueba.",
       "¿Borrar los datos?",
       "Borrar datos"
     );
     if (!ok) return;
     setEnviando(true);
     try {
-      await llamar(proyectoId, "detener", { borrarDatos: true });
+      const { respaldo } = await llamar(proyectoId, "detener", { borrarDatos: true });
       await consultar();
+      if (respaldo) mostrarInfo(`Respaldo guardado en ${respaldo.carpeta}`, "Datos borrados");
     } catch (err) {
       mostrarError(err.message, "No se pudieron borrar los datos");
     } finally {
@@ -453,24 +455,7 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
     <div className="border border-gray-300 p-4">
       {errorEstado && <p className="text-sm mb-3" style={{ color: PALETA.carmesi }}>{errorEstado}</p>}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
-        {delProyecto.map(({ nombre, descripcion, tarea }) => {
-          const d = describirServicio(servicios[nombre], tarea);
-          return (
-            <div key={nombre} className="border border-gray-200 px-3 py-2 flex items-center justify-between gap-2">
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-gray-800 font-mono">{nombre}</span>
-                <span className="block text-xs text-gray-500 truncate">{descripcion}</span>
-              </span>
-              <span className="text-xs font-bold uppercase tracking-wide shrink-0" style={{ color: d.color }}>
-                {d.texto}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap mb-4">
         <button
           onClick={levantar}
           disabled={ocupado || !hayArchivos}
@@ -497,21 +482,48 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
             Borrar datos
           </button>
         )}
-        {!operando &&
-          (estado?.enlaces || []).map((enlace) => (
-            <a
-              key={enlace.url}
-              href={enlace.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
-              className="border px-4 py-2 text-sm font-semibold hover:bg-gray-50"
-            >
-              {enlace.nombre} · {enlace.url.replace("http://", "")}
-            </a>
-          ))}
         {!hayArchivos && <span className="text-xs text-gray-500">Sin archivos generados</span>}
       </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {delProyecto.map(({ nombre, descripcion, tarea }) => {
+          const d = describirServicio(servicios[nombre], tarea);
+          return (
+            <div key={nombre} className="border border-gray-200 px-3 py-2 flex items-center justify-between gap-2">
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-gray-800 font-mono">{nombre}</span>
+                <span className="block text-xs text-gray-500 truncate">{descripcion}</span>
+              </span>
+              <span className="text-xs font-bold uppercase tracking-wide shrink-0" style={{ color: d.color }}>
+                {d.texto}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Direcciones del sistema levantado: una tarjeta por enlace con su nombre y su dirección. */}
+      {!operando && estado?.enlaces?.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">Direcciones del sistema</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {estado.enlaces.map((enlace) => (
+              <a
+                key={enlace.url}
+                href={enlace.url}
+                target="_blank"
+                rel="noreferrer"
+                className="border border-gray-200 px-3 py-2 flex flex-col gap-1 hover:bg-gray-50"
+              >
+                <span className="text-sm font-semibold text-gray-800">{enlace.nombre}</span>
+                <span className="text-sm font-semibold font-mono break-all" style={{ color: PALETA.oliva }}>
+                  {enlace.url.replace(/^https?:\/\//, "")}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {estado?.operacion === "levantando" && (
         <pre className="mt-4 bg-gray-900 text-gray-100 text-xs p-3 max-h-64 overflow-auto whitespace-pre-wrap">
