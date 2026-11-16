@@ -14,9 +14,14 @@ export default function FichaDocumentacion({ ficha }) {
         <span className="border border-gray-300 px-3 py-1.5">API: <span className="font-semibold">{ficha.api}</span> páginas</span>
         <span className="border border-gray-300 px-3 py-1.5">Diagramas: <span className="font-semibold">{ficha.diagramas}</span></span>
       </div>
+      {ficha.pendientes?.length > 0 && (
+        <p style={{ color: "#9a3412" }}>Faltan por redactar: {ficha.pendientes.join(", ")}. Pulsa Continuar documentación.</p>
+      )}
       <p className="text-gray-600">
-        Se arma con todo lo aprobado del proyecto, sin IA. Al levantar el proyecto se publica en su propio
-        contenedor y la aplicación muestra el enlace &quot;Documentación&quot;.
+        La IA redacta las páginas de lectura (inicio, primeros pasos, una guía por rol, preguntas frecuentes,
+        arquitectura y guía de la API) solo con los datos aprobados; los endpoints, las tablas y los diagramas
+        salen directo de los datos. Al levantar el proyecto se publica en su propio contenedor y la aplicación
+        muestra el enlace &quot;Documentación&quot;.
       </p>
       {archivos.length > 0 && (
         <details>

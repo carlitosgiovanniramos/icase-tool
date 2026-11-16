@@ -141,15 +141,17 @@ export const PASOS = [
     ruta: "/api/generar-frontend",
     archivos: true,
   },
-  // Documentación del proyecto (manual de usuario, desarrolladores y API) armada con todo lo aprobado,
-  // sin IA, para el sitio Docusaurus que corre en su propio contenedor (pieza "docusaurus"). Se genera
-  // en el navegador (lib/documentacion.js): los diagramas de Mermaid se dibujan ahí.
+  // Documentación del proyecto (manual de usuario, desarrolladores y API) para el sitio Docusaurus que
+  // corre en su propio contenedor (pieza "docusaurus"): las páginas de lectura las redacta la IA, una por
+  // petición, con los datos aprobados; lo exacto (endpoints, tablas, diagramas) sale de los datos. Se arma
+  // en el navegador (lib/documentacion.js) porque los diagramas de Mermaid se dibujan ahí.
   {
     clave: "impl_documentacion",
     fase: "implementacion",
     nombre: "Documentación",
     aprobacion: "impl_documentacion",
     columna: "documentacion_implementacion",
+    ruta: "/api/generar-documentacion",
     archivos: true,
   },
 ];

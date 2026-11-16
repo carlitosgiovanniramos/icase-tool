@@ -55,11 +55,13 @@ Ejecuta una vez `supabase/contrato_implementacion.sql` en el SQL Editor del Supa
 
 ## 7. Documentación
 
-Disponible después de aprobar el frontend. **Generar documentación** arma el sitio de documentación del proyecto con todo lo aprobado, sin IA:
+Disponible después de aprobar el frontend. **Generar documentación** arma el sitio de documentación del proyecto con todo lo aprobado:
 
-- **Manual de usuario:** una página por rol (qué puede hacer, qué pantallas usa y el paso a paso de cada función) y la navegación del sistema (árbol de navegación y casos de uso).
-- **Desarrolladores:** arquitectura y stack, instalación con Docker, estructura del código, base de datos, requerimientos, backend y frontend.
-- **API:** introducción (acceso y roles), acciones por pantalla y **una página por operación** con su JSON de entrada y de salida.
+- **Manual de usuario:** primeros pasos, una **guía por rol** organizada por tareas (pasos numerados con las pantallas y botones reales), el mapa del sistema (árbol de navegación y casos de uso) y preguntas frecuentes.
+- **Desarrolladores:** arquitectura explicada, instalación con Docker, estructura del código, base de datos, requerimientos, backend y frontend.
+- **API:** guía de uso (autenticación, roles, errores), acciones por pantalla y **una página por operación** con un ejemplo de código y su JSON de entrada y de salida.
+
+Las páginas de lectura las **redacta la IA** (el modelo elegido en la barra lateral), una por petición y solo con los datos aprobados de su tema; lo que debe ser exacto (endpoints, tablas y diagramas) sale directo de los datos. Cada página se guarda apenas sale: si la generación se corta, **Continuar documentación** redacta solo las que faltan. Las **indicaciones** del paso se le pasan a la IA.
 
 El sitio usa Docusaurus y corre en su **propio contenedor** (`docs`) al levantar el proyecto: aparece en el panel de **Ejecución** como "Documentación" y la web del proyecto muestra el enlace en su menú. Las páginas se pueden corregir a mano en el explorador de archivos.
 
