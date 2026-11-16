@@ -42,7 +42,7 @@ import { archivosDeBackend } from "@/lib/archivosBackend";
 import { archivosDeFrontend, plataformasDeFrontend, capaDe } from "@/lib/archivosFrontend";
 import FichaContrato, { PegarContrato } from "./FichaContrato";
 import FichaDocumentacion from "./FichaDocumentacion";
-import { generarDocumentacion, resumenDocumentacion } from "@/lib/documentacion";
+import { planDocumentacion, componerPagina, resumenDocumentacion } from "@/lib/documentacion";
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
@@ -849,9 +849,10 @@ export default function WorkspaceProyecto() {
     };
   }
 
-  // Documentación del proyecto: se arma con todo lo aprobado (lib/documentacion.js) y reemplaza los
-  // archivos anteriores del paso. Los diagramas que aún no se dibujaron se dibujan aquí.
-  async function generarPasoDocumentacion() {
+  // Documentación del proyecto (lib/documentacion.js): las páginas exactas (endpoints, tablas, diagramas)
+  // salen de los datos; las de lectura las redacta la IA una por una, y cada una se guarda apenas sale.
+  // Si una falla, la ficha queda incompleta y "Continuar" redacta solo las que faltan.
+  async function generarPasoDocumentacion(onTexto, { retomar } = {}) {
     const a = artefactosRef.current;
     const dibujados = {};
     for (const clave of ["casos_uso", "clases", "er", "arbol", "arquitectura", "sistema"]) {
@@ -862,28 +863,69 @@ export default function WorkspaceProyecto() {
         console.warn(`No se pudo dibujar ${clave} para la documentación:`, err);
       }
     }
-    const archivos = generarDocumentacion({
+    const { archivos, paginas } = planDocumentacion({
       proyecto: proyectoRef.current,
       contexto: contextoRef.current,
       artefactos: a,
       svgs: dibujados,
       pantallas: planPrototipo(contextoRef.current.prototipo, a.prototipo),
     });
-    await borrarArchivosDePaso("impl_documentacion", archivos.map((x) => x.ruta));
-    const ahora = new Date().toISOString();
-    const { error } = await supabase.from("archivos_proyecto").upsert(
-      archivos.map((x) => ({ proyecto_id: id, ruta: x.ruta, contenido: x.contenido, paso: "impl_documentacion", estado: "generado", hash: hashCodigo(x.contenido), actualizado_en: ahora })),
-      { onConflict: "proyecto_id,ruta" }
-    );
-    if (error) throw new Error(`No se pudo guardar la documentación: ${error.message}`);
-    return { valor: { ...resumenDocumentacion(archivos), actualizado: ahora }, modelo: null };
+    const previa = a.impl_documentacion;
+    const redactadas = retomar && previa?.incompleto ? (previa.redactadas || []).filter((r) => paginas.some((p) => p.ruta === r)) : [];
+    const lineasPrevias = Object.fromEntries((previa?.archivos || []).map((x) => [x.ruta, x.lineas]));
+    const escritas = {}; // ruta -> contenido de las páginas redactadas en esta vuelta
+    const guardar = async (lista) => {
+      const { error } = await supabase.from("archivos_proyecto").upsert(
+        lista.map((x) => ({ proyecto_id: id, ruta: x.ruta, contenido: x.contenido, paso: "impl_documentacion", estado: "generado", hash: hashCodigo(x.contenido), actualizado_en: new Date().toISOString() })),
+        { onConflict: "proyecto_id,ruta" }
+      );
+      if (error) throw new Error(`No se pudo guardar la documentación: ${error.message}`);
+    };
+    const ficha = () => {
+      const hechas = paginas.filter((p) => redactadas.includes(p.ruta));
+      const todas = [...archivos, ...hechas.map((p) => ({ ruta: p.ruta, contenido: escritas[p.ruta] ?? "\n".repeat(Math.max(0, (lineasPrevias[p.ruta] || 1) - 1)) }))];
+      return { ...resumenDocumentacion(todas, { redactadas, pendientes: paginas.filter((p) => !redactadas.includes(p.ruta)).map((p) => p.titulo) }), actualizado: new Date().toISOString() };
+    };
+
+    // Lo que ya no corresponde (otra lista de roles u operaciones) se borra; las páginas redactadas se conservan.
+    await borrarArchivosDePaso("impl_documentacion", [...archivos.map((x) => x.ruta), ...redactadas]);
+    await guardar(archivos);
+    let modelo = null;
+    let fallo = null;
+    for (let i = 0; i < paginas.length; i++) {
+      const p = paginas[i];
+      if (redactadas.includes(p.ruta)) continue;
+      onTexto?.(`Redactando ${p.titulo} (${i + 1}/${paginas.length})`);
+      try {
+        const data = await pedirIA(PASO.impl_documentacion.ruta, {
+          pagina: { tipo: p.tipo, titulo: p.titulo, datos: p.datos },
+          indicaciones: contextoRef.current.indicaciones?.impl_documentacion,
+        });
+        if (data.error) throw new Error(data.error);
+        escritas[p.ruta] = componerPagina(p, data.contenido);
+        await guardar([{ ruta: p.ruta, contenido: escritas[p.ruta] }]);
+        redactadas.push(p.ruta);
+        modelo = data.modelo_ia || modelo;
+        await guardarArtefacto("impl_documentacion", ficha());
+      } catch (err) {
+        fallo = err;
+        break;
+      }
+    }
+    const valor = ficha();
+    if (fallo) {
+      await guardarArtefacto("impl_documentacion", valor);
+      if (modelo) await marcarCambio("impl_documentacion", {}, modelo, { silencioso: true });
+      throw fallo;
+    }
+    return { valor, modelo };
   }
 
   // Cada paso recibe los artefactos de los pasos anteriores, para que un cambio se propague.
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
-    if (clave === "impl_documentacion") return generarPasoDocumentacion();
+    if (clave === "impl_documentacion") return generarPasoDocumentacion(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "impl_backend") return generarBackend(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "prototipo") {
@@ -1346,6 +1388,7 @@ export default function WorkspaceProyecto() {
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
     if (clave === "impl_backend" && claudeActivo() && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
+    if (clave === "impl_documentacion" && claudeActivo() && !(await confirmar(`Se redactará la documentación con Claude, una página por petición (inicio, primeros pasos, una guía por rol, preguntas frecuentes, arquitectura y API). Costo orientativo: ${rangoCostoClaude(0.02, 0.1)} por página.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Se generará el contrato con Claude. Costo orientativo: ${rangoCostoClaude(0.2, 1)} según el diseño y los reintentos.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
       const ficha = artefactosRef.current.impl_bd;
@@ -1382,7 +1425,7 @@ export default function WorkspaceProyecto() {
         );
       }
     } catch (err) {
-      const guardado = ["impl_bd", "impl_backend"].includes(clave) && artefactosRef.current[clave]?.incompleto;
+      const guardado = ["impl_bd", "impl_backend", "impl_documentacion"].includes(clave) && artefactosRef.current[clave]?.incompleto;
       mostrarError(
         err.message + (guardado ? '\n\nLos archivos ya generados quedaron guardados: "Continuar" sigue desde el que falló.' : ""),
         `No se pudo generar: ${PASO[clave].nombre}`
@@ -1495,6 +1538,10 @@ export default function WorkspaceProyecto() {
         mostrarError("Cada plataforma generada tiene que compilar sin errores: pulsa Compilar y corregir.", "Frontend sin compilar");
         return;
       }
+    }
+    if (clave === "impl_documentacion" && artefactosRef.current.impl_documentacion?.incompleto) {
+      mostrarError("Pulsa Continuar documentación para redactar las páginas que faltan.", "Documentación incompleta");
+      return;
     }
     if (clave === "impl_backend" && artefactosRef.current.impl_backend?.incompleto) {
       mostrarError("Pulsa Continuar para generar los archivos que faltan.", "Backend incompleto");
@@ -3431,10 +3478,20 @@ export default function WorkspaceProyecto() {
                   Documentación
                 </TituloPaso>
                 {pasoAbierto("impl_documentacion") && <>
+                  {trabajable("impl_documentacion") && !bloqueado("impl_documentacion") && <CampoIndicaciones clave="impl_documentacion" valor={contexto.indicaciones?.impl_documentacion} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: en el manual, explica primero cómo crear un parte desde el celular" />}
                   <ControlesPaso clave="impl_documentacion" esperando={!trabajable("impl_documentacion")} bloqueado={bloqueado("impl_documentacion")} enEdicion={enEdicion("impl_documentacion")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
-                    <BotonGenerar onClick={() => (artefactos.impl_documentacion ? regenerarPaso("impl_documentacion") : generarPaso("impl_documentacion"))} secundario={!!artefactos.impl_documentacion} disabled={ocupado} cargando={generando("impl_documentacion")} textoCargando="Generando..." color={PALETA.marron}>
-                      {artefactos.impl_documentacion ? "Regenerar" : "Generar"} documentación
-                    </BotonGenerar>
+                    {artefactos.impl_documentacion?.incompleto && pendientes.impl_documentacion !== "desactualizado" ? (
+                      <>
+                        <BotonGenerar onClick={() => generarPaso("impl_documentacion", { retomar: true })} disabled={ocupado} cargando={generando("impl_documentacion")} textoCargando={cargando?.detalle || "Redactando..."} color={PALETA.marron}>
+                          Continuar documentación ({artefactos.impl_documentacion.pendientes.length} por redactar)
+                        </BotonGenerar>
+                        {!generando("impl_documentacion") && <BotonGenerar onClick={() => regenerarPaso("impl_documentacion")} secundario disabled={ocupado} color={PALETA.marron}>Empezar de cero</BotonGenerar>}
+                      </>
+                    ) : (
+                      <BotonGenerar onClick={() => (artefactos.impl_documentacion ? regenerarPaso("impl_documentacion") : generarPaso("impl_documentacion"))} secundario={!!artefactos.impl_documentacion} disabled={ocupado} cargando={generando("impl_documentacion")} textoCargando={cargando?.detalle || "Redactando..."} color={PALETA.marron}>
+                        {artefactos.impl_documentacion ? "Regenerar" : "Generar"} documentación
+                      </BotonGenerar>
+                    )}
                     {artefactos.impl_documentacion && <BotonEliminar onClick={() => eliminarPaso("impl_documentacion", "¿Eliminar la documentación generada?")} disabled={ocupado} title="Eliminar documentación" />}
                   </ControlesPaso>
                   <FichaDocumentacion ficha={artefactos.impl_documentacion} />
