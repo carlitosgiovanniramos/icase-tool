@@ -1,0 +1,57 @@
+# Integración continua de I-CASE Tool (APE4, sección 8.2): en cada push y pull request a develop o main se
+# revisa el código (ESLint), se ejecutan las pruebas unitarias (node:test) y se compila la aplicación (next build).
+name: Pruebas
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint (ESLint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx eslint app lib runner tests proxy.js
+
+  unitarias:
+    name: Pruebas unitarias (node:test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # La prueba de coherencia del caso de estudio se omite sola: sus datos no están en el repositorio.
+      - run: node --experimental-test-module-mocks --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=resultados-unitarias.xml tests/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resultados-unitarias
+          path: resultados-unitarias.xml
+
+  build:
+    name: Build (next build)
+    runs-on: ubuntu-latest
+    env:
+      # Valores de ejemplo: el build no se conecta a Supabase.
+      NEXT_PUBLIC_SUPABASE_URL: https://ejemplo.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: clave-de-ejemplo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx next build

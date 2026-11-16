@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { generarContenido } from "@/lib/gemini";
 import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
-import { leerJson, sumarCosto, normalizarTexto, normalizarCodigo } from "@/lib/jsonIA";
+import { leerJson, sumarCosto, sumarTokens, normalizarTexto, normalizarCodigo } from "@/lib/jsonIA";
 
 export const maxDuration = 300;
 
@@ -250,6 +250,7 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adiciona
     let diagrama = limpiarMermaid(resultado.diagrama_mermaid);
     let problemas = validarDiagrama(diagrama, analisis);
     let costo = response.costoUsd;
+    let tokens = sumarTokens(response.uso);
 
     // Un solo reintento: se le muestran a la IA los problemas concretos y su diagrama anterior.
     if (problemas.length) {
@@ -269,6 +270,7 @@ Corrígelo cumpliendo TODAS las reglas y responde de nuevo con el mismo JSON.`,
         const diagramaNuevo = limpiarMermaid(reintento.resultado.diagrama_mermaid);
         const problemasNuevos = validarDiagrama(diagramaNuevo, analisis);
         costo = sumarCosto(costo, reintento.response.costoUsd);
+        tokens = sumarTokens(tokens, reintento.response.uso);
         if (problemasNuevos.length <= problemas.length) {
           resultado = reintento.resultado;
           response = reintento.response;
@@ -286,6 +288,8 @@ Corrígelo cumpliendo TODAS las reglas y responde de nuevo con el mismo JSON.`,
       advertencias: problemas,
       modelo_ia: response.modelVersion,
       costo_ia: costo,
+      // Tokens consumidos (entrada, salida y total), sumando el reintento si lo hubo.
+      tokens_ia: tokens,
     });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
