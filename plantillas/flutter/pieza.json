@@ -17,7 +17,7 @@
     "MOVIL_PORT": "8090"
   },
   "enlaces": {
-    "MOVIL_PORT": "Móvil (vista previa)"
+    "MOVIL_PORT": "Móvil"
   },
   "registro": "pub",
   "librerias": {
