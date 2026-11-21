@@ -142,31 +142,51 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional (máximo ${MAX_HUE
   }
 }
 
-export async function POST(request) {
-  try {
-    const { prompt, documentoTexto, imagenUrl, contexto: contextoElicitacion, usarClaude } = await request.json();
+// Los actores se definen primero y los requerimientos después, en dos llamadas a la IA: así los roles
+// quedan fijos antes de redactar y no se mezclan con los requerimientos. Las dos reciben el mismo
+// contexto (nombre, descripción, documento, imagen, contexto de elicitación y entrevista).
+function limpiarActores(lista) {
+  const vistos = new Set();
+  return (Array.isArray(lista) ? lista : [])
+    .map((a) => ({ nombre: String(a?.nombre || "").trim(), descripcion: String(a?.descripcion || "").trim() }))
+    .filter((a) => a.nombre && !vistos.has(a.nombre.toLowerCase()) && vistos.add(a.nombre.toLowerCase()));
+}
 
-    let contexto = `Idea del usuario: ${prompt}`;
-
-    const elicitacion = formatearContexto(contextoElicitacion);
-    if (elicitacion) {
-      contexto += `\n\nInformación de elicitación proporcionada por el usuario. Tiene prioridad sobre cualquier suposición tuya; respeta especialmente el alcance, los usuarios y las reglas de negocio:\n${elicitacion}`;
-    }
-
-    if (documentoTexto) {
-      contexto += `\n\nContexto adicional extraído de un documento adjunto:\n${documentoTexto}`;
-    }
-
-    const instrucciones = `
-Eres un analista de requisitos certificado, experto en ingeniería de requerimientos según la norma ISO/IEC/IEEE 29148:2018 (Systems and software engineering — Life cycle processes — Requirements engineering).
-
-Con base en el siguiente contexto (y la imagen adjunta, si existe), identifica los actores principales del sistema y redacta TODOS los requerimientos funcionales y no funcionales necesarios para cubrir por completo el alcance descrito — ni más ni menos de los que el sistema realmente necesita. No hay un número fijo: un sistema simple puede necesitar pocos requerimientos y uno complejo puede necesitar muchos más; tú decides la cantidad según lo que exige el alcance.
+// Primera llamada: solo los actores.
+const promptActores = (contexto) => `
+Eres un analista de requisitos certificado, experto en ingeniería de requerimientos según la norma ISO/IEC/IEEE 29148:2018. Este es el PRIMER paso del análisis: identificar quién interactúa con el sistema. En el paso siguiente se redactarán los requerimientos a partir de tu lista, así que aquí NO redactes requerimientos.
 
 ${contexto}
 
+Con base en todo lo anterior (y la imagen adjunta, si existe), define los actores del sistema:
+- Un actor es un rol de persona, o un sistema externo, que usa el sistema o intercambia información con él.
+- Si el contexto incluye "Usuarios y roles conocidos", esos son los actores: úsalos con los mismos nombres y no agregues otros, salvo que el contexto muestre claramente que falta alguno.
+- Si no los incluye, deduce los roles de la descripción, del documento, de la imagen y de las respuestas de la entrevista.
+- Un actor por cada rol distinto: no repitas el mismo rol con dos nombres, no inventes roles que nada justifique y no uses "Sistema" como actor para procesos automáticos o internos.
+- La descripción dice en una frase qué hace ese actor en este sistema, con lo que dice el contexto (no una definición genérica).
+
+Responde ÚNICAMENTE con un JSON válido, sin texto adicional, con esta estructura exacta:
+{
+  "actores": [
+    { "nombre": "string", "descripcion": "string" }
+  ]
+}
+`;
+
+// Segunda llamada: los requerimientos, con los actores ya definidos.
+const promptRequerimientos = (contexto, actores) => `
+Eres un analista de requisitos certificado, experto en ingeniería de requerimientos según la norma ISO/IEC/IEEE 29148:2018 (Systems and software engineering — Life cycle processes — Requirements engineering).
+
+Los actores del sistema ya están definidos. Con base en el contexto de abajo (y la imagen adjunta, si existe), redacta los requerimientos funcionales y no funcionales necesarios para cubrir el alcance descrito, y solo esos: ni los que falten ni los que sobren. No hay un número fijo; lo define el alcance real, no la cantidad de frases de la descripción.
+
+${contexto}
+
+Actores del sistema (ya definidos: en el campo "actores" de cada requerimiento usa solo estos nombres, exactos, y no agregues otros):
+${actores.map((a) => `- ${a.nombre}: ${a.descripcion}`).join("\n")}
+
 Cada requerimiento debe cumplir las características de calidad que exige la norma ISO/IEC/IEEE 29148:2018 para un requisito individual:
 - Necesario: se conecta directamente con una necesidad real descrita en el contexto.
-- Singular/atómico: expresa UNA sola capacidad o restricción verificable (evita unir varias ideas con "y"/"además" en una misma descripción).
+- Singular: expresa UNA sola capacidad o restricción verificable. Una capacidad es una función completa que el usuario o el sistema cumple, no cada validación, mensaje o variante suya por separado.
 - No ambiguo: una sola interpretación posible.
 - Verificable: debe poderse comprobar objetivamente que se cumplió.
 - Factible: alcanzable con tecnología y recursos razonables.
@@ -177,11 +197,17 @@ Además, para cada requerimiento indica su método de verificación según la no
 
 ${INSTRUCCION_25010}
 
+Contención (tan importante como cubrir todo el alcance):
+- Un requerimiento por capacidad, no uno por cada frase del contexto. Agrupa en el requerimiento de una función sus validaciones, sus mensajes de confirmación o error y sus variantes (por ejemplo, el requerimiento de crear algo incluye las reglas que lo validan y el aviso de que se creó). Para esas reglas basta con nombrarlas en su descripción, precondiciones o postcondiciones.
+- Agrupar no es fusionar acciones distintas del usuario: registrar, consultar, editar, desactivar o reactivar, y bloquear o desbloquear son capacidades propias, cada una con su requerimiento. Si el sistema permite crear algo, comprueba que el usuario que lo crea también pueda consultarlo y corregirlo o revertirlo cuando el contexto lo hace necesario.
+- Una regla de negocio se cubre dentro del requerimiento de la función a la que afecta. Es un requerimiento aparte solo si afecta a varias funciones o es una capacidad por sí misma.
+- No repitas lo que otro requerimiento ya dice. Si dos son casi iguales o uno es la otra cara del otro (hacer algo y la restricción de cuándo se puede hacer), fusiónalos en uno.
+- No redactes requerimientos para lo que el contexto deja fuera del alcance, para funciones que nadie pidió ni para procesos internos que solo describen cómo se construye el sistema (registros de auditoría, bitácoras, copias de seguridad), salvo que el contexto los pida.
+- Los no funcionales salen solo de los atributos de calidad prioritarios que el contexto indica, entre uno y dos medibles por atributo. Si el contexto no indica ninguno, incluye solo los imprescindibles para este sistema.
+- Antes de responder, relee la lista completa y fusiona o elimina lo que se repita.
+
 Responde ÚNICAMENTE con un JSON válido, sin texto adicional, con esta estructura exacta:
 {
-  "actores": [
-    { "nombre": "string", "descripcion": "string" }
-  ],
   "requerimientos_funcionales": [
     {
       "codigo": "RF01",
@@ -189,7 +215,7 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional, con esta estructu
       "descripcion": "string (redactado como 'El sistema debe/deberá...', singular y verificable)",
       "dependencias": ["RF03"],
       "prioridad": "alta | media | baja",
-      "actores": ["string (nombre de un actor ya listado arriba)"],
+      "actores": ["string (nombre de uno de los actores definidos arriba)"],
       "precondiciones": "string",
       "postcondiciones": "string",
       "metodo_verificacion": "Inspección | Análisis | Demostración | Prueba"
@@ -204,7 +230,7 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional, con esta estructu
       "descripcion": "string (redactado como 'El sistema debe/deberá...', singular y verificable)",
       "dependencias": ["RF01"],
       "prioridad": "alta | media | baja",
-      "actores": ["string (nombre de un actor ya listado arriba)"],
+      "actores": ["string (nombre de uno de los actores definidos arriba)"],
       "precondiciones": "string",
       "postcondiciones": "string",
       "metodo_verificacion": "Inspección | Análisis | Demostración | Prueba"
@@ -214,6 +240,7 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional, con esta estructu
 
 Cierre del conjunto (revísalo ANTES de responder; es el error más frecuente):
 - Todo lo que un requerimiento da por hecho que el sistema gestiona debe estar cubierto por otro requerimiento funcional. Ejemplos: si los usuarios inician sesión con un rol, debe existir el que crea las cuentas y asigna los roles; si uno valida o bloquea la asignación de un recurso, debe existir el que permite asignarlo; si uno exige que algo "esté registrado en el sistema" o menciona un módulo o catálogo, debe existir el que lo registra o administra; si uno consulta, exporta o notifica algo, debe existir el que lo genera.
+- Antes de agregar un requerimiento para cubrir un supuesto, comprueba que ningún otro ya lo cubre: no lo dupliques. Lo que se prepara al desplegar el sistema (datos o cuentas iniciales) no es una función de usuario: indícalo en la precondición del requerimiento que lo necesita.
 - Recorre las precondiciones y descripciones buscando esos supuestos. Si encuentras uno sin cubrir, agrega el requerimiento que falta (salvo que el contexto lo deje fuera del alcance).
 - Sigue cada registro por sus estados: desde cualquier estado debe haber un requerimiento que permita continuar. Si una validación puede bloquear un paso, el usuario debe poder corregir lo que falta.
 - Si el contexto incluye tecnologías o decisiones técnicas ya tomadas, ningún requerimiento puede contradecirlas ni exigir algo que no ofrecen (ej. no pidas certificados digitales si se decidió una firma dibujada en pantalla).
@@ -221,40 +248,63 @@ Cierre del conjunto (revísalo ANTES de responder; es el error más frecuente):
 
 Reglas:
 - "dependencias" es un arreglo con los códigos (RF/RNF) de otros requerimientos de los que depende; usa [] si no depende de ninguno.
-- "actores" es un arreglo con nombres de actores que ya definiste en la lista "actores"; usa [] si no aplica un actor humano directo.
+- "actores" es un arreglo con nombres de los actores definidos arriba; usa [] si no aplica un actor humano directo.
 - "precondiciones" y "postcondiciones" deben ser concretas y verificables (qué debe cumplirse antes y qué queda garantizado después). Si para un requerimiento no funcional realmente no aplica alguna, usa "No aplica".
-- El conjunto completo de requerimientos, visto en su totalidad, debe ser consistente (sin contradicciones entre sí) y completo (cubre todo el alcance descrito, sin dejar huecos).
-- La cantidad de actores, requerimientos funcionales y no funcionales la defines tú según el alcance real del sistema descrito; no inventes actores que el contexto no justifique.
+- El conjunto completo de requerimientos, visto en su totalidad, debe ser consistente (sin contradicciones entre sí) y completo (cubre todo el alcance descrito, sin dejar huecos y sin repetirse).
 `;
 
-    const parts = [{ text: instrucciones }];
+export async function POST(request) {
+  try {
+    const { nombre, prompt, documentoTexto, imagenUrl, contexto: contextoElicitacion, usarClaude } = await request.json();
 
+    // Todo lo que se sabe del proyecto, igual para las dos llamadas.
+    let contexto = `${nombre ? `Nombre del proyecto: ${nombre}\n\n` : ""}Descripción del usuario: ${prompt}`;
+
+    const elicitacion = formatearContexto(contextoElicitacion);
+    if (elicitacion) {
+      contexto += `\n\nInformación de elicitación proporcionada por el usuario (contexto y entrevista). Tiene prioridad sobre cualquier suposición tuya; respeta especialmente el alcance, los usuarios y las reglas de negocio:\n${elicitacion}`;
+    }
+
+    if (documentoTexto) {
+      contexto += `\n\nContexto adicional extraído de un documento adjunto:\n${documentoTexto}`;
+    }
+
+    // La imagen, si existe, acompaña a las dos llamadas.
+    const adjuntos = [];
     if (imagenUrl) {
       const respImg = await fetch(imagenUrl);
       const bufferImg = await respImg.arrayBuffer();
       const base64Img = Buffer.from(bufferImg).toString("base64");
       const mimeType = respImg.headers.get("content-type") || "image/png";
-
-      parts.push({ inlineData: { mimeType, data: base64Img } });
+      adjuntos.push({ inlineData: { mimeType, data: base64Img } });
     }
 
-    const generar = async (partes) => {
+    const generar = async (texto, esRequerimientos = false) => {
       const response = await generarContenido({
         usarClaude,
-        contents: partes,
+        contents: [{ text: texto }, ...adjuntos],
         config: { responseMimeType: "application/json" },
       });
       const resultado = leerJson(response.text);
       // La categoría se lleva a los nombres exactos de la norma, aunque la IA los escriba distinto.
-      resultado.requerimientos_no_funcionales = normalizarRNF(resultado.requerimientos_no_funcionales);
+      if (esRequerimientos) resultado.requerimientos_no_funcionales = normalizarRNF(resultado.requerimientos_no_funcionales);
       return { response, resultado };
     };
 
     const inicio = Date.now();
-    const inicial = await generar(parts);
-    let { resultado, response } = inicial;
+
+    // Paso 1: los actores.
+    const pasoActores = await generar(promptActores(contexto));
+    const actores = limpiarActores(pasoActores.resultado.actores);
+    if (!actores.length) throw new Error("La IA no identificó ningún actor. Intenta de nuevo o completa 'Usuarios y roles' en el contexto.");
+
+    // Paso 2: los requerimientos, con los actores ya fijados (los de esta lista son los únicos válidos).
+    const instrucciones = promptRequerimientos(contexto, actores);
+    const inicial = await generar(instrucciones, true);
+    let resultado = { ...inicial.resultado, actores };
+    let response = inicial.response;
     let problemas = validarAnalisis(resultado);
-    let costo = response.costoUsd;
+    let costo = sumarCosto(pasoActores.response.costoUsd, response.costoUsd);
 
     // Un solo reintento: se le muestran a la IA los problemas concretos y su respuesta anterior.
     if (problemas.length) {
@@ -265,14 +315,15 @@ TU RESPUESTA ANTERIOR TIENE ESTOS PROBLEMAS:
 ${problemas.map((p) => `- ${p}`).join("\n")}
 
 Respuesta anterior:
-${JSON.stringify(resultado)}
+${JSON.stringify({ requerimientos_funcionales: resultado.requerimientos_funcionales, requerimientos_no_funcionales: resultado.requerimientos_no_funcionales })}
 
-Corrígela y responde de nuevo con el JSON completo.`;
-        const reintento = await generar([{ text: instrucciones + correccion }, ...parts.slice(1)]);
-        const problemasNuevos = validarAnalisis(reintento.resultado);
+Corrígela y responde de nuevo con el JSON completo (solo "requerimientos_funcionales" y "requerimientos_no_funcionales").`;
+        const reintento = await generar(instrucciones + correccion, true);
+        const candidato = { ...reintento.resultado, actores };
+        const problemasNuevos = validarAnalisis(candidato);
         costo = sumarCosto(costo, reintento.response.costoUsd);
         if (problemasNuevos.length <= problemas.length) {
-          resultado = reintento.resultado;
+          resultado = candidato;
           response = reintento.response;
           problemas = problemasNuevos;
         }

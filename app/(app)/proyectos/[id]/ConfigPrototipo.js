@@ -87,6 +87,7 @@ export default function ConfigPrototipo({
   onProponer,
   proponiendo,
   onSubirImagen,
+  parte, // "plan": plataformas y pantallas; "estilo": aspecto visual; sin valor: todo
 }) {
   const { mostrarError } = useAlert();
   const [subiendo, setSubiendo] = useState(null); // "logo" | "referencias" | null
@@ -154,6 +155,8 @@ export default function ConfigPrototipo({
     <div className="border border-gray-300 p-4 mb-4 space-y-6">
       {/* --- Estilo visual --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {parte !== "plan" && (
+        <>
         <div>
           <Titulo>Tipo</Titulo>
           <div className="flex gap-2">
@@ -198,7 +201,10 @@ export default function ConfigPrototipo({
               : "Cerca de la mitad del costo; pantallas algo más sencillas."}
           </p>
         </div>
+        </>
+        )}
 
+        {parte !== "estilo" && (
         <div>
           <Titulo>Plataformas</Titulo>
           <div className="flex gap-2">
@@ -219,8 +225,9 @@ export default function ConfigPrototipo({
             ))}
           </div>
         </div>
+        )}
 
-        {valor.modo !== "wireframe" && (
+        {valor.modo !== "wireframe" && parte !== "plan" && (
           <>
             <div>
               <Titulo>Color de marca</Titulo>
@@ -318,16 +325,18 @@ export default function ConfigPrototipo({
       </div>
 
       {/* --- Pantallas --- */}
+      {parte !== "estilo" && (
       <div className="pt-5 border-t border-gray-200">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <div className="flex items-center gap-2">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Pantallas
+              {parte === "plan" ? "Pantallas del sistema" : "Pantallas"}
             </p>
             {pantallas.some((p) => p.origen === "ia") && (
               <BadgeModelo modelo={valor.modeloPantallas} />
             )}
           </div>
+          {parte !== "plan" && (
           <button
             type="button"
             onClick={onProponer}
@@ -341,6 +350,7 @@ export default function ConfigPrototipo({
               ? "Volver a proponer con IA"
               : "Proponer pantallas con IA"}
           </button>
+          )}
         </div>
 
         {pantallas.length > 0 && (
@@ -422,6 +432,7 @@ export default function ConfigPrototipo({
           </Opcion>
         </div>
       </div>
+      )}
     </div>
   );
 }

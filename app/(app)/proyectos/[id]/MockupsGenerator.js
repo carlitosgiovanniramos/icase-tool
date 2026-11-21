@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useBloqueoModal } from "../../../useBloqueoModal";
 import { PALETA } from "../../../estilos";
 import BadgeModelo from "./BadgeModelo";
+import RevisionPantalla from "./RevisionPantalla";
 
 const SCRIPT_INTERCEPTAR_NAVEGACION = `
 <script>
@@ -11,7 +12,7 @@ document.addEventListener("click", function (e) {
   const link = e.target.closest("a");
   if (!link) return;
   e.preventDefault();
-  const texto = (link.innerText || link.textContent || "").trim();
+  const texto = (link.getAttribute("data-pantalla") || link.innerText || link.textContent || "").trim();
   try {
     window.parent.postMessage({ tipo: "mockup-navegar", texto }, "*");
   } catch (err) {}
@@ -71,7 +72,7 @@ const esMovil = (pantalla) => /m[oó]vil/i.test(plataformaDe(pantalla));
 // por el visor, con el iframe al ancho real de un celular (390px) para que el HTML se comporte
 // como en un teléfono (así no depende de que la IA dibuje su propio marco).
 // alto: clase de altura del área de la pantalla web.
-function MarcoPantalla({ html, titulo, movil, alto = "h-[860px]" }) {
+function MarcoPantalla({ html, titulo, movil, alto = "h-[740px]" }) {
   const iframe = (clases) => (
     <iframe
       srcDoc={conNavegacionInterceptada(html)}
@@ -92,7 +93,7 @@ function MarcoPantalla({ html, titulo, movil, alto = "h-[860px]" }) {
           </div>
         </div>
       ) : (
-        <div className="rounded-lg overflow-hidden shadow-xl ring-1 ring-slate-400 bg-white">
+        <div className="rounded-lg overflow-hidden shadow-xl ring-1 ring-slate-400 bg-white max-w-[1280px] mx-auto">
           <div className="flex items-center gap-3 h-9 px-3 bg-slate-100 border-b border-slate-300">
             <div className="flex gap-1.5 shrink-0" aria-hidden="true">
               <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
@@ -244,6 +245,8 @@ export default function MockupsGenerator({
   onRegenerar,
   onQuitar,
   onGuardarHtml, // (indice, html) => Promise<boolean>
+  validacion, // { operaciones, nombres, accesos } para la revisión de cada pantalla
+  onCorregir, // (indice, instruccion) => Promise<boolean>
 }) {
   const [elegida, setElegida] = useState(0); // índice en mockups
   const [plataformaElegida, setPlataformaElegida] = useState(null);
@@ -358,7 +361,20 @@ export default function MockupsGenerator({
           onGuardar={(html) => onGuardarHtml(activa, html)}
         />
       ) : (
-        <MarcoPantalla html={pantalla.html} titulo={pantalla.nombre} movil={esMovil(pantalla)} />
+        <>
+          <MarcoPantalla html={pantalla.html} titulo={pantalla.nombre} movil={esMovil(pantalla)} />
+          {validacion && onCorregir && (
+            <RevisionPantalla
+              key={pantalla.nombre}
+              pantalla={pantalla}
+              indice={activa}
+              validacion={validacion}
+              onCorregir={onCorregir}
+              deshabilitado={deshabilitado}
+              bloqueado={bloqueado}
+            />
+          )}
+        </>
       )}
 
       {expandido && (

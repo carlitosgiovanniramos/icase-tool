@@ -44,14 +44,8 @@ export const PASOS = [
     ruta: "/api/generar-diagrama-er",
     diagrama: true,
   },
-  {
-    clave: "prototipo",
-    fase: "diseno",
-    nombre: "Prototipo de pantallas",
-    aprobacion: "diseno_prototipo",
-    columna: "mockups",
-    ruta: "/api/generar-mockups",
-  },
+  // El árbol de navegación va antes que el prototipo: define qué pantallas hay, qué ve cada actor y
+  // cómo se llega a cada una; el prototipo solo las dibuja.
   {
     clave: "arbol",
     fase: "diseno",
@@ -60,6 +54,14 @@ export const PASOS = [
     columna: "arbol_navegacion",
     ruta: "/api/generar-arbol-navegacion",
     diagrama: true,
+  },
+  {
+    clave: "prototipo",
+    fase: "diseno",
+    nombre: "Prototipo de pantallas",
+    aprobacion: "diseno_prototipo",
+    columna: "mockups",
+    ruta: "/api/generar-mockups",
   },
   {
     clave: "arquitectura",
