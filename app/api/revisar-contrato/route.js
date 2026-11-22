@@ -1,3 +1,4 @@
+import { inventarioVigente } from "@/lib/inventarioContrato";
 import { NextResponse } from "next/server";
 import { stringify } from "yaml";
 import { createClient } from "@/lib/supabase/server";
@@ -15,7 +16,7 @@ export async function POST(request) {
     const { proyectoId, actual } = await request.json();
     const contexto = await leerContextoContrato(await createClient(), proyectoId);
     const previo = contexto.proyecto.contrato_implementacion;
-    const inventario = previo?.huella === contexto.huella && previo.inventario ? previo.inventario : (await inspeccionarContrato(contexto)).inventario;
+    const inventario = previo?.huella === contexto.huella && inventarioVigente(previo.inventario) ? previo.inventario : (await inspeccionarContrato(contexto)).inventario;
     const grupos = agruparAcciones(accionesDelPrototipo(contexto.pantallas));
     const ficha = validarContrato({ ...actual, acciones: expandirAsignaciones(actual?.acciones, grupos) }, { ...contexto, inventario });
     return NextResponse.json({ ...ficha, huella: contexto.huella, inventario, ...(ficha.tipo === "openapi" ? { openapi: stringify(documentoOpenAPI(ficha, contexto.nombre)) } : {}) });
