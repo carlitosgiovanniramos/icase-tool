@@ -12,6 +12,8 @@ sidebar_position: 4
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Conexión a Supabase. Clave publicable: los permisos los aplica RLS | Sí, es pública por diseño |
 | `GEMINI_API_KEY` | Google Gemini | No |
 | `GROQ_API_KEY` | Groq (opcional) | No |
+| `KIMI_API_KEY`, `MISTRAL_API_KEY` | Kimi y Mistral Large 4, por NVIDIA (opcionales, gratuitos) | No |
+| `GEMINI_MODELOS` | Modelos de Gemini en orden de preferencia, separados por coma | No |
 | `ANTHROPIC_API_KEY` | Claude (opcional, de pago) | No |
 | `KROKI_URL` | Servicio que dibuja PlantUML | No |
 | `RUNNER_URL`, `RUNNER_TOKEN` | Runner local de Docker | No |

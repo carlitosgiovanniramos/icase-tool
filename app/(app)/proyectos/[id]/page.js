@@ -34,6 +34,7 @@ import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
 import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
+import AvisosDelStack from "./AvisosDelStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
 import FichaBackend from "./FichaBackend";
@@ -46,6 +47,8 @@ import { planDocumentacion, componerPagina, resumenDocumentacion } from "@/lib/d
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
+import { operacionesDeClases } from "@/lib/validarPantalla";
+import { baseVisualDelPrototipo } from "@/lib/baseVisual";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
 
@@ -754,6 +757,14 @@ export default function WorkspaceProyecto() {
     setEstadoContexto("pendiente");
   }
 
+  // Pasa avisos del stack (ya con su prefijo) a las indicaciones de un paso, sin borrar lo escrito.
+  function agregarAvisosAIndicaciones(clave, textos) {
+    const actual = contextoRef.current.indicaciones?.[clave] || "";
+    const nuevos = textos.filter((t) => !actual.includes(t));
+    if (!nuevos.length) return;
+    cambiarIndicaciones(clave, [actual.trim(), ...nuevos].filter(Boolean).join("\n"));
+  }
+
   function cambiarIndicaciones(clave, texto) {
     cambiarContexto({
       ...contextoRef.current,
@@ -930,7 +941,7 @@ export default function WorkspaceProyecto() {
     if (clave === "impl_backend") return generarBackend(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "prototipo") {
       const plan = planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo);
-      if (!plan.length) throw new Error("Primero propone o agrega las pantallas a generar.");
+      if (!plan.length) throw new Error("Primero arma el árbol de navegación con las pantallas a generar.");
       // Cada pantalla se guarda apenas se genera (ver generarPantallas), así detener o cerrar
       // la pestaña no pierde lo que ya se pagó.
       const { generadas, fallidas, detenido } = await generarPantallas(plan, opciones.onProgreso);
@@ -953,6 +964,7 @@ export default function WorkspaceProyecto() {
       contextoRef.current.prototipo?.plataformas || plataformasDePrototipo(contextoRef.current);
     const cuerpos = {
       analisis: {
+        nombre: proyectoActual.nombre,
         prompt: proyectoActual.prompt,
         documentoTexto: proyectoActual.documento_texto,
         imagenUrl: proyectoActual.imagen_url,
@@ -978,7 +990,18 @@ export default function WorkspaceProyecto() {
         plataformas: plataformasDelSistema,
         // Las pantallas generadas, con la plataforma, actores y RF de su plan (el plan tiene los
         // actores; la pantalla guardada, la plataforma y los RF con que se generó).
-        pantallas: (a.prototipo || []).map((p) => {
+        // Con el plan de pantallas (cada una con su sección del menú o desde dónde se abre) el
+        // árbol sale del plan; en proyectos anteriores, de las pantallas ya generadas.
+        pantallas: planPrototipo(contextoRef.current.prototipo, a.prototipo).some((p) => p.seccion || p.abre_desde)
+          ? planPrototipo(contextoRef.current.prototipo, a.prototipo).map((p) => ({
+              nombre: p.nombre,
+              plataforma: p.plataforma || "Web",
+              rfs: p.rfs || [],
+              actores: p.actores || [],
+              seccion: p.seccion || "",
+              abre_desde: p.abre_desde || "",
+            }))
+          : (a.prototipo || []).map((p) => {
           const delPlan = planPrototipo(contextoRef.current.prototipo, a.prototipo).find(
             (x) => x.nombre === p.nombre
           );
@@ -1080,6 +1103,7 @@ export default function WorkspaceProyecto() {
     const estilo = {
       modo: config.modo || "mockup",
       color: config.color,
+      tipografia: config.tipografia,
       tema: config.tema || "claro",
       logoUrl: config.logoUrl,
       referencias: config.referencias || [],
@@ -1105,6 +1129,9 @@ export default function WorkspaceProyecto() {
               nombre: proyectoRef.current?.nombre,
               analisis: a.analisis,
               diagramaEr: a.er,
+              clases: a.clases,
+              casosUso: a.casos_uso,
+              contexto: contextoRef.current,
               pantalla,
               pantallas: todas,
               estilo,
@@ -1165,6 +1192,16 @@ export default function WorkspaceProyecto() {
       detalle: `Generando ${i + 1}/${total}: ${nombre}...`,
     });
 
+  // El árbol parte de las pantallas del sistema: si todavía no hay ninguna, primero se proponen
+  // (las que se quiten o agreguen a mano se respetan) y luego se arma el árbol con ellas.
+  async function generarArbol() {
+    if (!planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo).length) {
+      await proponerPantallas();
+      if (!planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo).length) return;
+    }
+    return regenerarPaso("arbol");
+  }
+
   async function proponerPantallas() {
     setCargando({ paso: "proponer" });
     try {
@@ -1172,7 +1209,10 @@ export default function WorkspaceProyecto() {
       const inicial = contextoRef.current.prototipo || {};
       const data = await pedirIA("/api/proponer-pantallas", {
         analisis: a.analisis,
+        casosUso: a.casos_uso,
+        clases: a.clases,
         diagramaEr: a.er,
+        contexto: contextoRef.current,
         plataformas: inicial.plataformas || plataformasDePrototipo(contextoRef.current),
         indicaciones: contextoRef.current.indicaciones?.prototipo,
       });
@@ -1194,6 +1234,7 @@ export default function WorkspaceProyecto() {
         ...config,
         pantallas: [...propuestas, ...manuales],
         color: config.color || data.color_primario,
+        tipografia: config.tipografia || data.tipografia,
         modeloPantallas: data.modelo_ia,
       });
     } catch (err) {
@@ -1387,7 +1428,7 @@ export default function WorkspaceProyecto() {
 
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
-    if (clave === "impl_backend" && claudeActivo() && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
+    if (clave === "impl_backend" && claudeActivo() && archivosDeBackend(artefactosRef.current.impl_estructura).length && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_documentacion" && claudeActivo() && !(await confirmar(`Se redactará la documentación con Claude, una página por petición (inicio, primeros pasos, una guía por rol, preguntas frecuentes, arquitectura y API). Costo orientativo: ${rangoCostoClaude(0.02, 0.1)} por página.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Se generará el contrato con Claude. Costo orientativo: ${rangoCostoClaude(0.2, 1)} según el diseño y los reintentos.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
@@ -2012,7 +2053,14 @@ export default function WorkspaceProyecto() {
   // retomar: sigue una generación cortada, conservando los archivos ya generados (se pagaron).
   async function generarBackend(avisar = () => {}, { retomar = false } = {}) {
     const plan = archivosDeBackend(artefactosRef.current.impl_estructura);
-    if (!plan.length) throw new Error("La estructura de carpetas no tiene archivos de backend.");
+    if (!plan.length) {
+      // Con Supabase, el backend son las Edge Functions. Si el contrato no tiene ninguna operación edge, todo se
+      // resuelve con la API de datos y las funciones de la base: no hay nada que generar y el paso se puede aprobar.
+      const hayEdge = (artefactosRef.current.impl_contrato?.operaciones || []).some((o) => o.tipo === "edge");
+      if (hayEdge) throw new Error("La estructura de carpetas no tiene archivos de backend.");
+      await borrarArchivosDePaso("impl_backend", []);
+      return { valor: { ...fichaBackend([], null), sinFunciones: true }, modelo: undefined, advertencias: [] };
+    }
     const cuerpo = await cuerpoBackend();
     const generados = [];
     if (retomar) {
@@ -2065,6 +2113,8 @@ export default function WorkspaceProyecto() {
         acciones: (a.impl_contrato?.acciones || []).map(({ pantalla, nombre, tipo, operaciones, motivo }) => ({ pantalla, nombre, tipo, operaciones, motivo })),
       },
       arbol: a.arbol,
+      // El CSS compartido y el menú del prototipo aprobado: la web debe verse igual.
+      prototipoBase: plataforma === "web" ? baseVisualDelPrototipo(a.prototipo || []) : null,
       indicaciones: contextoRef.current.indicaciones?.impl_frontend,
     };
   }
@@ -2831,9 +2881,11 @@ export default function WorkspaceProyecto() {
     casos_uso: requerimientosAprobados,
     clases: !!fasesAprobadas.analisis,
     er: !!fasesAprobadas.diseno_clases,
-    prototipo: !!fasesAprobadas.diseno_er,
-    arbol: !!fasesAprobadas.diseno_prototipo,
-    arquitectura: !!fasesAprobadas.diseno_arbol,
+    // El árbol va antes que el prototipo. Un proyecto que ya tenía el prototipo (de antes de este
+    // orden) lo sigue pudiendo trabajar aunque no tenga el árbol aprobado.
+    arbol: !!fasesAprobadas.diseno_er,
+    prototipo: !!fasesAprobadas.diseno_arbol || !!artefactos.prototipo,
+    arquitectura: !!fasesAprobadas.diseno_prototipo,
     sistema: !!fasesAprobadas.diseno_arquitectura,
     impl_stack: !!fasesAprobadas.diseno,
     impl_estructura: !!fasesAprobadas.impl_stack,
@@ -2861,6 +2913,15 @@ export default function WorkspaceProyecto() {
   const configPrototipo = contexto.prototipo || {};
   const planActual = planPrototipo(configPrototipo, artefactos.prototipo);
   const nombresGenerados = (artefactos.prototipo || []).map((p) => p.nombre);
+  // Lo que usa la revisión de cada pantalla: operaciones de las clases, pantallas del plan y cuáles son de acceso.
+  const planEstructurado = planActual.some((p) => p.seccion || p.abre_desde);
+  const validacionPrototipo = {
+    operaciones: [...operacionesDeClases(artefactos.clases)],
+    nombres: planActual.length ? planActual.map((p) => p.nombre) : nombresGenerados,
+    accesos: (planActual.length ? planActual : artefactos.prototipo || [])
+      .filter((p) => (planEstructurado ? !p.seccion && !p.abre_desde : /sesi[oó]n|login|acceso/i.test(p.nombre)))
+      .map((p) => p.nombre),
+  };
   const faltantes = planActual.filter((p) => !nombresGenerados.includes(p.nombre));
   const analisisEditable = !ocupado && !bloqueado("analisis");
 
@@ -3280,13 +3341,21 @@ export default function WorkspaceProyecto() {
                   <>
 
                 {trabajable("impl_bd") && !bloqueado("impl_bd") && (
-                  <CampoIndicaciones
-                    clave="impl_bd"
-                    valor={contexto.indicaciones?.impl_bd}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: en los datos de prueba usa nombres y direcciones de la ciudad del cliente"
-                  />
+                  <>
+                    <AvisosDelStack
+                      avisos={artefactos.impl_stack?.avisos}
+                      indicaciones={contexto.indicaciones?.impl_bd}
+                      onAgregar={(textos) => agregarAvisosAIndicaciones("impl_bd", textos)}
+                      deshabilitado={ocupado}
+                    />
+                    <CampoIndicaciones
+                      clave="impl_bd"
+                      valor={contexto.indicaciones?.impl_bd}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: en los datos de prueba usa nombres y direcciones de la ciudad del cliente"
+                    />
+                  </>
                 )}
 
                 <ControlesPaso
@@ -3410,7 +3479,7 @@ export default function WorkspaceProyecto() {
                   Backend
                 </TituloPaso>
                 {pasoAbierto("impl_backend") && <>
-                  {trabajable("impl_backend") && !bloqueado("impl_backend") && <CampoIndicaciones clave="impl_backend" valor={contexto.indicaciones?.impl_backend} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: al crear una cuenta, envía el correo de invitación en español" />}
+                  {trabajable("impl_backend") && !bloqueado("impl_backend") && <><AvisosDelStack avisos={(artefactos.impl_contrato?.operaciones || []).some((o) => o.tipo === "edge") ? artefactos.impl_stack?.avisos : []} indicaciones={contexto.indicaciones?.impl_backend} onAgregar={(textos) => agregarAvisosAIndicaciones("impl_backend", textos)} deshabilitado={ocupado} /><CampoIndicaciones clave="impl_backend" valor={contexto.indicaciones?.impl_backend} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: al crear una cuenta, envía el correo de invitación en español" /></>}
                   <ControlesPaso clave="impl_backend" esperando={!trabajable("impl_backend")} bloqueado={bloqueado("impl_backend")} enEdicion={enEdicion("impl_backend")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
                     {backendIncompleto ? (
                       <>
@@ -3429,7 +3498,7 @@ export default function WorkspaceProyecto() {
                   {artefactos.impl_backend && (
                     <FichaBackend
                       backend={artefactos.impl_backend}
-                      onProbar={trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto ? probarBackend : undefined}
+                      onProbar={trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto && artefactos.impl_backend.archivos?.length ? probarBackend : undefined}
                       probando={generando("probar:impl_backend")}
                       deshabilitado={ocupado}
                     />
@@ -4001,7 +4070,107 @@ export default function WorkspaceProyecto() {
                 </div>
               )}
             </div>
-{/* --- Prototipo de pantallas --- */}
+{/* --- Árbol de navegación --- */}
+            {visible("arbol") && (
+              <>
+                <TituloPaso onAlternar={() => alternarPaso("arbol")} abierto={pasoAbierto("arbol")}
+                  color={PALETA.naranjaOscuro}
+                  estado={estadoPaso("arbol")}
+                  modelo={modelos.arbol}
+                  onActualizar={trabajable("arbol") ? () => actualizarPaso("arbol") : undefined}
+                  deshabilitado={ocupado}
+                >
+                  Árbol de navegación
+                </TituloPaso>
+                <div hidden={!pasoAbierto("arbol")}>
+
+                  {trabajable("arbol") && !bloqueado("arbol") && (
+                    <ConfigPrototipo
+                      parte="plan"
+                      valor={configPrototipo}
+                      onChange={cambiarConfigPrototipo}
+                      plataformasPorDefecto={plataformasDePrototipo(contexto)}
+                      generadas={nombresGenerados}
+                      deshabilitado={ocupado}
+                      onProponer={proponerPantallas}
+                      proponiendo={generando("proponer")}
+                      onSubirImagen={subirImagenEstilo}
+                    />
+                  )}
+
+                  {trabajable("arbol") && !bloqueado("arbol") && (
+                    <CampoIndicaciones
+                      clave="arbol"
+                      valor={contexto.indicaciones?.arbol}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: separa la navegación por rol"
+                    />
+                  )}
+
+                  <ControlesPaso
+                    clave="arbol"
+                    esperando={!trabajable("arbol")}
+                    bloqueado={bloqueado("arbol")}
+                    enEdicion={enEdicion("arbol")}
+                    deshabilitado={ocupado}
+                    onEditar={desbloquearPaso}
+                    onCancelarEdicion={cancelarEdicion}
+                  >
+                    <BotonGenerar
+                      onClick={generarArbol}
+                      secundario={!!artefactos.arbol}
+                      disabled={ocupado}
+                      cargando={generando("arbol") || generando("proponer")}
+                      textoCargando={generando("proponer") ? "Proponiendo pantallas..." : "Generando..."}
+                      color={PALETA.naranjaOscuro}
+                    >
+                      {artefactos.arbol ? "Regenerar" : "Generar"} árbol de navegación
+                    </BotonGenerar>
+
+                    {svgs.arbol && (
+                      <BotonEliminar
+                        onClick={() => eliminarPaso("arbol", "¿Eliminar el árbol de navegación?")}
+                        disabled={ocupado}
+                        title="Eliminar árbol de navegación"
+                      />
+                    )}
+                  </ControlesPaso>
+
+                  <ArbolNavegacion
+                    svg={svgs.arbol}
+                    titulo="Árbol de navegación"
+                    nombreArchivo="arbol-de-navegacion"
+                    codigo={artefactos.arbol}
+                    renderizar={renderizar}
+                    editable={!ocupado && trabajable("arbol") && !bloqueado("arbol")}
+                    onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arbol", codigo)}
+                  />
+
+                  {recuadroAmpliar("arbol")}
+
+                  {svgs.arbol && trabajable("arbol") && (
+                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                      <BotonAprobar
+                        aprobado={!!fasesAprobadas.diseno_arbol}
+                        onClick={() => aprobarPaso("arbol")}
+                        etiqueta="Árbol de navegación"
+                        disabled={ocupado}
+                      />
+                      {!fasesAprobadas.diseno_arbol && (
+                        <BotonRechazar
+                          etiqueta="Árbol de navegación"
+                          disabled={ocupado}
+                          onClick={() => rechazarPaso("arbol", "¿Rechazar el árbol de navegación?")}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* --- Prototipo de pantallas --- */}
             {visible("prototipo") && (
               <>
                 <TituloPaso onAlternar={() => alternarPaso("prototipo")} abierto={pasoAbierto("prototipo")}
@@ -4018,6 +4187,7 @@ export default function WorkspaceProyecto() {
                   {trabajable("prototipo") && !bloqueado("prototipo") && (
                     <>
                       <ConfigPrototipo
+                        parte="estilo"
                         valor={configPrototipo}
                         onChange={cambiarConfigPrototipo}
                         plataformasPorDefecto={plataformasDePrototipo(contexto)}
@@ -4090,6 +4260,8 @@ export default function WorkspaceProyecto() {
                     onRegenerar={regenerarPantalla}
                     onQuitar={quitarPantalla}
                     onGuardarHtml={guardarHtmlPantalla}
+                    validacion={validacionPrototipo}
+                    onCorregir={ampliarPantalla}
                   />
 
                   {artefactos.prototipo?.length > 0 &&
@@ -4122,91 +4294,6 @@ export default function WorkspaceProyecto() {
                           etiqueta="Prototipo"
                           disabled={ocupado}
                           onClick={() => rechazarPaso("prototipo", "¿Rechazar el prototipo?")}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* --- Árbol de navegación --- */}
-            {visible("arbol") && (
-              <>
-                <TituloPaso onAlternar={() => alternarPaso("arbol")} abierto={pasoAbierto("arbol")}
-                  color={PALETA.naranjaOscuro}
-                  estado={estadoPaso("arbol")}
-                  modelo={modelos.arbol}
-                  onActualizar={trabajable("arbol") ? () => actualizarPaso("arbol") : undefined}
-                  deshabilitado={ocupado}
-                >
-                  Árbol de navegación
-                </TituloPaso>
-                <div hidden={!pasoAbierto("arbol")}>
-
-                  {trabajable("arbol") && !bloqueado("arbol") && (
-                    <CampoIndicaciones
-                      clave="arbol"
-                      valor={contexto.indicaciones?.arbol}
-                      onChange={cambiarIndicaciones}
-                      deshabilitado={ocupado}
-                      ejemplo="Ej: separa la navegación por rol"
-                    />
-                  )}
-
-                  <ControlesPaso
-                    clave="arbol"
-                    esperando={!trabajable("arbol")}
-                    bloqueado={bloqueado("arbol")}
-                    enEdicion={enEdicion("arbol")}
-                    deshabilitado={ocupado}
-                    onEditar={desbloquearPaso}
-                    onCancelarEdicion={cancelarEdicion}
-                  >
-                    <BotonGenerar
-                      onClick={() => regenerarPaso("arbol")}
-                      secundario={!!artefactos.arbol}
-                      disabled={ocupado}
-                      cargando={generando("arbol")}
-                      color={PALETA.naranjaOscuro}
-                    >
-                      {artefactos.arbol ? "Regenerar" : "Generar"} árbol de navegación
-                    </BotonGenerar>
-
-                    {svgs.arbol && (
-                      <BotonEliminar
-                        onClick={() => eliminarPaso("arbol", "¿Eliminar el árbol de navegación?")}
-                        disabled={ocupado}
-                        title="Eliminar árbol de navegación"
-                      />
-                    )}
-                  </ControlesPaso>
-
-                  <ArbolNavegacion
-                    svg={svgs.arbol}
-                    titulo="Árbol de navegación"
-                    nombreArchivo="arbol-de-navegacion"
-                    codigo={artefactos.arbol}
-                    renderizar={renderizar}
-                    editable={!ocupado && trabajable("arbol") && !bloqueado("arbol")}
-                    onGuardarCodigo={(codigo) => guardarCodigoDiagrama("arbol", codigo)}
-                  />
-
-                  {recuadroAmpliar("arbol")}
-
-                  {svgs.arbol && trabajable("arbol") && (
-                    <div className="mt-4 flex items-center gap-3 flex-wrap">
-                      <BotonAprobar
-                        aprobado={!!fasesAprobadas.diseno_arbol}
-                        onClick={() => aprobarPaso("arbol")}
-                        etiqueta="Árbol de navegación"
-                        disabled={ocupado}
-                      />
-                      {!fasesAprobadas.diseno_arbol && (
-                        <BotonRechazar
-                          etiqueta="Árbol de navegación"
-                          disabled={ocupado}
-                          onClick={() => rechazarPaso("arbol", "¿Rechazar el árbol de navegación?")}
                         />
                       )}
                     </div>

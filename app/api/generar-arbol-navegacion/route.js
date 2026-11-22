@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { generarContenido } from "@/lib/gemini";
 import { formatearActores, formatearRequerimientos, formatearIndicaciones } from "@/lib/analisis";
-import { armarArbol, menuPrincipal } from "@/lib/arbol";
+import { armarArbol, menuPrincipal, respuestaDesdePlan } from "@/lib/arbol";
 
 export const maxDuration = 300;
 
@@ -145,6 +145,28 @@ export async function POST(request) {
     const plataformasPantallas = [...new Set(lista.map((p) => p.plataforma).filter(Boolean))];
     const plataformas = plataformasPantallas.length ? plataformasPantallas : plataformasProyecto || [];
     const nombreSistema = nombre?.trim() || "Sistema";
+
+    // Con el plan de pantallas (cada una con su sección del menú o la pantalla desde la que se
+    // abre), el árbol se arma por código, sin IA. Los proyectos anteriores, con el prototipo ya
+    // generado, siguen con la navegación real de sus pantallas.
+    const desdePlan = lista.some((p) => p.seccion || p.abre_desde) && !lista.some((p) => p.navegacion);
+    if (desdePlan) {
+      const { respuesta, explicacion } = respuestaDesdePlan(lista, plataformas);
+      const arbol = armarArbol({
+        nombre: nombreSistema,
+        plataformas,
+        pantallas: lista,
+        codigosRF: new Set(),
+        respuesta,
+      });
+      return NextResponse.json({
+        diagrama_mermaid: arbol.codigo,
+        explicacion,
+        advertencias: arbol.advertencias,
+        modelo_ia: "plan",
+        costo_ia: 0,
+      });
+    }
 
     const textoRF = formatearRequerimientos(a.requerimientos_funcionales);
     const codigosRF = new Set((String(textoRF).match(/\bRF-?\s?\d+\b/gi) || []).map(normalizarCodigo));

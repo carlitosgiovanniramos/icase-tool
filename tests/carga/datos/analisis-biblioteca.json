@@ -1,0 +1,232 @@
+{
+  "actores": [
+    {
+      "nombre": "Bibliotecario",
+      "descripcion": "Usuario responsable de registrar libros, estudiantes y gestionar los préstamos."
+    },
+    {
+      "nombre": "Estudiante",
+      "descripcion": "Usuario que consulta el catálogo y solicita/gestiona sus préstamos."
+    }
+  ],
+  "requerimientos_funcionales": [
+    {
+      "codigo": "RF01",
+      "nombre": "Gestión de usuarios",
+      "actores": [
+        "Bibliotecario"
+      ],
+      "prioridad": "media",
+      "descripcion": "El sistema debe permitir el ingreso con correo y contraseña, diferenciando los roles de Bibliotecario y Estudiante (editado 1794866148929).",
+      "dependencias": [],
+      "precondiciones": "Ninguna.",
+      "postcondiciones": "Las cuentas quedan registradas con su rol correspondiente.",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RF02",
+      "nombre": "Catálogo de libros",
+      "actores": [
+        "Bibliotecario"
+      ],
+      "prioridad": "alta",
+      "descripcion": "El sistema debe registrar, editar y eliminar información de libros en el catálogo.",
+      "dependencias": [],
+      "precondiciones": "Bibliotecario autenticado.",
+      "postcondiciones": "Los libros aparecen en el catálogo disponible para consulta.",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RF03",
+      "nombre": "Consulta de catálogo",
+      "actores": [
+        "Estudiante"
+      ],
+      "prioridad": "alta",
+      "descripcion": "El sistema debe permitir a los estudiantes buscar y visualizar los libros disponibles en el catálogo.",
+      "dependencias": [
+        "RF02"
+      ],
+      "precondiciones": "Estudiante autenticado.",
+      "postcondiciones": "Se muestra la lista de libros que coinciden con los criterios de búsqueda.",
+      "metodo_verificacion": "Demostración"
+    },
+    {
+      "codigo": "RF04",
+      "nombre": "Solicitud de préstamo",
+      "actores": [
+        "Estudiante"
+      ],
+      "prioridad": "alta",
+      "descripcion": "El sistema debe registrar un préstamo cuando un estudiante solicite un libro disponible, siempre que no exceda el límite de tres libros activos.",
+      "dependencias": [
+        "RF01",
+        "RF02",
+        "RF03"
+      ],
+      "precondiciones": "Estudiante autenticado y libro con estado 'disponible'.",
+      "postcondiciones": "El préstamo queda creado con fecha de inicio y vencimiento a siete días.",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RF05",
+      "nombre": "Control de límite de préstamos",
+      "actores": [
+        "Estudiante"
+      ],
+      "prioridad": "alta",
+      "descripcion": "El sistema debe impedir que un estudiante registre un nuevo préstamo si ya tiene tres libros prestados.",
+      "dependencias": [
+        "RF04"
+      ],
+      "precondiciones": "Estudiante con menos de tres préstamos activos.",
+      "postcondiciones": "No se crea un nuevo préstamo cuando el límite está alcanzado.",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RF06",
+      "nombre": "Devolución de libros",
+      "actores": [
+        "Bibliotecario"
+      ],
+      "prioridad": "alta",
+      "descripcion": "El sistema debe registrar la devolución de un libro y actualizar su estado a disponible.",
+      "dependencias": [
+        "RF04"
+      ],
+      "precondiciones": "Préstamo activo existente.",
+      "postcondiciones": "El préstamo queda marcado como devuelto y el libro pasa a estado 'disponible'.",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RF07",
+      "nombre": "Consulta de préstamos personales",
+      "actores": [
+        "Estudiante"
+      ],
+      "prioridad": "media",
+      "descripcion": "El sistema debe permitir a los estudiantes visualizar la lista de sus préstamos activos y sus fechas de vencimiento.",
+      "dependencias": [
+        "RF04"
+      ],
+      "precondiciones": "Estudiante autenticado.",
+      "postcondiciones": "Se muestra la información de todos los préstamos vigentes del estudiante.",
+      "metodo_verificacion": "Demostración"
+    },
+    {
+      "codigo": "RF08",
+      "nombre": "Exportar reporte de préstamos a PDF",
+      "actores": [
+        "Bibliotecario"
+      ],
+      "prioridad": "media",
+      "descripcion": "El sistema debe generar y permitir la descarga de un reporte consolidado de los préstamos activos en formato PDF.",
+      "dependencias": [
+        "RF07"
+      ],
+      "precondiciones": "El bibliotecario ha iniciado sesión y existen préstamos registrados.",
+      "postcondiciones": "Se produce un archivo PDF con la lista de préstamos y está disponible para su descarga.",
+      "metodo_verificacion": "Prueba"
+    }
+  ],
+  "requerimientos_no_funcionales": [
+    {
+      "codigo": "RNF01",
+      "nombre": "Tiempo de respuesta",
+      "actores": [],
+      "categoria": "Eficiencia de desempeño",
+      "prioridad": "alta",
+      "descripcion": "El sistema debe responder a cualquier acción del usuario en no más de dos segundos bajo carga normal.",
+      "dependencias": [],
+      "subcategoria": "Comportamiento temporal",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RNF02",
+      "nombre": "Disponibilidad del servicio",
+      "actores": [],
+      "categoria": "Fiabilidad",
+      "prioridad": "alta",
+      "descripcion": "El sistema debe estar disponible al menos el 99,5 % del tiempo mensual.",
+      "dependencias": [],
+      "subcategoria": "Disponibilidad",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Análisis"
+    },
+    {
+      "codigo": "RNF03",
+      "nombre": "Compatibilidad navegador",
+      "actores": [],
+      "categoria": "Compatibilidad",
+      "prioridad": "media",
+      "descripcion": "El sistema debe funcionar correctamente en los navegadores Chrome, Firefox y Edge versiones actuales.",
+      "dependencias": [],
+      "subcategoria": "Coexistencia",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Inspección"
+    },
+    {
+      "codigo": "RNF04",
+      "nombre": "Seguridad de autenticación",
+      "actores": [
+        "Bibliotecario",
+        "Estudiante"
+      ],
+      "categoria": "Seguridad",
+      "prioridad": "alta",
+      "descripcion": "El sistema debe autenticar a los usuarios mediante nombre de usuario y contraseña encriptada.",
+      "dependencias": [
+        "RF01"
+      ],
+      "subcategoria": "Autenticidad",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Prueba"
+    },
+    {
+      "codigo": "RNF05",
+      "nombre": "Usabilidad aprendizaje",
+      "actores": [
+        "Estudiante"
+      ],
+      "categoria": "Usabilidad",
+      "prioridad": "media",
+      "descripcion": "El sistema debe permitir que un nuevo estudiante aprenda a usar la interfaz en menos de cinco minutos sin documentación externa.",
+      "dependencias": [],
+      "subcategoria": "Capacidad de aprendizaje",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Demostración"
+    },
+    {
+      "codigo": "RNF06",
+      "nombre": "Mantenibilidad modularidad",
+      "actores": [],
+      "categoria": "Mantenibilidad",
+      "prioridad": "baja",
+      "descripcion": "El sistema debe estar estructurado en módulos independientes para gestión de usuarios, catálogo y préstamos.",
+      "dependencias": [],
+      "subcategoria": "Modularidad",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Inspección"
+    },
+    {
+      "codigo": "RNF07",
+      "nombre": "Portabilidad instalación",
+      "actores": [],
+      "categoria": "Portabilidad",
+      "prioridad": "baja",
+      "descripcion": "El sistema debe poder instalarse en cualquier servidor web con soporte para PHP 8 y MySQL 5.7 o superior.",
+      "dependencias": [],
+      "subcategoria": "Capacidad para ser instalado",
+      "precondiciones": "No aplica",
+      "postcondiciones": "No aplica",
+      "metodo_verificacion": "Análisis"
+    }
+  ]
+}

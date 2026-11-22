@@ -4,6 +4,9 @@ import { PALETA } from "../../../estilos";
 // "claude:claude-haiku-5-5" → "Claude Haiku 5.5"; "groq:openai/gpt-oss-120b" → "Groq · gpt-oss-120b"
 export function nombreLegible(modelo) {
   if (modelo === "manual") return "Editado a mano";
+  if (modelo === "plan") return "Desde las pantallas";
+  if (modelo.startsWith("kimi:")) return `Kimi · ${modelo.slice(5).split("/").pop()}`;
+  if (modelo.startsWith("mistral:")) return `Mistral · ${modelo.slice(8)}`;
   if (modelo.startsWith("groq:")) return `Groq · ${modelo.slice(5).split("/").pop()}`;
   return modelo
     .replace(/^claude:/, "")

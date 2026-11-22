@@ -93,12 +93,18 @@ test("una operación sin botón es una advertencia, no un error", () => {
   assert.deepEqual(ficha.errores, []);
   assert.match(ficha.advertencias.join(" "), /al_cargar: no la usa ninguna acción/);
 });
-test("el error de roles dice qué rol sobra y en qué RF, sin distinguir mayúsculas ni tildes", () => {
+test("un rol que ningún RF citado autoriza se quita con aviso, sin distinguir mayúsculas ni tildes", () => {
   const ctx = clonar(contexto); ctx.analisis.requerimientos_funcionales[0].actores = ["Recepcionista"];
   const copia = clonar(resultado); copia.operaciones[0].roles = ["recepcionista", "Mecanico"];
-  const errores = validarContrato(copia, ctx).errores;
-  assert.equal(errores.length, 1);
-  assert.match(errores[0], /Mecánico no figura entre los actores de RF01/);
+  const ficha = validarContrato(copia, ctx);
+  assert.deepEqual(ficha.errores, []);
+  assert.deepEqual(ficha.operaciones[0].roles, ["Recepcionista"]);
+  assert.match(ficha.advertencias.join(" "), /se quitó el rol Mecánico porque ningún requerimiento que cita \(RF01\)/);
+});
+test("si ningún rol de la operación está autorizado, sigue siendo un error", () => {
+  const ctx = clonar(contexto); ctx.analisis.requerimientos_funcionales[0].actores = ["Recepcionista"];
+  const copia = clonar(resultado); copia.operaciones[0].roles = ["Mecánico"];
+  assert.match(validarContrato(copia, ctx).errores.join(" "), /Mecánico no figura entre los actores de RF01/);
 });
 test("una Edge Function se declara pendiente y cubre su acción", () => {
   const copia = clonar(resultado); Object.assign(copia.operaciones[0], { tipo: "edge", recurso: "crear_usuario", metodo: "POST", descripcion: "Crear una cuenta con Auth admin solo para el administrador." });
@@ -207,4 +213,73 @@ test("RLS sin filas prueba un rechazo solo con un control positivo idéntico", a
   const diferente = clonar(ctx.contrato);
   diferente.operaciones[0].prueba.porRol = { "Mecánico": { filtros: { id: "eq.999" } } };
   assert.equal((await probarPermisosContrato({ ...ctx, contrato: diferente })).ok, false);
+});
+
+test("las rutas REST de Auth equivalen a las operaciones del cliente", () => {
+  const rutas = { "/auth/v1/token?grant_type=password": "login", "/auth/v1/logout": "logout", "/auth/v1/user": "sesion", "/auth/v1/recover": "recuperar" };
+  for (const [ruta, esperada] of Object.entries(rutas)) {
+    const copia = clonar(resultado);
+    Object.assign(copia.operaciones[0], { tipo: "auth", recurso: ruta, metodo: "POST", prueba: {} });
+    const ficha = validarContrato(copia, contexto);
+    assert.equal(ficha.operaciones[0].recurso, esperada);
+    assert.doesNotMatch(ficha.errores.join(" "), /no es una operación Auth/);
+  }
+  const inventada = clonar(resultado);
+  Object.assign(inventada.operaciones[0], { tipo: "auth", recurso: "/auth/v1/admin/users", metodo: "POST", prueba: {} });
+  assert.match(validarContrato(inventada, contexto).errores.join(" "), /no es una operación Auth/);
+});
+test("order, limit y offset de PostgREST no son columnas, pero en un POST sí se revisan", () => {
+  const consulta = clonar(resultado);
+  consulta.operaciones[0].entrada = { type: "object", properties: { estado: { type: "string" }, order: { type: "string" }, limit: { type: "integer" }, offset: { type: "integer" } } };
+  assert.doesNotMatch(validarContrato(consulta, contexto).errores.join(" "), /columna inexistente/);
+  const alta = clonar(resultado);
+  Object.assign(alta.operaciones[0], { metodo: "POST", entrada: { type: "object", properties: { order: { type: "string" } } } });
+  assert.match(validarContrato(alta, contexto).errores.join(" "), /columna inexistente \(order\)/);
+  const inventada = clonar(resultado);
+  inventada.operaciones[0].entrada = { type: "object", properties: { color: { type: "string" } } };
+  assert.match(validarContrato(inventada, contexto).errores.join(" "), /columna inexistente \(color\)/);
+});
+
+test("una Edge Function escrita como ruta se reduce a su nombre", () => {
+  for (const [escrito, nombre] of [["functions/v1/registrar-sala", "registrar-sala"], ["/functions/v1/finalizar-reservas/", "finalizar-reservas"], ["supabase/functions/crear-usuario/index.ts", "crear-usuario"]]) {
+    const copia = clonar(resultado);
+    Object.assign(copia.operaciones[0], { tipo: "edge", recurso: escrito, metodo: "POST", descripcion: "Función pendiente.", prueba: {} });
+    const ficha = validarContrato(copia, contexto);
+    assert.equal(ficha.operaciones[0].recurso, nombre);
+    assert.doesNotMatch(ficha.errores.join(" "), /nombre de Edge Function no válido/);
+  }
+  const invalida = clonar(resultado);
+  Object.assign(invalida.operaciones[0], { tipo: "edge", recurso: "crear usuario!", metodo: "POST", descripcion: "x", prueba: {} });
+  assert.match(validarContrato(invalida, contexto).errores.join(" "), /nombre de Edge Function no válido/);
+});
+
+test("un recurso relacionado de PostgREST (otra tabla) no es una columna inexistente, en una consulta", () => {
+  const ctx = clonar(contexto);
+  ctx.inventario.tablas.push({ nombre: "usuario", columnas: [{ nombre: "id" }], permisos: { select: true } });
+  const consulta = clonar(resultado);
+  consulta.operaciones[0].salida = { type: "array", items: { type: "object", properties: { id: { type: "integer" }, usuario: { type: "object", properties: { identificador: { type: "string" } } } } } };
+  assert.doesNotMatch(validarContrato(consulta, ctx).errores.join(" "), /columna inexistente/);
+  const inventada = clonar(consulta);
+  inventada.operaciones[0].salida.items.properties.color = { type: "string" };
+  assert.match(validarContrato(inventada, ctx).errores.join(" "), /columna inexistente \(color\)/);
+  const alta = clonar(resultado);
+  Object.assign(alta.operaciones[0], { metodo: "POST", entrada: { type: "object", properties: { usuario: { type: "string" } } } });
+  assert.match(validarContrato(alta, ctx).errores.join(" "), /columna inexistente \(usuario\)/);
+});
+
+test("en un POST o PATCH no se envían columnas sin permiso de escritura para authenticated", () => {
+  const ctx = clonar(contexto);
+  ctx.inventario.tablas[0].columnas = [{ nombre: "id", insertar: false, actualizar: false }, { nombre: "estado", insertar: false, actualizar: true }];
+  ctx.inventario.tablas[0].permisos = { select: true, insert: true, update: true };
+  const alta = clonar(resultado);
+  Object.assign(alta.operaciones[0], { metodo: "POST", entrada: { type: "object", properties: { estado: { type: "string" } } }, prueba: { cuerpo: { estado: "abierta" } } });
+  assert.match(validarContrato(alta, ctx).errores.join(" "), /no tiene permiso para insertar la columna estado/);
+  const edicion = clonar(resultado);
+  Object.assign(edicion.operaciones[0], { metodo: "PATCH", entrada: { type: "object", properties: { estado: { type: "string" } } }, prueba: { cuerpo: { estado: "abierta" }, filtros: { id: "eq.1" } } });
+  assert.doesNotMatch(validarContrato(edicion, ctx).errores.join(" "), /no tiene permiso para/);
+  // un inventario anterior, sin permisos por columna, no genera errores
+  const viejo = clonar(contexto);
+  const sinDato = clonar(resultado);
+  Object.assign(sinDato.operaciones[0], { metodo: "POST", entrada: { type: "object", properties: { estado: { type: "string" } } }, prueba: { cuerpo: { estado: "abierta" } } });
+  assert.doesNotMatch(validarContrato(sinDato, viejo).errores.join(" "), /no tiene permiso para/);
 });

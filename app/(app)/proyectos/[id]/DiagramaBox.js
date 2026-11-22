@@ -155,6 +155,94 @@ function EditorCodigo({ codigo, editable, renderizar, onGuardar }) {
   );
 }
 
+// Vista normal del diagrama: se ve COMPLETO, ajustado al recuadro (aunque quede chico), con
+// botones para acercar y alejar y arrastre para moverse dentro. Expandir es aparte.
+const ZOOM_VISOR_MAX = 8;
+
+function VisorDiagrama({ svg }) {
+  const ref = useRef(null);
+  const arrastre = useRef(null);
+  const [caja, setCaja] = useState(null); // tamaño del recuadro
+  const [zoom, setZoom] = useState(1); // 1 = ajustado al recuadro
+  const [moviendo, setMoviendo] = useState(false);
+  const { width: vw, height: vh } = extraerDimensiones(svg);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observador = new ResizeObserver(() => setCaja({ w: el.clientWidth, h: el.clientHeight }));
+    observador.observe(el);
+    return () => observador.disconnect();
+  }, []);
+
+  const ajuste = caja ? Math.min((caja.w - 32) / vw, (caja.h - 32) / vh, 1) || 1 : 1;
+  const acercar = (factor) => setZoom((z) => Math.min(ZOOM_VISOR_MAX, Math.max(1, +(z * factor).toFixed(3))));
+
+  function alPresionar(e) {
+    if (e.button !== 0) return;
+    const el = ref.current;
+    arrastre.current = { x: e.clientX, y: e.clientY, izquierda: el.scrollLeft, arriba: el.scrollTop };
+    setMoviendo(true);
+  }
+  function alMover(e) {
+    const a = arrastre.current;
+    if (!a) return;
+    ref.current.scrollLeft = a.izquierda - (e.clientX - a.x);
+    ref.current.scrollTop = a.arriba - (e.clientY - a.y);
+  }
+  function alSoltar() {
+    arrastre.current = null;
+    setMoviendo(false);
+  }
+
+  const boton = "w-8 h-8 flex items-center justify-center hover:bg-gray-50 text-lg font-bold";
+
+  return (
+    <div className="relative border border-gray-300 bg-white">
+      <div
+        className="absolute bottom-4 right-5 z-10 flex items-center border bg-white shadow-sm"
+        style={{ borderColor: PALETA.navy, color: PALETA.navy }}
+      >
+        <button onClick={() => acercar(1 / 1.25)} title="Alejar" className={boton}>
+          −
+        </button>
+        <span className="text-xs font-semibold w-14 text-center border-x" style={{ borderColor: PALETA.navy }}>
+          {Math.round(ajuste * zoom * 100)}%
+        </span>
+        <button onClick={() => acercar(1.25)} title="Acercar" className={boton}>
+          +
+        </button>
+        <button
+          onClick={() => setZoom(1)}
+          title="Ver todo el diagrama"
+          className="h-8 px-3 text-xs font-semibold uppercase tracking-wide border-l hover:bg-gray-50"
+          style={{ borderColor: PALETA.navy }}
+        >
+          Ajustar
+        </button>
+      </div>
+      <div
+        ref={ref}
+        onPointerDown={alPresionar}
+        onPointerMove={alMover}
+        onPointerUp={alSoltar}
+        onPointerLeave={alSoltar}
+        className={`h-[62vh] min-h-[380px] max-h-[640px] overflow-auto p-4 flex select-none ${
+          moviendo ? "cursor-grabbing" : "cursor-grab"
+        }`}
+      >
+        {caja && (
+          <div
+            className="m-auto shrink-0 [&_svg]:block [&_svg]:w-full [&_svg]:h-full"
+            style={{ width: vw * ajuste * zoom, height: vh * ajuste * zoom }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
 const ZOOM_PASO = 0.25;
@@ -182,10 +270,14 @@ export default function DiagramaBox({
   const [dimAjuste, setDimAjuste] = useState(null); // {width, height} en px, ya ajustado al contenedor
   const contenedorRef = useRef(null);
 
+  // El zoom vuelve a 100 % al abrir (antes lo hacía un efecto al cambiar `expandido`).
+  function abrirExpandido() {
+    setZoom(1);
+    setExpandido(true);
+  }
+
   useEffect(() => {
     if (!expandido) return;
-
-    setZoom(1);
 
     // Se mide después de que el modal ya está en el DOM y tiene tamaño real.
     const id = requestAnimationFrame(() => {
@@ -239,7 +331,7 @@ export default function DiagramaBox({
             {modo === "diagrama" && controles}
           </div>
           <div className="flex items-center gap-2">
-            <BotonAccion onClick={() => setExpandido(true)}>Expandir</BotonAccion>
+            <BotonAccion onClick={abrirExpandido}>Expandir</BotonAccion>
             <BotonAccion onClick={() => descargarComoSvg(svg, nombreArchivo)}>
               Descargar SVG
             </BotonAccion>
@@ -254,11 +346,7 @@ export default function DiagramaBox({
             onGuardar={onGuardarCodigo}
           />
         ) : (
-          <div
-            onClick={() => setExpandido(true)}
-            className="border border-gray-300 p-4 overflow-auto flex justify-center [&_svg]:max-w-none bg-white cursor-zoom-in"
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
+          <VisorDiagrama key={`${svg.length}-${svg.charCodeAt(svg.length >> 1)}`} svg={svg} />
         )}
 
         {/* La explicación que acompaña al diagrama (comentarios al inicio de su código), plegada

@@ -51,7 +51,7 @@ export default function InterruptorClaude({ compacto = false }) {
     if (claude && !claude.modelos.some((m) => m.id === modeloDeClaude)) elegirModeloClaude(claude.predeterminado);
   }, [claude, modeloDeClaude]);
 
-  const grupos = ["Gemini", "Groq"].map((p) => [p, (modelos || []).filter((m) => m.proveedor === p)]);
+  const grupos = ["Gemini", "Kimi", "Mistral", "Groq"].map((p) => [p, (modelos || []).filter((m) => m.proveedor === p)]);
 
   const deslizador = (
     <span className={`relative w-9 h-5 shrink-0 transition-colors ${activo ? "bg-[#c2410c]" : "bg-white/20"}`}>
@@ -112,7 +112,7 @@ export default function InterruptorClaude({ compacto = false }) {
             onFocus={cargarModelos}
             className="w-full bg-white/10 border border-white/20 text-white text-[11px] px-1.5 py-1 focus:outline-none focus:border-white/50"
           >
-            <option value="" className="text-gray-900">Automático (Gemini, luego Groq)</option>
+            <option value="" className="text-gray-900">Automático</option>
             {grupos.map(
               ([proveedor, lista]) =>
                 lista.length > 0 && (

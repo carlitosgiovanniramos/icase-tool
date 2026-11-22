@@ -52,6 +52,12 @@ Si el cliente pide cambiar requerimientos existentes, devuélvelos completos en 
 - En "actores" usa nombres de actores existentes. Solo si hace falta un actor que no existe, agrégalo en "actores_nuevos".
 - En "dependencias" puedes referenciar códigos existentes o nuevos.
 
+Contención (tan importante como cubrir lo que pide el cliente):
+- Un requerimiento por capacidad, no uno por cada frase de lo que pide. Las validaciones, los mensajes de confirmación o error y las variantes de una función van dentro de su requerimiento (por ejemplo, las validaciones de un registro van en el requerimiento del registro). Pero no fusiones acciones distintas del usuario: registrar, consultar, editar, desactivar o asignar son capacidades propias.
+- No redactes requerimientos que el cliente no pidió: ni funcionales extra ni no funcionales para "completar" atributos de calidad. Un no funcional nuevo solo se justifica si lo que pide el cliente trae una restricción de calidad que ningún requerimiento no funcional existente cubre.
+- Lo que se prepara al desplegar el sistema (datos o cuentas iniciales) no es una función de usuario ni va redactado como requerimiento: si hace falta, indícalo en la precondición del requerimiento nuevo que lo necesita.
+- No repitas ni dupliques lo que otro requerimiento ya dice, y no redactes procesos internos de construcción (auditoría, bitácoras, copias de seguridad) salvo que el cliente los pida.
+
 ${INSTRUCCION_25010}
 
 Responde ÚNICAMENTE con un JSON válido con esta estructura, sin texto adicional:

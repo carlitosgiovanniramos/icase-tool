@@ -53,3 +53,12 @@ next-env.d.ts
 
 # acceso al servidor de Azure (llave SSH y datos de conexión)
 /azure/
+
+# pruebas de Playwright (APE4)
+/tests/e2e/resultados/
+/tests/e2e/reporte/
+/tests/e2e/.auth/
+/tests/e2e/evidencias/
+/tests/carga/.sesion.txt
+/tests/carga/resultados/
+/tests/e2e/*.log
