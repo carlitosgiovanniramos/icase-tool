@@ -2,6 +2,23 @@
 
 Los cambios importantes de I-CASE Tool, de la versión más reciente a la más antigua. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [Sin publicar] - 2026-11-21
+
+### Agregado
+- Modelos gratuitos **Kimi** y **Mistral Large 4** (por NVIDIA) como respaldo y elegibles a mano. Sin el límite de 45 s de Gemini: tope de 280 s.
+- **Árbol de navegación antes del prototipo**, construido por código desde el plan de pantallas (una rama por actor); la propuesta de pantallas recibe casos de uso, clases, ER, reglas de negocio y entrevista.
+- **Armazón fijo del prototipo**: menú, logo, pie de sesión y componentes los escribe el código y la IA solo escribe el contenido; paleta y tipografía derivadas del color de marca; validación de campos, mensajes de resultado, estados vacíos, y `data-operacion` y `name` en cada control.
+- **Revisión asistida de pantallas** con casillas y «Corregir con IA» solo sobre lo marcado.
+- **Avisos del stack técnico** en Base de datos y Backend, con casillas que los pasan a las indicaciones.
+- Paso **Backend sin Edge Functions**: se guarda vacío y se puede aprobar.
+- El **frontend toma el CSS y el armazón del prototipo**: `globals.css` lo copia el código del prototipo y se revisa que las páginas no usen clases inexistentes.
+- Visores: diagramas completos con zoom y arrastre; el prototipo hasta 1280 px.
+
+### Cambiado
+- El análisis se genera en dos llamadas (actores y requerimientos) con reglas de contención; «Ampliar con IA» usa las mismas.
+- Estructura de carpetas: exige el archivo de estilos globales y componentes compartidos.
+- Contrato de API: acepta las rutas REST de Auth, los parámetros de PostgREST, los recursos relacionados y los nombres de Edge Function escritos como ruta; quita un rol no autorizado con aviso; el inventario de la base indica los permisos por columna y lleva una versión, así que uno guardado de una versión anterior se vuelve a sacar.
+
 ## [Sin publicar] - 2026-10-24
 
 ### Agregado
