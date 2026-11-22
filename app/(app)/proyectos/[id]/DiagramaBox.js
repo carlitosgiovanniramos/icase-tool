@@ -270,10 +270,14 @@ export default function DiagramaBox({
   const [dimAjuste, setDimAjuste] = useState(null); // {width, height} en px, ya ajustado al contenedor
   const contenedorRef = useRef(null);
 
+  // El zoom vuelve a 100 % al abrir (antes lo hacía un efecto al cambiar `expandido`).
+  function abrirExpandido() {
+    setZoom(1);
+    setExpandido(true);
+  }
+
   useEffect(() => {
     if (!expandido) return;
-
-    setZoom(1);
 
     // Se mide después de que el modal ya está en el DOM y tiene tamaño real.
     const id = requestAnimationFrame(() => {
@@ -327,7 +331,7 @@ export default function DiagramaBox({
             {modo === "diagrama" && controles}
           </div>
           <div className="flex items-center gap-2">
-            <BotonAccion onClick={() => setExpandido(true)}>Expandir</BotonAccion>
+            <BotonAccion onClick={abrirExpandido}>Expandir</BotonAccion>
             <BotonAccion onClick={() => descargarComoSvg(svg, nombreArchivo)}>
               Descargar SVG
             </BotonAccion>

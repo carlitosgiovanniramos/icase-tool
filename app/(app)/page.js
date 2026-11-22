@@ -43,10 +43,6 @@ export default function Home() {
     cargarProyectos();
   }, [supabase]);
 
-  useEffect(() => {
-    setPagina(1);
-  }, [busqueda]);
-
   const filtrados = useMemo(() => {
     if (!proyectos) return [];
     const termino = busqueda.trim().toLowerCase();
@@ -94,7 +90,10 @@ export default function Home() {
       <input
         type="text"
         value={busqueda}
-        onChange={(e) => setBusqueda(e.target.value)}
+        onChange={(e) => {
+          setBusqueda(e.target.value);
+          setPagina(1);
+        }}
         placeholder="Buscar por nombre o descripción..."
         className="w-full max-w-md border border-gray-300 px-3 py-2 text-sm mb-6 focus:outline-none focus:border-gray-900"
       />
