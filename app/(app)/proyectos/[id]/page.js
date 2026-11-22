@@ -34,6 +34,7 @@ import FaseStepper from "./FaseStepper";
 import FaseIndice from "./FaseIndice";
 import ImplementacionFase from "./ImplementacionFase";
 import FichaStack from "./FichaStack";
+import AvisosDelStack from "./AvisosDelStack";
 import FichaEstructura from "./FichaEstructura";
 import FichaBD from "./FichaBD";
 import FichaBackend from "./FichaBackend";
@@ -47,6 +48,7 @@ import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
 import { operacionesDeClases } from "@/lib/validarPantalla";
+import { baseVisualDelPrototipo } from "@/lib/baseVisual";
 import { useAlert } from "../../../AlertProvider";
 import { PALETA, DEGRADADO_AUTH } from "../../../estilos";
 
@@ -755,6 +757,14 @@ export default function WorkspaceProyecto() {
     setEstadoContexto("pendiente");
   }
 
+  // Pasa avisos del stack (ya con su prefijo) a las indicaciones de un paso, sin borrar lo escrito.
+  function agregarAvisosAIndicaciones(clave, textos) {
+    const actual = contextoRef.current.indicaciones?.[clave] || "";
+    const nuevos = textos.filter((t) => !actual.includes(t));
+    if (!nuevos.length) return;
+    cambiarIndicaciones(clave, [actual.trim(), ...nuevos].filter(Boolean).join("\n"));
+  }
+
   function cambiarIndicaciones(clave, texto) {
     cambiarContexto({
       ...contextoRef.current,
@@ -1418,7 +1428,7 @@ export default function WorkspaceProyecto() {
 
   // retomar (base de datos): sigue una generación que se cortó, sin repetir los archivos hechos.
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
-    if (clave === "impl_backend" && claudeActivo() && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
+    if (clave === "impl_backend" && claudeActivo() && archivosDeBackend(artefactosRef.current.impl_estructura).length && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_documentacion" && claudeActivo() && !(await confirmar(`Se redactará la documentación con Claude, una página por petición (inicio, primeros pasos, una guía por rol, preguntas frecuentes, arquitectura y API). Costo orientativo: ${rangoCostoClaude(0.02, 0.1)} por página.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Se generará el contrato con Claude. Costo orientativo: ${rangoCostoClaude(0.2, 1)} según el diseño y los reintentos.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
@@ -2043,7 +2053,14 @@ export default function WorkspaceProyecto() {
   // retomar: sigue una generación cortada, conservando los archivos ya generados (se pagaron).
   async function generarBackend(avisar = () => {}, { retomar = false } = {}) {
     const plan = archivosDeBackend(artefactosRef.current.impl_estructura);
-    if (!plan.length) throw new Error("La estructura de carpetas no tiene archivos de backend.");
+    if (!plan.length) {
+      // Con Supabase, el backend son las Edge Functions. Si el contrato no tiene ninguna operación edge, todo se
+      // resuelve con la API de datos y las funciones de la base: no hay nada que generar y el paso se puede aprobar.
+      const hayEdge = (artefactosRef.current.impl_contrato?.operaciones || []).some((o) => o.tipo === "edge");
+      if (hayEdge) throw new Error("La estructura de carpetas no tiene archivos de backend.");
+      await borrarArchivosDePaso("impl_backend", []);
+      return { valor: { ...fichaBackend([], null), sinFunciones: true }, modelo: undefined, advertencias: [] };
+    }
     const cuerpo = await cuerpoBackend();
     const generados = [];
     if (retomar) {
@@ -2096,6 +2113,8 @@ export default function WorkspaceProyecto() {
         acciones: (a.impl_contrato?.acciones || []).map(({ pantalla, nombre, tipo, operaciones, motivo }) => ({ pantalla, nombre, tipo, operaciones, motivo })),
       },
       arbol: a.arbol,
+      // El CSS compartido y el menú del prototipo aprobado: la web debe verse igual.
+      prototipoBase: plataforma === "web" ? baseVisualDelPrototipo(a.prototipo || []) : null,
       indicaciones: contextoRef.current.indicaciones?.impl_frontend,
     };
   }
@@ -3322,13 +3341,21 @@ export default function WorkspaceProyecto() {
                   <>
 
                 {trabajable("impl_bd") && !bloqueado("impl_bd") && (
-                  <CampoIndicaciones
-                    clave="impl_bd"
-                    valor={contexto.indicaciones?.impl_bd}
-                    onChange={cambiarIndicaciones}
-                    deshabilitado={ocupado}
-                    ejemplo="Ej: en los datos de prueba usa nombres y direcciones de la ciudad del cliente"
-                  />
+                  <>
+                    <AvisosDelStack
+                      avisos={artefactos.impl_stack?.avisos}
+                      indicaciones={contexto.indicaciones?.impl_bd}
+                      onAgregar={(textos) => agregarAvisosAIndicaciones("impl_bd", textos)}
+                      deshabilitado={ocupado}
+                    />
+                    <CampoIndicaciones
+                      clave="impl_bd"
+                      valor={contexto.indicaciones?.impl_bd}
+                      onChange={cambiarIndicaciones}
+                      deshabilitado={ocupado}
+                      ejemplo="Ej: en los datos de prueba usa nombres y direcciones de la ciudad del cliente"
+                    />
+                  </>
                 )}
 
                 <ControlesPaso
@@ -3452,7 +3479,7 @@ export default function WorkspaceProyecto() {
                   Backend
                 </TituloPaso>
                 {pasoAbierto("impl_backend") && <>
-                  {trabajable("impl_backend") && !bloqueado("impl_backend") && <CampoIndicaciones clave="impl_backend" valor={contexto.indicaciones?.impl_backend} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: al crear una cuenta, envía el correo de invitación en español" />}
+                  {trabajable("impl_backend") && !bloqueado("impl_backend") && <><AvisosDelStack avisos={(artefactos.impl_contrato?.operaciones || []).some((o) => o.tipo === "edge") ? artefactos.impl_stack?.avisos : []} indicaciones={contexto.indicaciones?.impl_backend} onAgregar={(textos) => agregarAvisosAIndicaciones("impl_backend", textos)} deshabilitado={ocupado} /><CampoIndicaciones clave="impl_backend" valor={contexto.indicaciones?.impl_backend} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: al crear una cuenta, envía el correo de invitación en español" /></>}
                   <ControlesPaso clave="impl_backend" esperando={!trabajable("impl_backend")} bloqueado={bloqueado("impl_backend")} enEdicion={enEdicion("impl_backend")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
                     {backendIncompleto ? (
                       <>
@@ -3471,7 +3498,7 @@ export default function WorkspaceProyecto() {
                   {artefactos.impl_backend && (
                     <FichaBackend
                       backend={artefactos.impl_backend}
-                      onProbar={trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto ? probarBackend : undefined}
+                      onProbar={trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto && artefactos.impl_backend.archivos?.length ? probarBackend : undefined}
                       probando={generando("probar:impl_backend")}
                       deshabilitado={ocupado}
                     />

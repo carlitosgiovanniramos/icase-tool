@@ -20,6 +20,12 @@ export default function FichaBackend({ backend, onProbar, probando, deshabilitad
         </div>
       )}
 
+      {backend.sinFunciones && (
+        <div className="border border-gray-300 p-3 text-gray-700" style={{ borderLeft: `4px solid ${PALETA.oliva}` }}>
+          Este proyecto no necesita Edge Functions: todo el contrato se cumple con la API de datos y las funciones de la base de datos. No hay nada que generar; puedes aprobar el paso.
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <span className="border border-gray-300 px-3 py-1.5"><span className="font-semibold">{archivos.length}</span> archivos</span>
         {prueba && (
@@ -29,6 +35,7 @@ export default function FichaBackend({ backend, onProbar, probando, deshabilitad
         )}
       </div>
 
+      {archivos.length > 0 && (
       <ul className="border border-gray-300 divide-y divide-gray-200">
         {archivos.map((a) => (
           <li key={a.ruta} className="px-3 py-2">
@@ -38,7 +45,9 @@ export default function FichaBackend({ backend, onProbar, probando, deshabilitad
           </li>
         ))}
       </ul>
+      )}
 
+      {!backend.sinFunciones && (
       <div className="border p-3">
         <strong>Prueba de las funciones</strong>
         {!prueba ? (
@@ -58,6 +67,7 @@ export default function FichaBackend({ backend, onProbar, probando, deshabilitad
           </button>
         )}
       </div>
+      )}
     </div>
   );
 }
