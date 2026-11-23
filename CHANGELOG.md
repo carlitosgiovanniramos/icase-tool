@@ -12,6 +12,12 @@ Los cambios importantes de I-CASE Tool, de la versión más reciente a la más a
 - El informe agrega **7. Fase de pruebas** (resumen, trazabilidad, casos, hallazgos) cuando la fase está aprobada.
 - **Cerrar proyecto**: guarda una copia fija del informe; cualquier cambio posterior en un paso la descarta. Requiere ejecutar `supabase/pruebas_implementacion.sql` (columnas `pruebas_plan` e `informe_cerrado`).
 
+### Corregido
+- **Stack técnico:** la capacidad "firma" se activaba con "confirmación … en pantalla" ("con*firma*ción" contiene "firma") y exigía una librería de firma que ningún requerimiento pedía. Ahora "firma" debe ser una palabra aparte.
+- **Prueba de permisos del contrato:** un actor con palabras de más ("Encargado del taller") ahora encuentra su usuario cuando el rol de la base es el comienzo de su nombre (`encargado`), y con varios usuarios del mismo rol usa el primero por correo en vez de dejar toda la prueba sin verificar.
+- `pg_cron` pasa a ser reconocido por la pieza Supabase en el catálogo (antes quedaba "sin resolver" en el stack).
+- La guía de la pieza Supabase indica que la imagen incluye `pg_cron` (verificado en contenedor) y cómo programar tareas con `cron.schedule`, para que el stack resuelva los procesos automáticos sin Edge Functions.
+
 ### Cambiado
 - **Varias claves de Gemini** (`GEMINI_API_KEYS`): se usa la primera y se pasa a la siguiente solo si se acaba su cuota, dentro de la misma petición. `GEMINI_API_KEY` sigue funcionando.
 - La barra del informe pone **Cerrar proyecto** / **Reabrir** en una franja propia, debajo de Volver y Exportar PDF.
