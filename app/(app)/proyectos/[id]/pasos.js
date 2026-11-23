@@ -156,6 +156,16 @@ export const PASOS = [
     ruta: "/api/generar-documentacion",
     archivos: true,
   },
+  // Fase de Pruebas: casos de prueba de cada requerimiento, su trazabilidad, los resultados que anota la
+  // persona que los ejecuta y los hallazgos. Un solo paso; se aprueba y luego se aprueba la fase.
+  {
+    clave: "pruebas_plan",
+    fase: "pruebas",
+    nombre: "Plan de pruebas",
+    aprobacion: "pruebas_plan",
+    columna: "pruebas_plan",
+    ruta: "/api/generar-pruebas",
+  },
 ];
 
 export const PASO = Object.fromEntries(PASOS.map((p) => [p.clave, p]));
