@@ -3085,6 +3085,8 @@ export default function WorkspaceProyecto() {
     ? "implementacion"
     : !fasesAprobadas.pruebas
     ? "pruebas"
+    : !informeCerrado
+    ? "informe"
     : null;
 
   // Recuadro "Ampliar con IA" bajo un diagrama ya generado que se puede trabajar.
@@ -3207,6 +3209,7 @@ export default function WorkspaceProyecto() {
         <FaseStepper
           fasesAprobadas={fasesAprobadas}
           hayDiseno={hayDiseno}
+          informeCerrado={!!informeCerrado}
           vista={vista}
           onNavegar={setVista}
         />
@@ -3868,7 +3871,7 @@ export default function WorkspaceProyecto() {
             </p>
           )}
 
-          <FaseIndice fasesAprobadas={fasesAprobadas} hayDiseno={hayDiseno} onNavegar={setVista} />
+          <FaseIndice fasesAprobadas={fasesAprobadas} hayDiseno={hayDiseno} informeCerrado={!!informeCerrado} onNavegar={setVista} />
         </div>
       )}
 

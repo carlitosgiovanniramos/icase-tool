@@ -25,6 +25,7 @@ Pulsa **Exportar PDF** y, en el diálogo de impresión del navegador, elige **Gu
 
 Con la fase de Pruebas aprobada aparece **Cerrar proyecto**. Guarda una **copia fija** del informe, tal como se ve, para entregarla sin que cambie: el informe muestra "Versión cerrada el…" y esa copia es la que se exporta a PDF.
 
+- Con el proyecto cerrado, el **Informe** queda marcado con el visto verde en el indicador de fases, igual que las demás fases.
 - **Reabrir** descarta la copia y el informe vuelve a armarse con lo aprobado.
 - Si después cambias cualquier paso, la copia se descarta sola, porque ya no corresponde a lo aprobado.
 
