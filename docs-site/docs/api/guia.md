@@ -142,5 +142,5 @@ Content-Type: application/json
 | Salida máxima con Claude | 32 000 tokens (`CLAUDE_MAX_TOKENS`) |
 | Salida máxima con Kimi y Mistral | 16 384 y 8 192 tokens (`KIMI_MAX_TOKENS_SALIDA`, `MISTRAL_MAX_TOKENS_SALIDA`) |
 | Salida máxima con Groq | 6 000 tokens (`GROQ_MAX_TOKENS_SALIDA`) |
-| Cuota de Gemini y Groq | La de sus planes gratuitos. Un modelo sin cuota queda en pausa el tiempo que indica Google |
+| Cuota de Gemini y Groq | La de sus planes gratuitos (con `GEMINI_API_KEYS`, la de cada clave por turnos). Un modelo sin cuota queda en pausa el tiempo que indica Google |
 | Cuerpo de una petición al runner | 20 MB |
