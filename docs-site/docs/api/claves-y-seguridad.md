@@ -11,6 +11,7 @@ sidebar_position: 4
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Conexión a Supabase. Clave publicable: los permisos los aplica RLS | Sí, es pública por diseño |
 | `GEMINI_API_KEY` | Google Gemini | No |
+| `GEMINI_API_KEYS` | Varias claves de Gemini separadas por coma. Se usa la primera y se pasa a la siguiente solo si se acaba la cuota de la anterior | No |
 | `GROQ_API_KEY` | Groq (opcional) | No |
 | `KIMI_API_KEY`, `MISTRAL_API_KEY` | Kimi y Mistral Large 4, por NVIDIA (opcionales, gratuitos) | No |
 | `GEMINI_MODELOS` | Modelos de Gemini en orden de preferencia, separados por coma | No |
@@ -22,6 +23,15 @@ sidebar_position: 4
 - **En local:** en `.env.local`, que `.gitignore` excluye (patrón `.env*`). Nunca se sube al repositorio.
 - **En Vercel:** en *Settings → Environment Variables* del proyecto. Para ejecutar proyectos desde la versión publicada, incluye `RUNNER_URL` y `RUNNER_TOKEN` apuntando al runner del servidor.
 - Solo las variables `NEXT_PUBLIC_*` llegan al navegador. Las claves de IA se usan únicamente en las rutas de API, del lado del servidor.
+
+## Varias claves de Gemini
+
+Con `GEMINI_API_KEYS="clave1,clave2,clave3"` (y/o `GEMINI_API_KEY`) la herramienta usa la primera clave y pasa a la siguiente **solo si Google responde que se acabó su cuota** (o que la clave no sirve), dentro de la misma petición y sin que se vea un error. Una clave agotada se salta hasta que se renueva su cuota; si se agotan todas, se pasa a los demás modelos (Kimi, Mistral y Groq).
+
+- La cuota gratuita de Gemini es **por proyecto de Google** y por modelo: las claves deben ser de **proyectos distintos**, o comparten la misma cuota y no suman.
+- Las claves no se escriben en el log: solo aparece su posición ("clave 2 de 3").
+- En Vercel la memoria de qué clave está agotada vale solo mientras viva la instancia; otra instancia lo descubre con una llamada que falla y sigue con la siguiente clave.
+- Los términos de Google piden no crear proyectos solo para esquivar los límites del plan gratuito.
 
 ## Buenas prácticas
 

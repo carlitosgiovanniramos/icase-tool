@@ -64,6 +64,7 @@ Crea `.env.local` en la raíz (no se sube al repositorio):
 NEXT_PUBLIC_SUPABASE_URL=https://<proyecto>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<clave publicable>
 GEMINI_API_KEY=<clave de Gemini>
+# GEMINI_API_KEYS=<clave1>,<clave2>,<clave3>   # varias, de proyectos distintos: pasa a la siguiente solo si se acaba la cuota
 KROKI_URL=https://kroki.io
 
 # Opcionales

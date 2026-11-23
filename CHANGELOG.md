@@ -13,6 +13,7 @@ Los cambios importantes de I-CASE Tool, de la versión más reciente a la más a
 - **Cerrar proyecto**: guarda una copia fija del informe; cualquier cambio posterior en un paso la descarta. Requiere ejecutar `supabase/pruebas_implementacion.sql` (columnas `pruebas_plan` e `informe_cerrado`).
 
 ### Cambiado
+- **Varias claves de Gemini** (`GEMINI_API_KEYS`): se usa la primera y se pasa a la siguiente solo si se acaba su cuota, dentro de la misma petición. `GEMINI_API_KEY` sigue funcionando.
 - La barra del informe pone **Cerrar proyecto** / **Reabrir** en una franja propia, debajo de Volver y Exportar PDF.
 - El informe pasa a ser la fase 5 y sigue sin aprobarse: es el documento con las fases aprobadas.
 - **Documentación al día**: manual de Implementación con sus siete pasos (contrato, backend, frontend y ejecución en servidor), página nueva de Pruebas, informe con cierre, caso de estudio ampliado, componente de IA con Kimi, Mistral y los modelos de Claude, prompts por fase, instalación con el runner del servidor, API (rutas nuevas en el OpenAPI) y estado del despliegue. Se quitan los enlaces al plan de implementación.
