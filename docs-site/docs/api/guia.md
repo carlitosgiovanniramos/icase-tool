@@ -14,8 +14,9 @@ La especificación completa, con cada parámetro y respuesta, está en la **[Ref
 - **Autenticación:** cookie de sesión de Supabase, la que deja el inicio de sesión. Sin sesión, `proxy.js` responde **307** hacia `/login`. No hay claves de API para clientes externos: la API la consume la propia interfaz.
 - **Preferencia de modelo:** todas las rutas de generación aceptan `usarClaude`:
   - `true`: responde solo Claude;
+  - `"claude:claude-haiku-5-5"`…: solo ese modelo de Claude;
   - `"gemini-3.8-flash"`, `"groq:openai/gpt-oss-120b"`…: solo ese modelo gratuito;
-  - `false` u omitido: automático, primero Gemini y luego Groq.
+  - `false` u omitido: automático, primero Gemini y luego Kimi, Mistral y Groq.
 - **Campos comunes de respuesta:**
   - `modelo_ia`: el modelo que respondió (ej. `gemini-3.8-flash`, `claude:claude-sonnet-5`).
   - `costo_ia`: costo estimado en dólares, solo si respondió Claude.
@@ -48,7 +49,13 @@ La especificación completa, con cada parámetro y respuesta, está en la **[Ref
 | POST | `/api/generar-contrato` | Implementación | Inventario real y contrato por acción del prototipo | Operaciones, acciones, cobertura y errores |
 | POST | `/api/revisar-contrato` | Implementación | Revalida una edición sin IA con el inventario guardado | Ficha del contrato |
 | POST | `/api/probar-contrato` | Implementación | Prueba permisos de tablas y RPC como cada actor en Supabase desechable | `prueba` |
-| POST | `/api/implementacion` | Implementación | Archivos del proyecto, ejecución y prueba de la base (vía runner) | Según la acción |
+| POST | `/api/generar-backend` | Implementación | Un archivo del backend (Edge Function o Express) | `contenido` |
+| POST | `/api/probar-backend` | Implementación | Prueba las Edge Functions con la prueba de permisos del contrato | `prueba` |
+| POST | `/api/generar-frontend` | Implementación | Un archivo de la web o de la app móvil | `contenido` |
+| POST | `/api/compilar-frontend` | Implementación | Compila en Docker la web o la app y dice qué archivo falló | `ok`, `archivo`, `salida` |
+| POST | `/api/generar-documentacion` | Implementación | Una página de lectura de la documentación del proyecto | `contenido` (Markdown) |
+| POST | `/api/implementacion` | Implementación | Archivos del proyecto, ejecución, logs y prueba de la base (vía runner) | Según la acción |
+| POST | `/api/generar-pruebas` | Pruebas | Casos de prueba de cada requerimiento funcional | `casos[]` |
 | GET | `/api/modelos-ia` | General | Modelos gratuitos disponibles y en pausa | `modelos[]` |
 | GET | `/api/exportar-diseno` | Solo desarrollo | Respaldo local de los diseños | `guardados` |
 | GET | `/api/importar-prototipo` | Solo desarrollo | Restaura un prototipo desde un respaldo | — |
@@ -95,6 +102,17 @@ Cookie: sb-…-auth-token=…
 }
 ```
 
+## Ejemplo: levantar el proyecto
+
+```http
+POST /api/implementacion
+Content-Type: application/json
+
+{ "proyectoId": "10784326-7058-4a78-ac13-d0470623a5d5", "accion": "levantar" }
+```
+
+La ruta lee los archivos del proyecto de Supabase, los arma con la plantilla del stack y los envía al runner (`sincronizar` y `levantar`). El runner responde enseguida y construye en segundo plano: se consulta con `{ "accion": "estado" }`, que devuelve los servicios, los puertos y los `enlaces` para abrir el sistema. Las demás acciones son `archivos`, `logs` (con `servicio` opcional), `detener` (con `borrarDatos`) y `probar-bd`.
+
 ## Ejemplo: probar la base de datos
 
 ```http
@@ -122,6 +140,7 @@ Content-Type: application/json
 | Duración de una ruta de generación | 300 s (`maxDuration`) |
 | Espera para que un modelo de Gemini empiece a responder | 45 s, luego pasa al siguiente |
 | Salida máxima con Claude | 32 000 tokens (`CLAUDE_MAX_TOKENS`) |
+| Salida máxima con Kimi y Mistral | 16 384 y 8 192 tokens (`KIMI_MAX_TOKENS_SALIDA`, `MISTRAL_MAX_TOKENS_SALIDA`) |
 | Salida máxima con Groq | 6 000 tokens (`GROQ_MAX_TOKENS_SALIDA`) |
 | Cuota de Gemini y Groq | La de sus planes gratuitos. Un modelo sin cuota queda en pausa el tiempo que indica Google |
 | Cuerpo de una petición al runner | 20 MB |

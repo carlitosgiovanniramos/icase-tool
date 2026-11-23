@@ -1,6 +1,6 @@
 # I-CASE Tool
 
-Herramienta **CASE asistida por inteligencia artificial** que genera los artefactos de cada fase del desarrollo de software a partir de la descripción de un sistema: requerimientos, diagramas UML, modelo de datos, prototipo de pantallas, arquitectura y, en la fase de Implementación, el stack técnico, la estructura de carpetas y la base de datos probada en contenedores.
+Herramienta **CASE asistida por inteligencia artificial** que genera los artefactos de cada fase del desarrollo de software a partir de la descripción de un sistema: requerimientos, diagramas UML, modelo de datos, prototipo de pantallas, arquitectura; en la fase de Implementación, el proyecto completo (base de datos, contrato de API, backend, web, app móvil y su documentación) probado en contenedores y listo para levantar con un botón; y en la fase de Pruebas, el plan de pruebas con su trazabilidad.
 
 **Documentación completa:** en `/docs` de la aplicación desplegada, o con `npm run docs` en local. Incluye manual de usuario, API, ingeniería de prompts y guía para desarrolladores.
 
@@ -16,16 +16,19 @@ Acompañar a estudiantes y equipos de ingeniería de software desde la idea hast
 - Diagramas en **Mermaid** y **PlantUML**, con edición del código, pantalla completa y descarga SVG.
 - **Prototipo de pantallas** web y móvil, pantalla por pantalla.
 - **Informe del proyecto** exportable a PDF.
-- **Implementación**: catálogo de piezas por tecnología, estructura de archivos con cobertura del diseño y base de datos probada en Docker.
-- Elección de modelo: **Gemini** y **Groq** gratuitos (automático o uno elegido) o **Claude** (de pago, con aviso de costo).
+- **Implementación**: catálogo de piezas por tecnología, estructura de archivos con cobertura del diseño, base de datos, contrato de API, backend y frontend probados en Docker, documentación del proyecto y botón **Levantar** (en la PC o en un servidor).
+- **Pruebas**: casos de prueba por requerimiento con trazabilidad y hallazgos, y **cierre del informe**.
+- Elección de modelo: **Gemini**, **Kimi**, **Mistral** y **Groq** gratuitos (automático o uno elegido) o **Claude** (de pago, a elegir entre Haiku, Sonnet y Opus, con aviso de costo).
 
 ## Fases y artefactos
 
 | Fase | Artefactos |
 |---|---|
 | 01 Análisis | Preguntas de entrevista, actores, requerimientos funcionales y no funcionales (ISO/IEC 25010), diagrama de casos de uso |
-| 02 Diseño | Diagrama de clases, entidad-relación, prototipo de pantallas, árbol de navegación, arquitectura, diagrama de sistemas, informe PDF |
-| 03 Implementación | Stack técnico, estructura de carpetas, base de datos (migraciones y datos de prueba), contrato de API con prueba de permisos, backend (Edge Functions). *En construcción:* web y móvil |
+| 02 Diseño | Diagrama de clases, entidad-relación, árbol de navegación, prototipo de pantallas, arquitectura, diagrama de sistemas |
+| 03 Implementación | Stack técnico, estructura de carpetas, base de datos (migraciones y datos de prueba), contrato de API con prueba de permisos, backend (Edge Functions), frontend (web y móvil, compilados en Docker), documentación del proyecto; ejecución con **Levantar** |
+| 04 Pruebas | Plan de pruebas: casos por requerimiento, trazabilidad, resultados y hallazgos |
+| Informe | Documento con las fases aprobadas, exportable a PDF, con cierre de versión |
 
 ## Stack
 
@@ -33,9 +36,9 @@ Acompañar a estudiantes y equipos de ingeniería de software desde la idea hast
 |---|---|
 | Aplicación (interfaz y API) | Next.js 16 (App Router, JavaScript), React 19, Tailwind CSS 4 |
 | Datos y autenticación | Supabase (Auth, PostgreSQL con RLS, Storage) |
-| IA | Google Gemini (`@google/genai`), Groq, Anthropic Claude (`@anthropic-ai/sdk`) |
+| IA | Google Gemini (`@google/genai`), Kimi y Mistral (NVIDIA), Groq, Anthropic Claude (`@anthropic-ai/sdk`) |
 | Diagramas | Mermaid (navegador) y PlantUML (Kroki) |
-| Implementación | Docker y Docker Compose, mediante un runner local |
+| Implementación | Docker y Docker Compose, mediante un runner (en la PC o en un servidor, con Caddy para HTTPS) |
 | Documentación | Docusaurus 3 con Mermaid y OpenAPI (Redocusaurus) |
 
 ## Requisitos previos
@@ -43,7 +46,7 @@ Acompañar a estudiantes y equipos de ingeniería de software desde la idea hast
 - Node.js 20 o superior
 - Proyecto de Supabase
 - Clave de Google AI Studio (Gemini), gratuita
-- Opcionales: clave de Groq, clave de Anthropic y Docker Desktop (para la fase de Implementación)
+- Opcionales: claves de Groq, Kimi y Mistral, clave de Anthropic y Docker Desktop (para la fase de Implementación)
 
 ## Instalación
 
@@ -65,8 +68,10 @@ KROKI_URL=https://kroki.io
 
 # Opcionales
 GROQ_API_KEY=<clave de Groq>
+KIMI_API_KEY=<clave de NVIDIA para Kimi>
+MISTRAL_API_KEY=<clave de NVIDIA para Mistral>
 ANTHROPIC_API_KEY=<clave de Anthropic>      # Claude, solo con "Usar Claude" activado
-# CLAUDE_MODELO=claude-sonnet-5
+# CLAUDE_MODELO=claude-haiku-5-5
 # GEMINI_MODELOS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview
 # GROQ_MODELOS=openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b
 
@@ -94,9 +99,9 @@ npm run build    # documentación + aplicación para producción
 app/          interfaz (App Router) y rutas de API (app/api/*)
 lib/          lógica: IA, prompts y validación de cada paso, armador de proyectos
 plantillas/   catálogo de piezas de Implementación (Supabase, Next.js, Flutter, Express, PostgreSQL…)
-runner/       proceso local que ejecuta Docker
+runner/       proceso que ejecuta Docker (en la PC o en un servidor)
 supabase/     scripts SQL de la base de I-CASE Tool
-docs-site/    documentación (Docusaurus), servida en /docs; incluye el plan de implementación
+docs-site/    documentación (Docusaurus), servida en /docs
 ```
 
 ## Capturas
@@ -107,7 +112,7 @@ docs-site/    documentación (Docusaurus), servida en /docs; incluye el plan de 
 
 ## Mantenimiento
 
-- **Modelos de IA:** solo se usan modelos gratuitos de Gemini y Groq; Claude es el único de pago. Al actualizar la lista, comprueba con una llamada real que el modelo responda con la clave gratuita (un 429 inmediato significa que no tiene cuota).
+- **Modelos de IA:** solo se usan modelos gratuitos (Gemini, Kimi, Mistral y Groq); Claude es el único de pago. Al actualizar la lista, comprueba con una llamada real que el modelo responda con la clave gratuita (un 429 inmediato significa que no tiene cuota).
 - **Cambios en prompts:** pruébalos con dos proyectos de temas distintos. Las reglas deben servir para cualquier sistema.
 - **Lo importante lo valida el código:** si una regla importa, agrégala a la validación del paso, no solo al prompt.
 - **Documentación:** al cambiar una funcionalidad, actualiza su página en `docs-site/docs/` en el mismo commit.

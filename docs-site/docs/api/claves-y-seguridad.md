@@ -14,12 +14,13 @@ sidebar_position: 4
 | `GROQ_API_KEY` | Groq (opcional) | No |
 | `KIMI_API_KEY`, `MISTRAL_API_KEY` | Kimi y Mistral Large 4, por NVIDIA (opcionales, gratuitos) | No |
 | `GEMINI_MODELOS` | Modelos de Gemini en orden de preferencia, separados por coma | No |
-| `ANTHROPIC_API_KEY` | Claude (opcional, de pago) | No |
+| `ANTHROPIC_API_KEY`, `CLAUDE_MODELO` | Claude (opcional, de pago) y el modelo que se usa si no se elige otro en la barra lateral | No |
 | `KROKI_URL` | Servicio que dibuja PlantUML | No |
-| `RUNNER_URL`, `RUNNER_TOKEN` | Runner local de Docker | No |
+| `RUNNER_URL`, `RUNNER_TOKEN` | Runner de Docker (en la PC o en un servidor) | No |
+| `DIRECCION_PUBLICA`, `CADDY_PROYECTOS`, `CADDY_CONFIG` | Solo en el runner del servidor: nombre DNS y rutas de Caddy para publicar cada proyecto por HTTPS | No (son del runner) |
 
 - **En local:** en `.env.local`, que `.gitignore` excluye (patrón `.env*`). Nunca se sube al repositorio.
-- **En Vercel:** en *Settings → Environment Variables* del proyecto.
+- **En Vercel:** en *Settings → Environment Variables* del proyecto. Para ejecutar proyectos desde la versión publicada, incluye `RUNNER_URL` y `RUNNER_TOKEN` apuntando al runner del servidor.
 - Solo las variables `NEXT_PUBLIC_*` llegan al navegador. Las claves de IA se usan únicamente en las rutas de API, del lado del servidor.
 
 ## Buenas prácticas
@@ -27,7 +28,7 @@ sidebar_position: 4
 - No guardar claves viejas comentadas en `.env.local`: si una clave dejó de usarse, se **revoca** en el panel del proveedor.
 - Si una clave se expone (en un commit, una captura o un mensaje), se revoca de inmediato y se genera otra.
 - `RUNNER_TOKEN` es una cadena larga y aleatoria. El runner la compara en tiempo constante y rechaza cualquier petición sin ella.
-- El runner escucha solo en `127.0.0.1`: no es accesible desde la red.
+- El runner escucha solo en `127.0.0.1`. Para que la web publicada lo alcance, `RUNNER_URL` debe apuntar a una dirección que lo exponga con el mismo token (por ejemplo detrás de un proxy HTTPS); sin ese token, ninguna petición se acepta.
 
 ## Datos de los usuarios
 

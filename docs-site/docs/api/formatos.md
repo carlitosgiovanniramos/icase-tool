@@ -16,6 +16,12 @@ sidebar_position: 5
 | Stack técnico | JSON | `stack_implementacion` |
 | Estructura de carpetas | JSON | `estructura_implementacion` |
 | Base de datos | Ficha JSON; el SQL va en `archivos_proyecto` | `bd_implementacion` |
+| Contrato de API | JSON (operaciones, acciones, cobertura, prueba de permisos) | `contrato_implementacion` |
+| Backend | Ficha JSON; el código va en `archivos_proyecto` | `backend_implementacion` |
+| Frontend | Ficha JSON por plataforma (`web`, `movil`); el código va en `archivos_proyecto` | `frontend_implementacion` |
+| Documentación | Ficha JSON; las páginas Markdown van en `archivos_proyecto` | `documentacion_implementacion` |
+| Plan de pruebas | JSON (casos, resultados y hallazgos) | `pruebas_plan` |
+| Informe cerrado | JSON `{ fecha, html }` con la copia fija del informe | `informe_cerrado` |
 
 ## Análisis
 
@@ -58,3 +64,24 @@ El motor se reconoce por el contenido: el código que empieza con `@start…` es
 - **Stack:** piezas del catálogo (`plantillas/`), servicios opcionales, alta disponibilidad, contenedores, librerías y servicios externos, más la resolución de cada elemento del diseño.
 - **Estructura:** lista de archivos con `ruta`, `tipo`, `proposito`, `requerimientos`, `pantallas`, `tablas` y `modulo`, más la cobertura.
 - **Base de datos:** SQL de PostgreSQL. La ficha guarda los archivos, la última prueba (tablas con RLS, políticas, filas y acceso desde la API) y lo que hay que revisar.
+- **Contrato:** una operación por cada acción del prototipo, con su recurso, roles, requerimientos, esquemas de entrada y salida y datos de prueba; la prueba de permisos guarda un resultado por operación y rol (`correcta`, `fallida`, `inconclusa` o `pendiente`). Con Express incluye un `openapi.yaml`.
+- **Backend y frontend:** cada archivo con su ruta, líneas y avisos. El frontend guarda además la última compilación de cada plataforma.
+- **Documentación:** el sitio Docusaurus del proyecto en `docs/`, con páginas de manual, desarrolladores y API.
+
+## Pruebas
+
+```json
+{
+  "casos": [{
+    "id": "CP-01", "titulo": "Inicio de sesión con credenciales válidas", "rfs": ["RF01"],
+    "actor": "Estudiante", "tipo": "funcional", "precondiciones": "Cuenta activa",
+    "pasos": ["Abrir la pantalla de acceso", "Escribir correo y contraseña", "Pulsar Ingresar"],
+    "esperado": "Se muestran solo las funciones del Estudiante",
+    "resultado": "pendiente", "observacion": ""
+  }],
+  "hallazgos": [{ "id": "H-01", "caso": "CP-01", "titulo": "…", "gravedad": "alta", "estado": "abierto", "descripcion": "…" }],
+  "modelo": "gemini-3.8-flash"
+}
+```
+
+`tipo` es `funcional`, `validacion` o `permisos`; `resultado`, `pendiente`, `aprobado` o `fallido`; `gravedad`, `alta`, `media` o `baja`; `estado`, `abierto` o `corregido`.

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generarPaginaDocumentacion } from "@/lib/documentacionIA";
+import { generarPaginaDocumentacion, modificarPaginaDocumentacion } from "@/lib/documentacionIA";
 
 export const maxDuration = 300;
 
@@ -9,6 +9,8 @@ export const maxDuration = 300;
 export async function POST(request) {
   try {
     const cuerpo = await request.json();
+    // Con { actual, instruccion } modifica una página ya redactada ("Editar con IA" del explorador).
+    if (cuerpo.actual && cuerpo.instruccion) return NextResponse.json(await modificarPaginaDocumentacion(cuerpo));
     return NextResponse.json(await generarPaginaDocumentacion(cuerpo));
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

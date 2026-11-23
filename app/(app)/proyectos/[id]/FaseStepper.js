@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PALETA } from "../../../estilos";
 
-export default function FaseStepper({ fasesAprobadas, hayDiseno, vista, onNavegar }) {
+export default function FaseStepper({ fasesAprobadas, hayDiseno, informeCerrado, vista, onNavegar }) {
   const [oculto, setOculto] = useState(false);
   const ultimoScroll = useRef(0);
 
@@ -49,12 +49,20 @@ export default function FaseStepper({ fasesAprobadas, hayDiseno, vista, onNavega
       bloqueado: !disenoAprobado,
     },
     {
-      // No se aprueba: es el documento con las fases aprobadas (Análisis y Diseño, y la Implementación
-      // cuando también lo está); se habilita con Análisis y Diseño aprobados.
-      clave: "informe",
+      clave: "pruebas",
       numero: "4",
+      nombre: "Pruebas",
+      completado: !!fasesAprobadas?.pruebas,
+      bloqueado: !fasesAprobadas?.implementacion,
+    },
+    {
+      // No se aprueba: es el documento con las fases aprobadas (Análisis y Diseño, y la Implementación y
+      // las Pruebas cuando también lo están); se habilita con Análisis y Diseño aprobados. Queda completo
+      // al cerrar el proyecto (copia fija del informe).
+      clave: "informe",
+      numero: "5",
       nombre: "Informe",
-      completado: false,
+      completado: !!informeCerrado,
       bloqueado: !(analisisAprobado && disenoAprobado),
     },
   ];

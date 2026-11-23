@@ -39,7 +39,7 @@ La **barra lateral izquierda** tiene:
 | **+ Crear proyecto** | Empieza un proyecto nuevo |
 | **Documentación** | Abre este manual en otra pestaña |
 | **Usar Claude** | Con el interruptor activado responde Claude, un modelo de pago y más preciso. Apagado, responden los modelos gratuitos |
-| **Modelo gratuito** | Con Claude apagado, elige qué modelo responde: *Automático* (Gemini y, si falla, Groq) o uno en particular |
+| **Modelo gratuito** | Con Claude apagado, elige qué modelo responde: *Automático* (Gemini y, si falla, Kimi, Mistral o Groq) o uno en particular. Con Claude activado, también eliges cuál (Haiku, Sonnet u Opus) |
 | **Gastado** | Lo que llevas gastado con Claude, estimado. Se puede reiniciar |
 
 ![Página de inicio de I-CASE Tool: Mis proyectos y barra lateral con el interruptor de Claude y el selector de modelo gratuito.](/img/capturas/02-barra-lateral.png)
@@ -61,6 +61,6 @@ Pulsa **Crear proyecto**. Se abre la página del proyecto en la fase de **Análi
 
 ## La página de un proyecto
 
-Arriba se ven las tres fases (**01 Análisis**, **02 Diseño**, **03 Implementación**) y el **Informe**. Cada fase se habilita cuando la anterior está aprobada. El nombre y la descripción del proyecto se cambian con **Editar nombre y descripción**.
+Arriba se ven las cuatro fases (**01 Análisis**, **02 Diseño**, **03 Implementación**, **04 Pruebas**) y el **Informe**. Cada fase se habilita cuando la anterior está aprobada. El nombre y la descripción del proyecto se cambian con **Editar nombre y descripción**.
 
 Sigue con el [flujo de trabajo](./flujo-de-trabajo) para entender cómo se avanza.

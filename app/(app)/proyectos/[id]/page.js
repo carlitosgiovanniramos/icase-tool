@@ -43,7 +43,9 @@ import { archivosDeBackend } from "@/lib/archivosBackend";
 import { archivosDeFrontend, plataformasDeFrontend, capaDe } from "@/lib/archivosFrontend";
 import FichaContrato, { PegarContrato } from "./FichaContrato";
 import FichaDocumentacion from "./FichaDocumentacion";
-import { planDocumentacion, componerPagina, resumenDocumentacion } from "@/lib/documentacion";
+import FichaPruebas from "./FichaPruebas";
+import { normalizarCasos, conservarResultados, fichaPruebas, revisarParaAprobar } from "@/lib/pruebas";
+import { planDocumentacion, componerPagina, resumenDocumentacion, separarPagina, unirPagina } from "@/lib/documentacion";
 import { contratoAprobable } from "@/lib/accionesContrato";
 import { archivosDeBaseDatos } from "@/lib/archivosBD";
 import { PASOS, PASO, pasosDespuesDe, listarNombres } from "./pasos";
@@ -633,9 +635,10 @@ export default function WorkspaceProyecto() {
   const [artefactos, setArtefactos] = useState(SIN_ARTEFACTOS);
   const [svgs, setSvgs] = useState({});
   const [fasesAprobadas, setFasesAprobadas] = useState({});
+  const [informeCerrado, setInformeCerrado] = useState(null); // { fecha, html } copia fija del informe
   const [cargando, setCargando] = useState(null); // { paso, modo } generación manual en curso
   const [progreso, setProgreso] = useState(null); // { indice, total, nombre } cascada en curso
-  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "implementacion" | "informe"
+  const [vista, setVista] = useState("resumen"); // "resumen" | "analisis" | "diseno" | "implementacion" | "pruebas" | "informe"
 
   const [borrador, setBorrador] = useState(null); // { nombre, prompt } mientras se edita el proyecto
   const [guardandoProyecto, setGuardandoProyecto] = useState(false);
@@ -688,6 +691,7 @@ export default function WorkspaceProyecto() {
       setArtefactos(cargados);
       fasesRef.current = data.fases_aprobadas || {};
       setFasesAprobadas(fasesRef.current);
+      setInformeCerrado(data.informe_cerrado || null);
       contextoRef.current = data.contexto || {};
       setContexto(contextoRef.current);
       svgsGuardadosRef.current = data.diagramas_svg || {};
@@ -936,6 +940,32 @@ export default function WorkspaceProyecto() {
   // opciones.onProgreso(i, total, nombre): avance del prototipo, que se genera pantalla a pantalla.
   // opciones.onTexto(texto): avance de la base de datos, que se genera archivo por archivo.
   async function pedirPaso(clave, opciones = {}) {
+    if (clave === "pruebas_plan") {
+      const previa = artefactosRef.current.pruebas_plan;
+      const data = await pedirIA(PASO.pruebas_plan.ruta, {
+        nombre: proyectoRef.current.nombre,
+        analisis: artefactosRef.current.analisis,
+        reglas: contextoRef.current.reglas,
+        // Pantallas del prototipo aprobado, para que los pasos de los casos usen sus nombres reales: del plan
+        // salen los actores y los RF; de su HTML, los botones y enlaces.
+        pantallas: planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo).map((p) => {
+          const generada = (artefactosRef.current.prototipo || []).find((g) => g.nombre === p.nombre);
+          return {
+            nombre: p.nombre,
+            plataforma: p.plataforma || generada?.plataforma || "Web",
+            rfs: p.rfs?.length ? p.rfs : generada?.rfs || [],
+            actores: p.actores || [],
+            acciones: generada?.html ? resumirNavegacion(generada.html).acciones : [],
+          };
+        }),
+        indicaciones: contextoRef.current.indicaciones?.pruebas_plan,
+      });
+      if (data.error) throw new Error(data.error);
+      // Lo ya ejecutado (resultados y hallazgos) se conserva en los casos que siguen siendo los mismos.
+      const { casos, hallazgos } = conservarResultados(previa, normalizarCasos(data.casos));
+      const valor = { ...fichaPruebas({ casos, hallazgos, modelo: data.modelo_ia, previa }), advertencias: data.advertencias || [] };
+      return { valor, modelo: data.modelo_ia, advertencias: data.advertencias || [] };
+    }
     if (clave === "impl_documentacion") return generarPasoDocumentacion(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "impl_bd") return generarBaseDatos(opciones.onTexto, { retomar: opciones.retomar });
     if (clave === "impl_backend") return generarBackend(opciones.onTexto, { retomar: opciones.retomar });
@@ -1359,13 +1389,14 @@ export default function WorkspaceProyecto() {
         delete f.fasesPrevias;
         delete f.aprobacionesPrevias;
       }
-      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno, implementacion: !!f.implementacion };
+      f.fasesPrevias ??= { analisis: !!f.analisis, diseno: !!f.diseno, implementacion: !!f.implementacion, pruebas: !!f.pruebas };
       // Un cambio en una subfase quita también la aprobación general de su fase y de las que
       // vienen después (cada fase depende de las anteriores, nunca de las siguientes).
       const fase = clave ? PASO[clave].fase : "analisis";
       if (fase === "analisis") f.analisis = false;
-      if (fase !== "implementacion") f.diseno = false;
-      f.implementacion = false;
+      if (fase === "analisis" || fase === "diseno") f.diseno = false;
+      if (fase !== "pruebas") f.implementacion = false;
+      f.pruebas = false;
       for (const p of clave ? pasosDespuesDe(clave) : PASOS) {
         if (artefactosRef.current[p.clave] && f.pendientes[p.clave] !== "desactualizado") {
           // Sin valor registrado: en el Análisis cuenta la fase (proyectos anteriores a las
@@ -1379,6 +1410,13 @@ export default function WorkspaceProyecto() {
       }
       return f;
     });
+
+    // El informe cerrado es una copia de lo aprobado: si algo cambió, deja de valer.
+    if (proyectoRef.current?.informe_cerrado) {
+      proyectoRef.current = { ...proyectoRef.current, informe_cerrado: null };
+      setInformeCerrado(null);
+      await supabase.from("proyectos").update({ informe_cerrado: null }).eq("id", id);
+    }
 
     // Aviso en la esquina superior derecha, solo si este cambio dejó pasos NUEVOS desactualizados
     // (no en cada edición repetida) y no durante una cascada, que ya los está actualizando.
@@ -1421,6 +1459,7 @@ export default function WorkspaceProyecto() {
       );
     }
     if (clave === "impl_bd" && claudeActivo()) partes.push(`\n\n${costoBD()}`);
+    if (clave === "pruebas_plan") partes.push("Los resultados y hallazgos de los casos que se repitan se conservan.");
 
     if (!(await confirmar(partes.join(" "), `¿Regenerar ${nombre}?`, "Regenerar"))) return;
     return generarPaso(clave, { costoConfirmado: true });
@@ -1430,6 +1469,7 @@ export default function WorkspaceProyecto() {
   async function generarPaso(clave, { costoConfirmado, retomar } = {}) {
     if (clave === "impl_backend" && claudeActivo() && archivosDeBackend(artefactosRef.current.impl_estructura).length && !(await confirmar(`Se generará el backend con Claude, un archivo por petición. Costo orientativo: ${rangoCostoClaude(0.05, 0.3)} por archivo.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_documentacion" && claudeActivo() && !(await confirmar(`Se redactará la documentación con Claude, una página por petición (inicio, primeros pasos, una guía por rol, preguntas frecuentes, arquitectura y API). Costo orientativo: ${rangoCostoClaude(0.02, 0.1)} por página.`, "¿Generar con Claude?", "Generar"))) return;
+    if (clave === "pruebas_plan" && claudeActivo() && !(await confirmar(`Se generarán los casos de prueba con Claude, en lotes de 8 requerimientos. Costo orientativo: ${rangoCostoClaude(0.02, 0.15)} por lote.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_contrato" && claudeActivo() && !(await confirmar(`Se generará el contrato con Claude. Costo orientativo: ${rangoCostoClaude(0.2, 1)} según el diseño y los reintentos.`, "¿Generar con Claude?", "Generar"))) return;
     if (clave === "impl_bd" && !costoConfirmado && claudeActivo()) {
       const ficha = artefactosRef.current.impl_bd;
@@ -1508,8 +1548,9 @@ export default function WorkspaceProyecto() {
           await guardarFases((f) => {
             f[p.aprobacion] = false;
             if (p.fase === "analisis") f.analisis = false;
-            if (p.fase !== "implementacion") f.diseno = false;
-            f.implementacion = false;
+            if (p.fase === "analisis" || p.fase === "diseno") f.diseno = false;
+            if (p.fase !== "pruebas") f.implementacion = false;
+            f.pruebas = false;
             f.pendientes[p.clave] = "revision";
             if (modelo) f.modelos[p.clave] = modelo;
             return f;
@@ -1591,6 +1632,14 @@ export default function WorkspaceProyecto() {
     if (clave === "impl_estructura" && artefactosRef.current.impl_estructura?.incompleto) {
       mostrarError("Pulsa Continuar para generar las piezas que faltan.", "Estructura incompleta");
       return;
+    }
+    if (clave === "pruebas_plan") {
+      const { errores, avisos } = revisarParaAprobar(artefactosRef.current.pruebas_plan, artefactosRef.current.analisis);
+      if (errores.length) {
+        mostrarError(errores.join("\n"), "Plan de pruebas incompleto");
+        return;
+      }
+      if (avisos.length && !(await confirmar(`Quedan pendientes: ${avisos.join("; ")}. Se reconocen en el informe.`, "¿Aprobar con pendientes?", "Aprobar plan"))) return;
     }
     if (clave === "impl_contrato" && !contratoAprobable(artefactosRef.current.impl_contrato)) {
       mostrarError("Corrige los errores y cubre todas las acciones antes de aprobar.", "Contrato incompleto");
@@ -1737,6 +1786,49 @@ export default function WorkspaceProyecto() {
       f.implementacion = true;
       return f;
     });
+    await actualizarEnCascada(PASOS.filter((p) => p.fase === "pruebas"));
+  }
+
+  // Aprobación general de la fase de Pruebas: requiere el plan aprobado y habilita su capítulo en el informe.
+  async function aprobarFasePruebas() {
+    await guardarFases((f) => {
+      f.pruebas = true;
+      return f;
+    });
+  }
+
+  // Resultados de los casos y hallazgos: los anota la persona que ejecuta las pruebas. Si el plan ya estaba
+  // aprobado (se desbloqueó para editarlo), el cambio le quita la aprobación como cualquier edición.
+  async function guardarPlanPruebas(nuevo) {
+    try {
+      await guardarArtefacto("pruebas_plan", { ...nuevo, actualizado: new Date().toISOString() });
+      if (fasesRef.current.pruebas_plan || fasesRef.current.pruebas) await marcarCambio("pruebas_plan", {}, undefined, { silencioso: true });
+    } catch (err) {
+      mostrarError(err.message, "No se pudo guardar el plan de pruebas");
+    }
+  }
+
+  // Cerrar el proyecto: guarda una copia fija del informe (con las pruebas aprobadas) para entregarla sin que
+  // cambie. Cualquier cambio posterior en un paso la descarta (ver marcarCambio).
+  async function cerrarProyecto(html) {
+    const cierre = { fecha: new Date().toISOString(), html };
+    const { error } = await supabase.from("proyectos").update({ informe_cerrado: cierre }).eq("id", id);
+    if (error) {
+      mostrarError(
+        error.message + (/informe_cerrado/.test(error.message) ? "\n\nEjecuta supabase/pruebas_implementacion.sql en el SQL Editor de Supabase." : ""),
+        "No se pudo cerrar el proyecto"
+      );
+      return;
+    }
+    proyectoRef.current = { ...proyectoRef.current, informe_cerrado: cierre };
+    setInformeCerrado(cierre);
+  }
+
+  async function reabrirProyecto() {
+    if (!(await confirmar("Se descarta la copia fija y el informe vuelve a armarse con lo aprobado.", "¿Reabrir el informe?", "Reabrir"))) return;
+    await supabase.from("proyectos").update({ informe_cerrado: null }).eq("id", id);
+    proyectoRef.current = { ...proyectoRef.current, informe_cerrado: null };
+    setInformeCerrado(null);
   }
 
   // "Ampliar con IA" del stack técnico: la IA modifica la ficha actual según la instrucción.
@@ -2361,6 +2453,58 @@ export default function WorkspaceProyecto() {
     }
   }
 
+  // "Editar con IA" desde el explorador: la IA modifica el archivo elegido según la instrucción, con el mismo
+  // contexto con que se generó (base de datos, backend o la web o la app). El resultado se guarda como una
+  // edición a mano: el paso pierde la aprobación y hay que probarlo o compilarlo de nuevo. Devuelve el
+  // código nuevo, o null si falló.
+  const PASOS_EDITABLES_CON_IA = ["impl_bd", "impl_backend", "impl_frontend", "impl_documentacion"];
+
+  async function editarArchivoConIA(archivo, instruccion) {
+    if (!PASOS_EDITABLES_CON_IA.includes(archivo.paso)) return null;
+    setCargando({ paso: `ampliar:${archivo.paso}` });
+    try {
+      const guardados = (await leerArchivosDePaso(archivo.paso)).map(({ ruta, contenido }) => ({ ruta, contenido }));
+      let data;
+      let nuevo; // el archivo completo ya modificado
+      if (archivo.paso === "impl_documentacion") {
+        // Solo las páginas que redactó la IA: se vuelve a armar el plan para tener los datos con que se escribió.
+        const { paginas } = planDocumentacion({ proyecto: proyectoRef.current, contexto: contextoRef.current, artefactos: artefactosRef.current, svgs, pantallas: planPrototipo(contextoRef.current.prototipo, artefactosRef.current.prototipo) });
+        const pagina = paginas.find((p) => p.ruta === archivo.ruta);
+        if (!pagina) throw new Error("Esta página sale directo de los datos aprobados, no la redacta la IA. Edítala a mano.");
+        const partes = separarPagina(archivo.contenido, pagina.anexo);
+        data = await pedirIA(PASO.impl_documentacion.ruta, { pagina: { tipo: pagina.tipo, titulo: pagina.titulo, datos: pagina.datos }, actual: partes.texto, instruccion });
+        if (!data.error) nuevo = unirPagina(partes, data.contenido);
+      } else if (archivo.paso === "impl_bd") {
+        data = await pedirIA(PASO.impl_bd.ruta, { ...cuerpoBD(), archivo: archivo.ruta, anteriores: guardados, actual: archivo.contenido, instruccion });
+      } else if (archivo.paso === "impl_backend") {
+        data = await pedirIA(PASO.impl_backend.ruta, { ...(await cuerpoBackend()), archivo: archivo.ruta, anteriores: guardados, actual: archivo.contenido, instruccion });
+      } else {
+        const plataforma = Object.entries(artefactosRef.current.impl_frontend?.plataformas || {}).find(([, d]) => d.archivos.some((a) => a.ruta === archivo.ruta))?.[0];
+        if (!plataforma) throw new Error("Este archivo no es de la web ni de la app.");
+        const delPlan = archivosDeFrontend(artefactosRef.current.impl_estructura, plataforma).find((a) => a.ruta === archivo.ruta);
+        data = await pedirIA(PASO.impl_frontend.ruta, {
+          ...cuerpoFrontend(plataforma),
+          archivo: archivo.ruta,
+          anteriores: guardados,
+          pantallas: delPlan ? pantallasDeArchivo(delPlan) : [],
+          actual: archivo.contenido,
+          instruccion,
+        });
+      }
+      if (data.error) throw new Error(data.error);
+      nuevo ??= data.contenido;
+      if (!nuevo?.trim()) throw new Error("La IA no devolvió código.");
+      if (!(await guardarArchivoEditado(archivo, nuevo))) return null;
+      if (data.advertencias?.length) mostrarInfo(textoAdvertencias(data.advertencias), `${archivo.ruta}: revisa el cambio`);
+      return nuevo;
+    } catch (err) {
+      mostrarError(err.message, "No se pudo modificar el archivo");
+      return null;
+    } finally {
+      setCargando(null);
+    }
+  }
+
   // "Ampliar con IA" de la base de datos: la IA modifica el archivo elegido y se prueba de nuevo.
   async function ampliarBD(ruta, instruccion) {
     setCargando({ paso: "ampliar:impl_bd" });
@@ -2500,6 +2644,7 @@ export default function WorkspaceProyecto() {
       f.diseno = (f.fasesPrevias?.diseno ?? true) && faseCompleta("diseno");
       // La Implementación solo vuelve a quedar aprobada si ya lo estaba (su aprobación general es explícita).
       f.implementacion = !!f.fasesPrevias?.implementacion && faseCompleta("implementacion");
+      f.pruebas = !!f.fasesPrevias?.pruebas && f.implementacion && faseCompleta("pruebas");
       delete f.aprobacionesPrevias;
       delete f.fasesPrevias;
       return f;
@@ -2894,6 +3039,7 @@ export default function WorkspaceProyecto() {
     impl_backend: !!fasesAprobadas.impl_contrato && !pendientes.impl_contrato,
     impl_frontend: !!fasesAprobadas.impl_backend && !pendientes.impl_backend,
     impl_documentacion: !!fasesAprobadas.impl_frontend && !pendientes.impl_frontend,
+    pruebas_plan: !!fasesAprobadas.implementacion,
   };
   const trabajable = (clave) => PUEDE_TRABAJARSE[clave];
   const visible = (clave) => trabajable(clave) || !!artefactos[clave];
@@ -2937,6 +3083,10 @@ export default function WorkspaceProyecto() {
     ? "diseno"
     : !fasesAprobadas.implementacion
     ? "implementacion"
+    : !fasesAprobadas.pruebas
+    ? "pruebas"
+    : !informeCerrado
+    ? "informe"
     : null;
 
   // Recuadro "Ampliar con IA" bajo un diagrama ya generado que se puede trabajar.
@@ -3059,6 +3209,7 @@ export default function WorkspaceProyecto() {
         <FaseStepper
           fasesAprobadas={fasesAprobadas}
           hayDiseno={hayDiseno}
+          informeCerrado={!!informeCerrado}
           vista={vista}
           onNavegar={setVista}
         />
@@ -3066,7 +3217,7 @@ export default function WorkspaceProyecto() {
 
       <div className="print:hidden">{aviso}</div>
 
-      {["analisis", "diseno", "implementacion"].includes(vista) && (
+      {["analisis", "diseno", "implementacion", "pruebas"].includes(vista) && (
         <button onClick={() => setVista("resumen")} className="block mb-3 text-sm font-semibold text-gray-600 hover:text-gray-900">
           ← Resumen
         </button>
@@ -3080,6 +3231,10 @@ export default function WorkspaceProyecto() {
             contexto={contexto}
             artefactos={artefactos}
             implementacionAprobada={!!fasesAprobadas.implementacion}
+            pruebasAprobada={!!fasesAprobadas.pruebas}
+            cerrado={informeCerrado}
+            onCerrar={cerrarProyecto}
+            onReabrir={reabrirProyecto}
             modelos={modelos}
             proyectoId={id}
             svgs={svgs}
@@ -3107,6 +3262,15 @@ export default function WorkspaceProyecto() {
                 (a.paso === "impl_documentacion" && trabajable("impl_documentacion") && !bloqueado("impl_documentacion")))
             }
             onGuardarArchivo={guardarArchivoEditado}
+            // Editar con IA: los mismos archivos editables, salvo la documentación (que se redacta por página).
+            editableConIA={(a) => PASOS_EDITABLES_CON_IA.includes(a.paso) && a.origen === "generado" && !ocupado &&
+              ((a.paso === "impl_bd" && trabajable("impl_bd") && !bloqueado("impl_bd") && !bdIncompleta) ||
+                (a.paso === "impl_backend" && trabajable("impl_backend") && !bloqueado("impl_backend") && !backendIncompleto) ||
+                (a.paso === "impl_frontend" && trabajable("impl_frontend") && !bloqueado("impl_frontend")) ||
+                // Documentación: solo las páginas de lectura que redactó la IA (las demás salen de los datos).
+                (a.paso === "impl_documentacion" && trabajable("impl_documentacion") && !bloqueado("impl_documentacion") &&
+                  (artefactos.impl_documentacion?.redactadas || []).includes(a.ruta)))}
+            onEditarConIA={editarArchivoConIA}
             // Cambiar las piezas cambia los contenedores y los archivos fijos del proyecto.
             recarga={JSON.stringify([
               artefactos.impl_stack?.piezas,
@@ -3588,11 +3752,11 @@ export default function WorkspaceProyecto() {
                 </div>
                 {fasesAprobadas.implementacion ? (
                   <button
-                    onClick={() => setVista("informe")}
+                    onClick={() => setVista("pruebas")}
                     style={{ backgroundColor: PALETA.navy }}
                     className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
                   >
-                    Continuar al Informe →
+                    Continuar a Pruebas →
                   </button>
                 ) : (
                   <button
@@ -3613,6 +3777,89 @@ export default function WorkspaceProyecto() {
           </p>
         ))}
 
+      {/* ===================== PRUEBAS ===================== */}
+      {vista === "pruebas" &&
+        (fasesAprobadas.implementacion || artefactos.pruebas_plan ? (
+          <section className="bg-white border border-gray-300">
+            <div className="flex items-center justify-between gap-3 px-6 py-4" style={{ backgroundColor: PALETA.oliva }}>
+              <div className="flex items-baseline gap-3">
+                <span className="text-xs font-bold tracking-widest uppercase text-white/60">Fase 04</span>
+                <h2 className="text-2xl font-bold text-white">Pruebas</h2>
+              </div>
+              <button
+                onClick={() => setVista("implementacion")}
+                className="border border-white text-white px-3 py-1.5 text-sm font-semibold hover:bg-white/10"
+              >
+                ← Volver a Implementación
+              </button>
+            </div>
+
+            <div className="p-6">
+              <TituloPaso color={PALETA.oliva} estado={estadoPaso("pruebas_plan")} modelo={modelos.pruebas_plan}
+                onActualizar={trabajable("pruebas_plan") ? () => actualizarPaso("pruebas_plan") : undefined}
+                deshabilitado={ocupado} separador={false} onAlternar={() => alternarPaso("pruebas_plan")} abierto={pasoAbierto("pruebas_plan")}>
+                Plan de pruebas
+              </TituloPaso>
+              {pasoAbierto("pruebas_plan") && <>
+                {trabajable("pruebas_plan") && !bloqueado("pruebas_plan") && <CampoIndicaciones clave="pruebas_plan" valor={contexto.indicaciones?.pruebas_plan} onChange={cambiarIndicaciones} deshabilitado={ocupado} ejemplo="Ej: incluye casos de uso desde el celular y de sesión vencida" />}
+                <ControlesPaso clave="pruebas_plan" esperando={!trabajable("pruebas_plan")} bloqueado={bloqueado("pruebas_plan")} enEdicion={enEdicion("pruebas_plan")} deshabilitado={ocupado} onEditar={desbloquearPaso} onCancelarEdicion={cancelarEdicion}>
+                  <BotonGenerar onClick={() => (artefactos.pruebas_plan ? regenerarPaso("pruebas_plan") : generarPaso("pruebas_plan"))} secundario={!!artefactos.pruebas_plan} disabled={ocupado} cargando={generando("pruebas_plan")} textoCargando="Generando casos..." color={PALETA.oliva}>
+                    {artefactos.pruebas_plan ? "Regenerar" : "Generar"} casos de prueba
+                  </BotonGenerar>
+                  {artefactos.pruebas_plan && <BotonEliminar onClick={() => eliminarPaso("pruebas_plan", "¿Eliminar el plan de pruebas?")} disabled={ocupado} title="Eliminar plan de pruebas" />}
+                </ControlesPaso>
+                <FichaPruebas
+                  ficha={artefactos.pruebas_plan}
+                  analisis={artefactos.analisis}
+                  editable={trabajable("pruebas_plan") && !bloqueado("pruebas_plan") && !ocupado}
+                  onGuardar={guardarPlanPruebas}
+                />
+                {artefactos.pruebas_plan && trabajable("pruebas_plan") && <div className="mt-4 flex gap-3 flex-wrap">
+                  <BotonAprobar aprobado={!!fasesAprobadas.pruebas_plan} onClick={() => aprobarPaso("pruebas_plan")} etiqueta="Plan de pruebas" disabled={ocupado} />
+                  {!fasesAprobadas.pruebas_plan && <BotonRechazar etiqueta="Plan de pruebas" onClick={() => rechazarPaso("pruebas_plan", "¿Rechazar el plan de pruebas?")} disabled={ocupado} />}
+                </div>}
+              </>}
+
+              {/* --- Aprobación general de la fase --- */}
+              {fasesAprobadas.pruebas_plan && (
+                <div
+                  className="mt-8 border-2 p-4 flex items-center justify-between gap-3 flex-wrap"
+                  style={{ borderColor: fasesAprobadas.pruebas ? PALETA.oliva : PALETA.marron }}
+                >
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Fase de Pruebas</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {fasesAprobadas.pruebas ? "Aprobada. Ya forma parte del informe." : "Plan de pruebas aprobado."}
+                    </p>
+                  </div>
+                  {fasesAprobadas.pruebas ? (
+                    <button
+                      onClick={() => setVista("informe")}
+                      style={{ backgroundColor: PALETA.navy }}
+                      className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125"
+                    >
+                      Continuar al Informe →
+                    </button>
+                  ) : (
+                    <button
+                      onClick={aprobarFasePruebas}
+                      disabled={ocupado}
+                      style={{ backgroundColor: PALETA.oliva }}
+                      className="text-white px-4 py-2 text-sm font-semibold hover:brightness-125 disabled:opacity-50"
+                    >
+                      Aprobar fase de Pruebas
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : (
+          <p className="text-sm text-gray-600">
+            Las pruebas se habilitan cuando la fase de Implementación está aprobada.
+          </p>
+        ))}
+
       {vista === "resumen" && (
         <div>
           {!faseActual && (
@@ -3624,7 +3871,7 @@ export default function WorkspaceProyecto() {
             </p>
           )}
 
-          <FaseIndice fasesAprobadas={fasesAprobadas} hayDiseno={hayDiseno} onNavegar={setVista} />
+          <FaseIndice fasesAprobadas={fasesAprobadas} hayDiseno={hayDiseno} informeCerrado={!!informeCerrado} onNavegar={setVista} />
         </div>
       )}
 

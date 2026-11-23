@@ -1,6 +1,6 @@
 ---
 title: Cómo escribir buenas entradas
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # Cómo escribir buenas entradas para la IA

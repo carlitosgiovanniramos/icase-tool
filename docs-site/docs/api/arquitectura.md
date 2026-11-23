@@ -13,12 +13,13 @@ flowchart LR
     P --> R["Rutas de API<br/>app/api/*/route.js"]
     R --> L["Lógica<br/>lib/*.js"]
     L --> G["Google Gemini<br/>(gratuito)"]
-    L --> Q["Groq<br/>(gratuito, respaldo)"]
+    L --> Q["Kimi, Mistral y Groq<br/>(gratuitos, respaldo)"]
     L --> C["Anthropic Claude<br/>(de pago, opcional)"]
     R --> K["Kroki<br/>PlantUML → SVG"]
     U -- "datos del proyecto<br/>(RLS por usuario)" --> S[("Supabase<br/>Auth · PostgreSQL · Storage")]
-    R -- "solo /api/implementacion" --> RN["Runner local<br/>runner/index.mjs"]
+    R -- "/api/implementacion y compilar-frontend" --> RN["Runner<br/>runner/index.mjs<br/>(PC o servidor)"]
     RN --> DK["Docker<br/>proyectos generados"]
+    RN --> CD["Caddy<br/>HTTPS por proyecto<br/>(solo en el servidor)"]
 ```
 
 ## Componentes
@@ -31,7 +32,7 @@ flowchart LR
 | Lógica de IA | `lib/gemini.js`, `lib/groq.js`, `lib/claude.js` | Un punto único (`generarContenido`) decide qué modelo responde |
 | Lógica de cada paso | `lib/stack.js`, `lib/estructura.js`, `lib/bd.js`… | Prompts, validación determinista y reintento |
 | Persistencia | Supabase | Usuarios (Auth), proyectos y artefactos (PostgreSQL con RLS), archivos (Storage) |
-| Runner | `runner/index.mjs` | Proceso local que ejecuta Docker: levanta y prueba los proyectos generados. Escucha solo en `127.0.0.1` y exige un token |
+| Runner | `runner/index.mjs` | Proceso que ejecuta Docker: levanta, prueba y compila los proyectos generados, cada uno con su carpeta, sus contenedores, su base y sus puertos. Corre en la PC o en un servidor. Escucha solo en `127.0.0.1` y exige un token; la web lo alcanza con `RUNNER_URL`. En el servidor publica cada proyecto por HTTPS con Caddy |
 
 ## Flujo de una generación
 

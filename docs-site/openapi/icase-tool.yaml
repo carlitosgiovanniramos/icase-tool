@@ -10,9 +10,10 @@ info:
 
     **Autenticación:** cookie de sesión de Supabase. Sin sesión, `proxy.js` responde 307 hacia `/login`.
 
-    **Preferencia de modelo (`usarClaude`):** `true` = solo Claude (de pago); un id de modelo gratuito
-    (ej. `gemini-3.8-flash`, `groq:openai/gpt-oss-120b`) = solo ese modelo; `false` u omitido =
-    automático (Gemini y luego Groq).
+    **Preferencia de modelo (`usarClaude`):** `true` = solo Claude (de pago); `claude:<id>` (ej.
+    `claude:claude-haiku-5-5`) = solo ese modelo de Claude; un id de modelo gratuito (ej.
+    `gemini-3.8-flash`, `groq:openai/gpt-oss-120b`) = solo ese modelo; `false` u omitido = automático
+    (Gemini, luego Kimi y Mistral si tienen clave, y Groq).
 servers:
   - url: http://localhost:3000
     description: Local
@@ -22,6 +23,7 @@ tags:
   - name: Análisis
   - name: Diseño
   - name: Implementación
+  - name: Pruebas
   - name: General
   - name: Solo desarrollo
 
@@ -709,14 +711,248 @@ paths:
         "500": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
 
+  /api/generar-backend:
+    post:
+      tags: [Implementación]
+      summary: Genera un archivo del backend (Edge Function o archivo de Express)
+      description: |
+        Un archivo por petición, como la base de datos. La lógica (prompt, validación y reintento) está
+        en `lib/backend.js`. Con `{ actual, error }` corrige el archivo con el error de la prueba.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estructura]
+              properties:
+                estructura: { type: object, description: Estructura de carpetas aprobada }
+                archivo: { type: string, example: supabase/functions/crear-usuario/index.ts }
+                anteriores: { type: array, items: { type: object, properties: { ruta: { type: string }, contenido: { type: string } } }, description: Archivos del backend ya escritos }
+                contrato: { type: object, description: Contrato de API aprobado }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                sql: { type: array, items: { type: object }, description: Archivos SQL aprobados }
+                actual: { type: string, description: Código anterior, para corregirlo o modificarlo }
+                error: { type: string, description: Error de la prueba con que se corrige }
+                instruccion: { type: string, description: Cambio pedido por el usuario (Editar con IA); se usa con actual }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Archivo generado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      ruta: { type: string }
+                      contenido: { type: string }
+                      advertencias: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/probar-backend:
+    post:
+      tags: [Implementación]
+      summary: Prueba las Edge Functions generadas con la prueba de permisos del contrato
+      description: |
+        Levanta la base con las funciones encendidas en un proyecto desechable (mediante el runner) y las
+        llama como cada actor del contrato. Exige un contrato vigente respecto de la base y el backend
+        generado. Con Express todavía no está disponible.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proyectoId]
+              properties:
+                proyectoId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Resultado de la prueba; el navegador la guarda en la ficha del backend
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prueba: { type: object, description: Misma forma que la de /api/probar-contrato }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/generar-frontend:
+    post:
+      tags: [Implementación]
+      summary: Genera un archivo de la web o de la app móvil
+      description: |
+        Un archivo por petición, por capas. Cada página parte de su pantalla del prototipo aprobado y de
+        las operaciones del contrato. Con `{ error, actual }` corrige el archivo con el error de la
+        compilación. La lógica está en `lib/frontend.js`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estructura, plataforma]
+              properties:
+                plataforma: { type: string, enum: [web, movil] }
+                estructura: { type: object }
+                archivo: { type: string }
+                anteriores: { type: array, items: { type: object, properties: { ruta: { type: string }, contenido: { type: string } } }, description: Archivos de la plataforma ya escritos }
+                stack: { type: object }
+                contrato: { type: object }
+                pantallas: { type: array, items: { type: object }, description: Pantallas del prototipo aprobado }
+                actual: { type: string, description: Código anterior, para corregirlo o modificarlo }
+                error: { type: string, description: Error de compilación con que se corrige }
+                instruccion: { type: string, description: Cambio pedido por el usuario (Editar con IA); se usa con actual }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Archivo generado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      ruta: { type: string }
+                      contenido: { type: string }
+                      advertencias: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/compilar-frontend:
+    post:
+      tags: [Implementación]
+      summary: Compila en Docker la web o la app del proyecto
+      description: |
+        Construye la imagen de la plataforma (sin levantarla) con todo lo generado hasta ahora, mediante el
+        runner, y dice qué archivo falló para corregirlo con el error. Puede tardar varios minutos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proyectoId, plataforma]
+              properties:
+                proyectoId: { type: string, format: uuid }
+                plataforma: { type: string, enum: [web, movil] }
+      responses:
+        "200":
+          description: Resultado de la compilación
+          content:
+            application/json:
+              example: { ok: false, servicio: web, archivo: web/src/app/page.js, salida: "…", fecha: "2026-11-20T15:00:00.000Z" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/generar-documentacion:
+    post:
+      tags: [Implementación]
+      summary: Redacta una página de lectura de la documentación del proyecto
+      description: |
+        Inicio, primeros pasos, guía de un rol, preguntas frecuentes, arquitectura o guía de la API, con
+        los datos aprobados que envía el navegador. Una página por petición. Lo exacto (endpoints, tablas
+        y diagramas) lo arma el navegador sin IA (`lib/documentacion.js`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pagina]
+              properties:
+                pagina:
+                  type: object
+                  required: [tipo, titulo, datos]
+                  properties:
+                    tipo: { type: string, enum: [inicio, primeros_pasos, guia_rol, preguntas, arquitectura, api] }
+                    titulo: { type: string }
+                    datos: { type: object }
+                indicaciones: { type: string }
+                actual: { type: string, description: Texto actual de la página; con instruccion, la modifica en vez de redactarla }
+                instruccion: { type: string, description: Cambio pedido por el usuario (Editar con IA) }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Página en Markdown
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      contenido: { type: string, description: Markdown de la página }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /api/generar-pruebas:
+    post:
+      tags: [Pruebas]
+      summary: Genera los casos de prueba de cada requerimiento funcional
+      description: |
+        Lotes de 8 requerimientos por petición; si alguno queda sin caso, un reintento solo con esos.
+        Devuelve los casos ya numerados (CP-01…) con el resultado "pendiente". Los resultados y los
+        hallazgos los anota la persona que ejecuta las pruebas y los guarda el navegador. La lógica está
+        en `lib/pruebasIA.js`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [analisis]
+              properties:
+                nombre: { type: string }
+                analisis: { $ref: "#/components/schemas/Analisis" }
+                reglas: { type: string, description: Reglas de negocio del contexto }
+                indicaciones: { type: string }
+                usarClaude: { $ref: "#/components/schemas/PreferenciaIA" }
+      responses:
+        "200":
+          description: Casos de prueba
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/MetaIA"
+                  - type: object
+                    properties:
+                      casos:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string, example: CP-01 }
+                            titulo: { type: string }
+                            rfs: { type: array, items: { type: string }, example: [RF01] }
+                            actor: { type: string }
+                            tipo: { type: string, enum: [funcional, validacion, permisos] }
+                            precondiciones: { type: string }
+                            pasos: { type: array, items: { type: string } }
+                            esperado: { type: string }
+                            resultado: { type: string, enum: [pendiente, aprobado, fallido] }
+                      advertencias: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
   /api/implementacion:
     post:
       tags: [Implementación]
       summary: Archivos del proyecto, ejecución en contenedores y prueba de la base
       description: |
-        Puente con el runner local. Acciones:
-        `archivos` (lista de archivos fijos, generados y planificados), `levantar`, `estado`, `logs`,
-        `detener` y `probar-bd` (aplica la base desde cero en un proyecto aparte).
+        Puente con el runner, que ejecuta Docker (local o en un servidor, según `RUNNER_URL`). Acciones:
+        `archivos` (lista de archivos fijos, generados y planificados), `levantar` (sincroniza los archivos
+        y levanta los contenedores), `estado` (servicios, puertos y direcciones para abrir el sistema),
+        `logs`, `detener` (con `borrarDatos`, también la base de datos, tras un respaldo) y `probar-bd`
+        (aplica la base desde cero en un proyecto aparte).
       requestBody:
         required: true
         content:
@@ -822,7 +1058,7 @@ components:
         modelo_ia: { type: string }
         costo_ia: { type: number }
     PreferenciaIA:
-      description: "true = solo Claude; id de un modelo gratuito = solo ese; false = automático"
+      description: "true = solo Claude; claude:<id> = solo ese Claude; id de un modelo gratuito = solo ese; false = automático"
       oneOf:
         - type: boolean
         - type: string

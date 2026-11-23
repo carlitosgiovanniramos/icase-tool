@@ -185,13 +185,38 @@ function CodigoEditable({ valor, onCambiar, onGuardar, expandido }) {
   );
 }
 
+// Ejemplo de instrucción según el tipo de archivo (el paso que lo generó).
+const EJEMPLO_IA = {
+  impl_bd: "Ej: agrega la columna telefono a la tabla personal",
+  impl_backend: "Ej: devuelve 409 si el correo ya existe",
+  impl_frontend: "Ej: agrega un botón Exportar junto a Guardar",
+  impl_documentacion: "Ej: explica primero cómo crear un parte desde el celular",
+};
+
 // Panel del archivo elegido: verlo y, si el paso que lo generó se puede trabajar, editarlo.
+// editableIA / onEditarConIA(archivo, instruccion): "Editar con IA"; devuelve true si se modificó.
 // expandido / onExpandir: el explorador entero a pantalla completa (lo maneja ExploradorArchivos).
 // onGuardar(archivo, contenido) devuelve true si se guardó.
-function PanelArchivo({ archivo, editable, onGuardar, expandido, onExpandir }) {
+function PanelArchivo({ archivo, editable, editableIA, onGuardar, onEditarConIA, expandido, onExpandir }) {
   const [borrador, setBorrador] = useState(null); // texto en edición, o null si solo se ve
   const [guardando, setGuardando] = useState(false);
   const cambiado = borrador !== null && borrador !== archivo.contenido;
+  const [pidiendoIA, setPidiendoIA] = useState(false); // se está escribiendo (o enviando) la instrucción para la IA
+  const [instruccion, setInstruccion] = useState("");
+  const [enviandoIA, setEnviandoIA] = useState(false);
+
+  async function enviarIA() {
+    if (!instruccion.trim() || enviandoIA) return;
+    setEnviandoIA(true);
+    try {
+      if (await onEditarConIA(archivo, instruccion.trim())) {
+        setPidiendoIA(false);
+        setInstruccion("");
+      }
+    } finally {
+      setEnviandoIA(false);
+    }
+  }
 
   async function guardar() {
     if (!cambiado || guardando) return;
@@ -230,7 +255,10 @@ function PanelArchivo({ archivo, editable, onGuardar, expandido, onExpandir }) {
                 </BotonCodigo>
               </>
             ) : (
-              editable && <BotonCodigo onClick={() => setBorrador(archivo.contenido)}>Editar</BotonCodigo>
+              <>
+                {editable && <BotonCodigo onClick={() => setBorrador(archivo.contenido)}>Editar</BotonCodigo>}
+                {editableIA && !pidiendoIA && <BotonCodigo onClick={() => setPidiendoIA(true)}>Editar con IA</BotonCodigo>}
+              </>
             )}
             <BotonCodigo onClick={onExpandir}>{expandido ? "Cerrar ✕" : "Expandir"}</BotonCodigo>
           </div>
@@ -253,7 +281,28 @@ function PanelArchivo({ archivo, editable, onGuardar, expandido, onExpandir }) {
           {archivo.tablas?.length > 0 && <p className="text-xs text-gray-500">Tablas: {archivo.tablas.join(", ")}</p>}
           {archivo.modulo && <p className="text-xs text-gray-500">Módulo: {archivo.modulo}</p>}
         </div>
-      ) : borrador !== null ? (
+      ) : null}
+      {pidiendoIA && borrador === null && (
+        <div className="px-4 py-3 border-b border-gray-300 bg-gray-50 space-y-2">
+          <textarea
+            value={instruccion}
+            onChange={(e) => setInstruccion(e.target.value)}
+            disabled={enviandoIA}
+            rows={2}
+            placeholder={EJEMPLO_IA[archivo.paso] || "Describe qué cambiar en este archivo"}
+            className="w-full border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-gray-900 disabled:opacity-60"
+          />
+          <div className="flex items-center gap-2">
+            <BotonCodigo onClick={enviarIA} disabled={!instruccion.trim() || enviandoIA} principal>
+              {enviandoIA ? "Modificando..." : "Enviar"}
+            </BotonCodigo>
+            <BotonCodigo onClick={() => setPidiendoIA(false)} disabled={enviandoIA}>
+              Cancelar
+            </BotonCodigo>
+          </div>
+        </div>
+      )}
+      {planificado ? null : borrador !== null ? (
         <CodigoEditable valor={borrador} onCambiar={setBorrador} onGuardar={guardar} expandido={expandido} />
       ) : (
         <CodigoLectura contenido={archivo.contenido} expandido={expandido} />
@@ -264,7 +313,7 @@ function PanelArchivo({ archivo, editable, onGuardar, expandido, onExpandir }) {
 
 // editable(archivo): si se puede editar (código generado de un paso que se puede trabajar).
 // Expandido, el explorador entero (árbol y código) pasa a pantalla completa; Esc lo cierra.
-function ExploradorArchivos({ archivos, editable, onGuardar }) {
+function ExploradorArchivos({ archivos, editable, editableIA, onGuardar, onEditarConIA }) {
   const arbol = useMemo(() => armarArbol(archivos), [archivos]);
   const [abiertas, setAbiertas] = useState(() => new Set(Object.keys(arbol.carpetas)));
   const [seleccionado, setSeleccionado] = useState(null);
@@ -322,7 +371,9 @@ function ExploradorArchivos({ archivos, editable, onGuardar }) {
           key={archivo.ruta}
           archivo={archivo}
           editable={!!editable?.(archivo)}
+          editableIA={!!editableIA?.(archivo)}
           onGuardar={onGuardar}
+          onEditarConIA={onEditarConIA}
           expandido={expandido}
           onExpandir={() => setExpandido((e) => !e)}
         />
@@ -584,8 +635,9 @@ function PanelEjecucion({ proyectoId, hayArchivos, servicios: delProyecto }) {
 // sus controles de aprobar, rechazar y cascada). recarga: cambia cuando cambian las piezas del
 // stack, y con ellas los archivos fijos y los servicios del proyecto.
 // editable(archivo) / onGuardarArchivo(archivo, contenido): edición del código generado; la
-// página decide qué se puede editar y guarda el cambio en su paso.
-export default function ImplementacionFase({ proyectoId, onFaseAnterior, recarga, editable, onGuardarArchivo, children }) {
+// página decide qué se puede editar y guarda el cambio en su paso. editableConIA(archivo) /
+// onEditarConIA(archivo, instruccion): lo mismo pero pidiéndole el cambio a la IA.
+export default function ImplementacionFase({ proyectoId, onFaseAnterior, recarga, editable, onGuardarArchivo, editableConIA, onEditarConIA, children }) {
   const [archivos, setArchivos] = useState(null);
   const [generados, setGenerados] = useState(0);
   const [servicios, setServicios] = useState([]);
@@ -595,6 +647,14 @@ export default function ImplementacionFase({ proyectoId, onFaseAnterior, recarga
   async function guardarArchivo(archivo, contenido) {
     if (!(await onGuardarArchivo?.(archivo, contenido))) return false;
     setArchivos((lista) => lista.map((a) => (a.ruta === archivo.ruta ? { ...a, contenido, estado: "editado" } : a)));
+    return true;
+  }
+
+  // "Editar con IA": la página pide el cambio y devuelve el código nuevo (o null si falló).
+  async function editarConIA(archivo, instruccion) {
+    const nuevo = await onEditarConIA?.(archivo, instruccion);
+    if (nuevo == null) return false;
+    setArchivos((lista) => lista.map((a) => (a.ruta === archivo.ruta ? { ...a, contenido: nuevo, estado: "editado" } : a)));
     return true;
   }
 
@@ -662,7 +722,9 @@ export default function ImplementacionFase({ proyectoId, onFaseAnterior, recarga
                 key={archivos.map((a) => a.ruta).join("|")}
                 archivos={archivos}
                 editable={editable}
+                editableIA={editableConIA}
                 onGuardar={guardarArchivo}
+                onEditarConIA={editarConIA}
               />
             </>
           )}

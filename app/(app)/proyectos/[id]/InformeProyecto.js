@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { extraerExplicacion } from "@/lib/diagramas";
 import { plataformasDelArbol, ramaDelArbol } from "@/lib/arbol";
 import { textoCategoria } from "@/lib/iso25010";
+import { TIPOS_CASO, RESULTADOS, GRAVEDADES, resumenPruebas, trazabilidad } from "@/lib/pruebas";
 import { PALETA } from "../../../estilos";
 import { nombreLegible } from "./BadgeModelo";
 
@@ -592,6 +593,76 @@ function SeccionImplementacion({ numero, artefactos, modelos = {}, enlaces }) {
   );
 }
 
+// --- Fase de pruebas ------------------------------------------------------------------------------
+// Sale de lo que guarda el paso "Plan de pruebas": casos, resultados anotados, trazabilidad y hallazgos.
+
+function SeccionPruebas({ numero, plan, analisis, modelo }) {
+  const casos = plan.casos || [];
+  const hallazgos = plan.hallazgos || [];
+  const r = resumenPruebas(plan);
+  const t = trazabilidad(analisis, casos);
+  const ejecutados = r.aprobados + r.fallidos;
+  return (
+    <Seccion numero={numero} titulo="Fase de pruebas" nuevaHoja>
+      <Parrafo>
+        {`En esta fase se comprueba que el sistema cumple lo definido en el análisis. Cada requerimiento funcional tiene al menos un caso de prueba, que se ejecuta sobre el sistema levantado y se anota como aprobado o fallido. Los fallos se registran como hallazgos con su gravedad y se corrigen antes de cerrar la fase. Se definieron ${r.total} casos para ${t.filas.length} requerimientos funcionales; se ejecutaron ${ejecutados}: ${r.aprobados} aprobaron y ${r.fallidos} fallaron${r.pendientes ? `, y ${r.pendientes} quedaron sin ejecutar` : ""}.`}
+      </Parrafo>
+      <Parrafo>
+        <span className="font-semibold">Cómo se hizo. </span>
+        {`Los casos se redactaron a partir de los requerimientos y los actores aprobados, con casos de flujo normal, de validación y de permisos. El código comprueba que ningún requerimiento quede sin caso (trazabilidad) y no deja aprobar la fase con hallazgos graves abiertos.${modelo ? ` Herramienta de generación: ${herramienta(modelo)}.` : ""}`}
+      </Parrafo>
+
+      <p className="text-sm font-bold text-gray-900 mt-6 mb-2 break-after-avoid">Resumen</p>
+      <Resumen
+        filas={[
+          ["Casos de prueba", r.total],
+          ["Aprobaron", r.aprobados],
+          ["Fallaron", r.fallidos],
+          ["Sin ejecutar", r.pendientes],
+          ["Requerimientos cubiertos", `${t.filas.length - t.sinCubrir.length} de ${t.filas.length}`],
+          ["Hallazgos", `${r.hallazgos} (${r.abiertos} abiertos)`],
+        ]}
+      />
+
+      <p className="text-sm font-bold text-gray-900 mt-6 mb-2 break-after-avoid">Trazabilidad con los requerimientos</p>
+      <Tabla
+        columnas={["Requerimiento", "Casos", "Aprobaron", "Fallaron", "Sin ejecutar"]}
+        anchos={["w-[40%]"]}
+        filas={t.filas.map((f) => [`${f.codigo}${f.nombre ? ` · ${f.nombre}` : ""}`, f.casos.join(", ") || "Sin caso", f.aprobados, f.fallidos, f.pendientes])}
+      />
+
+      <p className="text-sm font-bold text-gray-900 mt-6 mb-2 break-after-avoid">Casos de prueba</p>
+      {casos.map((c) => (
+        <div key={c.id} className="break-inside-avoid mb-4">
+          <Resumen
+            filas={[
+              [c.id, c.titulo],
+              ["Requerimientos", c.rfs.join(", ")],
+              ["Actor y tipo", `${c.actor || "—"} · ${TIPOS_CASO[c.tipo]}`],
+              ["Antes", c.precondiciones],
+              ["Pasos", c.pasos.map((p, i) => `${i + 1}. ${p}`).join("\n")],
+              ["Resultado esperado", c.esperado],
+              ["Resultado", RESULTADOS[c.resultado]],
+              ["Observación", c.observacion],
+            ]}
+          />
+        </div>
+      ))}
+
+      {hallazgos.length > 0 && (
+        <>
+          <p className="text-sm font-bold text-gray-900 mt-6 mb-2 break-after-avoid">Hallazgos</p>
+          <Tabla
+            columnas={["Id", "Hallazgo", "Caso", "Gravedad", "Estado"]}
+            anchos={["w-[8%]", "w-[46%]"]}
+            filas={hallazgos.map((h) => [h.id, `${h.titulo}${h.descripcion ? `. ${h.descripcion}` : ""}`, h.caso, GRAVEDADES[h.gravedad] || h.gravedad, h.estado === "corregido" ? "Corregido" : "Abierto"])}
+          />
+        </>
+      )}
+    </Seccion>
+  );
+}
+
 // Lo que el proyecto propone, armado con el contexto y los resultados ya aprobados.
 function datosDePropuesta(contexto, analisis, prototipo) {
   const plataformas = enLista(contexto.plataformas).length
@@ -608,7 +679,8 @@ function datosDePropuesta(contexto, analisis, prototipo) {
   ].filter(([, valor]) => String(valor || "").trim());
 }
 
-export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, artefactos, svgs, renderizar, implementacionAprobada, modelos, onVolver }) {
+export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, artefactos, svgs, renderizar, implementacionAprobada, pruebasAprobada, cerrado, onCerrar, onReabrir, modelos, onVolver }) {
+  const articulo = useRef(null);
   const analisis = artefactos.analisis || {};
   const rf = analisis.requerimientos_funcionales || [];
   const rnf = analisis.requerimientos_no_funcionales || [];
@@ -637,6 +709,12 @@ export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, a
     new Date().toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })
   );
 
+  // Copia fija del informe tal como se ve (sin scripts), para entregarla sin que cambie.
+  function cerrar() {
+    if (!articulo.current) return;
+    onCerrar?.(articulo.current.outerHTML.replace(/<script[\s\S]*?<\/script>/gi, ""));
+  }
+
   function exportar() {
     // El título de la página es el nombre que el navegador propone para el archivo PDF.
     const tituloPrevio = document.title;
@@ -647,14 +725,11 @@ export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, a
 
   return (
     <div>
-      <div className="print:hidden mb-4 flex items-center justify-between gap-3 flex-wrap">
+      <div className="print:hidden mb-3 flex items-center justify-between gap-3 flex-wrap">
         <button onClick={onVolver} className="text-sm font-semibold text-gray-600 hover:text-gray-900">
           ← Volver
         </button>
         <div className="flex items-center gap-3 flex-wrap">
-          {!implementacionAprobada && (
-            <span className="text-xs text-gray-500">La implementación se agrega al aprobar su fase.</span>
-          )}
           <span className="text-xs text-gray-500">En el diálogo, elige &quot;Guardar como PDF&quot;.</span>
           <button
             onClick={exportar}
@@ -666,11 +741,46 @@ export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, a
         </div>
       </div>
 
-      <article className="informe mx-auto max-w-[190mm] bg-white border border-gray-300 shadow-sm px-12 py-12 print:max-w-none print:border-0 print:shadow-none print:p-0">
+      {/* Cierre del proyecto, en su propia franja para que no se amontone con Exportar PDF. */}
+      <div
+        className="print:hidden mb-4 flex items-center justify-between gap-3 flex-wrap border border-gray-300 bg-white px-4 py-3"
+        style={{ borderLeft: `4px solid ${cerrado || pruebasAprobada ? PALETA.oliva : "#d1d5db"}` }}
+      >
+        {cerrado ? (
+          <>
+            <span className="text-sm font-semibold" style={{ color: PALETA.oliva }}>
+              Versión cerrada el {fechaCorta(cerrado.fecha)}
+            </span>
+            <button onClick={onReabrir} className="border border-gray-300 text-gray-700 px-3 py-2 text-sm font-semibold hover:bg-gray-50">
+              Reabrir
+            </button>
+          </>
+        ) : pruebasAprobada ? (
+          <>
+            <span className="text-sm text-gray-600">Guarda una copia fija del informe para entregarla.</span>
+            <button
+              onClick={cerrar}
+              style={{ borderColor: PALETA.oliva, color: PALETA.oliva }}
+              className="border bg-white px-3 py-2 text-sm font-semibold hover:bg-gray-50"
+            >
+              Cerrar proyecto
+            </button>
+          </>
+        ) : (
+          <span className="text-sm text-gray-500">
+            {implementacionAprobada ? "Las pruebas se agregan al aprobar su fase." : "La implementación se agrega al aprobar su fase."} El cierre del proyecto se habilita con las pruebas aprobadas.
+          </span>
+        )}
+      </div>
+
+      {cerrado ? (
+        <div dangerouslySetInnerHTML={{ __html: cerrado.html }} />
+      ) : (
+      <article ref={articulo} className="informe mx-auto max-w-[190mm] bg-white border border-gray-300 shadow-sm px-12 py-12 print:max-w-none print:border-0 print:shadow-none print:p-0">
         {/* --- Portada --- */}
         <header className="break-after-page min-h-[230mm] flex flex-col justify-center">
           <p className="text-xs font-bold tracking-widest uppercase text-gray-500 mb-4">
-            {implementacionAprobada ? "Informe de análisis, diseño e implementación" : "Informe de análisis y diseño"}
+            {pruebasAprobada ? "Informe de análisis, diseño, implementación y pruebas" : implementacionAprobada ? "Informe de análisis, diseño e implementación" : "Informe de análisis y diseño"}
           </p>
           <h1 className="text-4xl font-bold leading-tight mb-6" style={{ color: PALETA.navy }}>
             {proyecto.nombre}
@@ -689,6 +799,7 @@ export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, a
               {implementacionAprobada && (
                 <li>6. Fase de implementación: metodología, stack técnico, estructura, base de datos, contrato de API, backend, frontend, documentación y ejecución</li>
               )}
+              {pruebasAprobada && <li>7. Fase de pruebas: casos de prueba, trazabilidad con los requerimientos, resultados y hallazgos</li>}
             </ol>
           </div>
         </header>
@@ -890,7 +1001,13 @@ export default function InformeProyecto({ proyecto, proyectoId, contexto = {}, a
 
         {/* ===================== IMPLEMENTACIÓN ===================== */}
         {implementacionAprobada && <SeccionImplementacion numero="6" artefactos={artefactos} modelos={modelos} enlaces={enlaces} />}
+
+        {/* ===================== PRUEBAS ===================== */}
+        {pruebasAprobada && artefactos.pruebas_plan && (
+          <SeccionPruebas numero="7" plan={artefactos.pruebas_plan} analisis={analisis} modelo={modelos?.pruebas_plan} />
+        )}
       </article>
+      )}
     </div>
   );
 }

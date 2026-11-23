@@ -2,7 +2,7 @@
 
 import { PALETA } from "../../../estilos";
 
-export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
+export default function FaseIndice({ fasesAprobadas, hayDiseno, informeCerrado, onNavegar }) {
   const analisisAprobado = !!fasesAprobadas?.analisis;
   // Proyectos anteriores a la aprobación general del Diseño: contaba la arquitectura.
   const disenoAprobado =
@@ -37,13 +37,22 @@ export default function FaseIndice({ fasesAprobadas, hayDiseno, onNavegar }) {
       bloqueado: !disenoAprobado,
     },
     {
-      // No se aprueba: es el documento con las fases aprobadas (Análisis y Diseño, y la Implementación
-      // cuando también lo está); se habilita con Análisis y Diseño aprobados.
-      clave: "informe",
+      clave: "pruebas",
       numero: "04",
+      nombre: "Pruebas",
+      descripcion: "Casos de prueba de cada requerimiento, resultados y hallazgos",
+      completado: !!fasesAprobadas?.pruebas,
+      bloqueado: !fasesAprobadas?.implementacion,
+    },
+    {
+      // No se aprueba: es el documento con las fases aprobadas (Análisis y Diseño, y la Implementación y
+      // las Pruebas cuando también lo están); se habilita con Análisis y Diseño aprobados. Queda completo
+      // al cerrar el proyecto (copia fija del informe).
+      clave: "informe",
+      numero: "05",
       nombre: "Informe",
-      descripcion: "Documento con las fases aprobadas, para revisar y exportar a PDF",
-      completado: false,
+      descripcion: "Documento con las fases aprobadas, para revisar, cerrar y exportar a PDF",
+      completado: !!informeCerrado,
       bloqueado: !(analisisAprobado && disenoAprobado),
     },
   ];

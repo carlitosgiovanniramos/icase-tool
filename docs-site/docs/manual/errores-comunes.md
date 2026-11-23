@@ -1,6 +1,6 @@
 ---
 title: Errores comunes
-sidebar_position: 9
+sidebar_position: 10
 ---
 
 # Errores comunes y cómo resolverlos
@@ -16,7 +16,11 @@ sidebar_position: 9
 | *"Disponible al aprobar el paso anterior"* | El paso depende de uno sin aprobar | Aprobar el paso anterior |
 | La generación del prototipo o de la base se cortó | Falló la IA a mitad de camino | Lo generado se conserva: **Agregar faltantes** (prototipo) o **Continuar base de datos** |
 | *"La base no se probó: Docker Desktop no está encendido"* | La prueba de la base necesita Docker | Encender Docker Desktop y pulsar **Probar de nuevo** |
-| *"El runner no está encendido"* o *"Falta RUNNER_TOKEN"* | La ejecución en contenedores solo funciona en local | Ejecutar I-CASE Tool en local con `npm run all` |
+| *"El runner no está encendido"* o *"Falta RUNNER_TOKEN"* | La web no alcanza al runner que ejecuta Docker | En local, ejecutar `npm run all`. Con la herramienta publicada, encender el servidor y revisar que `RUNNER_URL` y `RUNNER_TOKEN` apunten a él |
+| *"El puerto … de la PC ya está en uso"* | Otro programa usa el puerto de un servicio del proyecto | Cerrarlo o pulsar **Detener** en el otro proyecto; el runner elige puertos libres al levantar |
+| El frontend no se puede aprobar | Una plataforma está incompleta o no compila | **Continuar** para generar lo que falta y **Compilar y corregir** hasta que compile |
+| *"Requerimientos sin ningún caso de prueba"* | El plan de pruebas no cubre todos los RF | **Regenerar** o agregar los casos que faltan, y volver a aprobar |
+| *"Falta la columna …"* al guardar un paso o cerrar el proyecto | No se ejecutó el script SQL de ese paso | Ejecutarlo en el SQL Editor de Supabase (ver [Instalación](../desarrolladores/instalacion)) |
 | *"Falló al aplicar …sql"* en la base | Un archivo SQL tiene un error | La herramienta lo corrige sola; si persiste, corregirlo con **Editar** en el explorador o con **Ampliar con IA** |
 | *"Con datos de prueba 11/22"* | Hay tablas sin datos de prueba | La corrección automática las completa; revisar el desplegable **Tablas** |
 | *"No se pudo dibujar…: Kroki no respondió"* | El servicio que dibuja los diagramas PlantUML no respondió | Recargar la página en un momento: el código está guardado |
