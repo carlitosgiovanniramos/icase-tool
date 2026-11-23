@@ -1,6 +1,6 @@
 ---
 title: "Caso de estudio: Cuerpo de Bomberos"
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # Caso de estudio: Cuerpo de Bomberos de Baños de Agua Santa
@@ -74,6 +74,12 @@ Durante la revisión se corrigieron, con **Ampliar con IA** y edición del códi
 | Stack técnico | Next.js + Flutter + Supabase (Auth, Realtime, Storage, Edge Functions) + alta disponibilidad: **12 contenedores** |
 | Estructura de carpetas | **76 archivos** con cobertura completa: 36/36 pantallas, 22/22 tablas, 14/14 módulos, 29/29 RF |
 | Base de datos | 7 archivos SQL (6 migraciones y datos de prueba). Prueba en contenedores: **22/22 tablas** con permisos (RLS), políticas y datos de prueba, y 3 usuarios de prueba |
+| Contrato de API | **48 operaciones**; cobertura de **728 de 728** controles del prototipo y **29/29** RF. Prueba de permisos por actor: **119 correctas, 0 fallidas**; las demás quedan sin verificar por falta de datos de prueba o porque requieren una función del backend |
+| Backend | Dos Edge Functions: crear usuarios y notificar por push. Prueba con las funciones encendidas: la creación de usuarios pasó 3 de 3 |
+| Frontend | **Web de 50 archivos** (Next.js) y **app móvil de 58 archivos** (Flutter), con el diseño y las 13 pantallas móviles del prototipo y modo sin conexión. Las dos compilan en Docker sin errores |
+| Documentación | Sitio Docusaurus con el manual por rol, la guía de desarrolladores y una página por operación de la API; las páginas de lectura las redactó la IA y corre en su propio contenedor |
+
+En este proyecto el contrato, la web y la app se escribieron a mano y se cargaron con **Pegar contrato** y el explorador de archivos. Pasaron por las mismas validaciones y pruebas que el código generado: cobertura del contrato, prueba de permisos y compilación en Docker.
 
 La revisión de la base mostró por qué hay que leer lo que genera la IA, aunque la prueba pase. Se encontraron y corrigieron:
 
@@ -82,6 +88,19 @@ La revisión de la base mostró por qué hay que leer lo que genera la IA, aunqu
 - datos de prueba incompletos.
 
 Esos hallazgos se convirtieron en reglas y validaciones de la herramienta para cualquier proyecto.
+
+### Ejecución en un servidor
+
+El proyecto se levantó con el botón **Levantar** en una máquina virtual de Azure, donde corre el runner de Docker. Cada acceso queda publicado por HTTPS, en el puerto del servicio más 10000:
+
+| Acceso | Puerto público |
+|---|---|
+| Web | 13000 |
+| Móvil (vista web de la app) | 18090 |
+| API de Supabase | 18000 |
+| Documentación | 13200 |
+
+Del mismo código de la app móvil se compiló un **APK de Android** apuntando a la API pública. Quien usa el sistema solo ve estas direcciones; los contenedores, los archivos y los logs quedan dentro del servidor.
 
 :::info Capturas pendientes
 `capturas/11-bomberos-stack.png` (ficha del stack) y `capturas/12-bomberos-base.png` (ficha de la base con la prueba 22/22).

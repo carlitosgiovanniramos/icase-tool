@@ -2,6 +2,21 @@
 
 Los cambios importantes de I-CASE Tool, de la versión más reciente a la más antigua. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [Sin publicar] - 2026-11-22
+
+### Agregado
+- **Fase de Pruebas** (fase 4, entre Implementación e Informe) con el paso **Plan de pruebas**: la IA redacta los casos de cada requerimiento funcional (flujo normal, validación y permisos) en lotes de 8, y el código pide solo los requerimientos que queden sin caso. Cada caso se marca como aprobó, falló o sin ejecutar, y los fallos se registran como **hallazgos** con gravedad.
+- Los casos de prueba se redactan con las precondiciones y postcondiciones de cada requerimiento y las pantallas reales del prototipo (con sus botones y enlaces), para que los pasos no inventen nombres.
+- **Editar con IA** en el explorador de archivos: elegido un archivo de la base de datos, el backend, la web o la app, se describe el cambio y la IA modifica solo ese archivo con su contexto original. También en las páginas de lectura de la documentación (las tablas y diagramas que salen de los datos se conservan). Queda como edición a mano (el paso pierde la aprobación).
+- **Trazabilidad** requerimiento-casos: no se aprueba el plan con requerimientos sin caso ni con hallazgos graves abiertos; los casos sin ejecutar o fallidos se reconocen al aprobar. Al regenerar se conservan los resultados y hallazgos de los casos que se repiten.
+- El informe agrega **7. Fase de pruebas** (resumen, trazabilidad, casos, hallazgos) cuando la fase está aprobada.
+- **Cerrar proyecto**: guarda una copia fija del informe; cualquier cambio posterior en un paso la descarta. Requiere ejecutar `supabase/pruebas_implementacion.sql` (columnas `pruebas_plan` e `informe_cerrado`).
+
+### Cambiado
+- La barra del informe pone **Cerrar proyecto** / **Reabrir** en una franja propia, debajo de Volver y Exportar PDF.
+- El informe pasa a ser la fase 5 y sigue sin aprobarse: es el documento con las fases aprobadas.
+- **Documentación al día**: manual de Implementación con sus siete pasos (contrato, backend, frontend y ejecución en servidor), página nueva de Pruebas, informe con cierre, caso de estudio ampliado, componente de IA con Kimi, Mistral y los modelos de Claude, prompts por fase, instalación con el runner del servidor, API (rutas nuevas en el OpenAPI) y estado del despliegue. Se quitan los enlaces al plan de implementación.
+
 ## [Sin publicar] - 2026-11-21
 
 ### Agregado

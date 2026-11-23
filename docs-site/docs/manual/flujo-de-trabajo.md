@@ -33,7 +33,7 @@ flowchart LR
 
 ## Consultar los pasos
 
-Los pasos de **Análisis**, **Diseño** e **Implementación** son desplegables. Pulsa el nombre para abrir o cerrar su contenido. El encabezado mantiene visibles el nombre y el estado, sin resúmenes ni cantidades. Puedes abrir varios pasos a la vez.
+Los pasos de **Análisis**, **Diseño**, **Implementación** y **Pruebas** son desplegables. Pulsa el nombre para abrir o cerrar su contenido. El encabezado mantiene visibles el nombre y el estado, sin resúmenes ni cantidades. Puedes abrir varios pasos a la vez.
 
 En Análisis también puedes desplegar por separado **Actores**, **Requerimientos funcionales** y **Requerimientos no funcionales**. Comparten la aprobación del paso **Actores y requerimientos**; desplegarlos no crea aprobaciones independientes. El contexto del análisis conserva su propio desplegable.
 
@@ -50,8 +50,14 @@ Al aprobar un paso que cambió, la herramienta ofrece actualizar solo el siguien
 
 ## Aprobación de fases
 
-- La fase de **Análisis** se aprueba cuando sus pasos (requerimientos y casos de uso) están aprobados. Se pulsa **Continuar a Diseño**.
-- La fase de **Diseño** se aprueba cuando sus seis pasos están aprobados. Se pulsa **Continuar a Implementación**. Con el Diseño aprobado también se habilita el **Informe**.
+| Fase | Se aprueba cuando | Qué habilita |
+|---|---|---|
+| **01 Análisis** | Requerimientos y casos de uso aprobados | **Continuar a Diseño** |
+| **02 Diseño** | Sus seis pasos aprobados | **Continuar a Implementación** y el **Informe** |
+| **03 Implementación** | Sus siete pasos aprobados | **Continuar a Pruebas** y el capítulo de implementación del informe |
+| **04 Pruebas** | El plan de pruebas aprobado | El capítulo de pruebas del informe y **Cerrar proyecto** |
+
+El **Informe** (fase 5) no se aprueba: reúne lo aprobado de las demás fases. Cada fase depende de las anteriores: si cambias un paso, pierde la aprobación esa fase y las que le siguen.
 
 ![Fase de Diseño aprobada, con sus seis pasos aprobados y el botón Continuar a Implementación.](/img/capturas/04-paso-aprobado.png)
 
