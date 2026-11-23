@@ -167,6 +167,40 @@ test("matriz HTTP con login real simulado: un rol permitido y otro prohibido", a
   assert.ok(llamadas.filter((x) => x.url.includes("/rest/")).every((x) => x.opciones.headers.Prefer.includes("tx=rollback")));
   assert.equal(JSON.stringify(prueba).includes("Bearer"), false);
 });
+test("un actor con palabras de más encuentra su rol: Encargado del taller es el rol encargado", async () => {
+  const sesiones = [];
+  const fetchImpl = async (url, opciones) => {
+    if (url.includes("/auth/")) { const email = JSON.parse(opciones.body).email; sesiones.push(email); return Response.json({ access_token: email }); }
+    return Response.json([{ id: 1 }]);
+  };
+  const ctx = clonar(contexto); ctx.analisis.actores = [{ nombre: "Encargado del taller" }];
+  const copia = clonar(resultado); copia.operaciones[0].roles = ["Encargado del taller"];
+  const prueba = await probarPermisosContrato({ baseUrl: "http://127.0.0.1:8000", anonKey: "anon", usuarios: [{ email: "encargado@prueba.local", rol: "encargado" }, { email: "estudiante@prueba.local", rol: "estudiante" }], actores: ctx.analisis.actores, contrato: validarContrato(copia, ctx), fetchImpl });
+  assert.equal(prueba.resultados.find((r) => r.operacion === "autenticacion").estado, "correcta");
+  assert.deepEqual(sesiones, ["encargado@prueba.local"]);
+});
+test("con varios usuarios del mismo rol se usa el primero por correo, no se rinde", async () => {
+  const sesiones = [];
+  const fetchImpl = async (url, opciones) => {
+    if (url.includes("/auth/")) { const email = JSON.parse(opciones.body).email; sesiones.push(email); return Response.json({ access_token: email }); }
+    return Response.json([{ id: 1 }]);
+  };
+  const ctx = clonar(contexto); ctx.analisis.actores = [{ nombre: "Estudiante" }];
+  const copia = clonar(resultado); copia.operaciones[0].roles = ["Estudiante"];
+  const usuarios = [{ email: "estudiante_b@prueba.local", rol: "estudiante" }, { email: "estudiante_a@prueba.local", rol: "estudiante" }, { email: "encargado@prueba.local", rol: "encargado" }];
+  const prueba = await probarPermisosContrato({ baseUrl: "http://127.0.0.1:8000", anonKey: "anon", usuarios, actores: ctx.analisis.actores, contrato: validarContrato(copia, ctx), fetchImpl });
+  assert.equal(prueba.resultados.find((r) => r.operacion === "autenticacion").estado, "correcta");
+  assert.deepEqual(sesiones, ["estudiante_a@prueba.local"]);
+});
+test("un actor sin ningún usuario de prueba queda inconcluso con un mensaje claro", async () => {
+  const fetchImpl = async () => Response.json({});
+  const ctx = clonar(contexto); ctx.analisis.actores = [{ nombre: "Administrador del sistema" }];
+  const copia = clonar(resultado); copia.operaciones[0].roles = ["Administrador del sistema"];
+  const prueba = await probarPermisosContrato({ baseUrl: "http://x", anonKey: "a", usuarios: [{ email: "encargado@prueba.local", rol: "encargado" }], actores: ctx.analisis.actores, contrato: validarContrato(copia, ctx), fetchImpl });
+  const auth = prueba.resultados.find((r) => r.operacion === "autenticacion");
+  assert.equal(auth.estado, "inconclusa");
+  assert.match(auth.detalle, /No hay un usuario/);
+});
 test("un actor con preposición encuentra su usuario: Jefe de guardia es jefe_guardia", async () => {
   const fetchImpl = async (url) => (url.includes("/auth/") ? Response.json({ access_token: "t" }) : Response.json([{ id: 1 }]));
   const ctx = clonar(contexto); ctx.analisis.actores = [{ nombre: "Jefe de guardia" }];
