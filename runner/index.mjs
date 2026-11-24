@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { parse as leerYaml, stringify as escribirYaml } from "yaml";
 import { CONSULTA_INVENTARIO, CONSULTA_USUARIOS_CONTRATO } from "../lib/inventarioContrato.js";
+import { direccionesDeSitios, archivosEnConflicto } from "../lib/caddyProyectos.js";
 import { probarPermisosContrato } from "../lib/pruebaContrato.js";
 
 const PUERTO = Number(process.env.RUNNER_PORT) || 4100;
@@ -266,10 +267,29 @@ async function publicarEnCaddy(id, variables) {
     .map(([k, v]) => `# ${k}\n${DIRECCION_PUBLICA}:${Number(v) + DESPLAZAMIENTO_PUBLICO} {\n\treverse_proxy 127.0.0.1:${Number(v)}\n}\n`);
   try {
     await mkdir(CADDY_PROYECTOS, { recursive: true });
+    // Si el archivo de otro proyecto (detenido) declara las mismas direcciones, Caddy no arranca: se quita.
+    const otros = (await readdir(CADDY_PROYECTOS)).filter((n) => n.endsWith(".caddy") && n !== `${id}.caddy`);
+    const archivos = await Promise.all(otros.map(async (nombre) => ({ nombre, contenido: await readFile(path.join(CADDY_PROYECTOS, nombre), "utf8").catch(() => "") })));
+    for (const nombre of archivosEnConflicto(archivos, sitios.flatMap(direccionesDeSitios))) {
+      await rm(path.join(CADDY_PROYECTOS, nombre), { force: true });
+      console.warn(`Caddy: se quitó ${nombre}, declaraba las mismas direcciones que ${id}.`);
+    }
     await writeFile(path.join(CADDY_PROYECTOS, `${id}.caddy`), `# Proyecto ${id}: lo escribe el runner al levantarlo.\n${sitios.join("\n")}`, "utf8");
     await ejecutar("caddy", ["reload", "--config", CADDY_CONFIG, "--adapter", "caddyfile"]);
   } catch (err) {
     console.error(`No se pudo publicar ${id} en Caddy:`, err.message);
+  }
+}
+
+// Al detener un proyecto se quita su archivo de Caddy: ya no publica nada y sus puertos pueden volver a usarse
+// sin que choquen con los de otro proyecto.
+async function quitarDeCaddy(id) {
+  if (!DIRECCION_PUBLICA) return;
+  try {
+    await rm(path.join(CADDY_PROYECTOS, `${id}.caddy`), { force: true });
+    await ejecutar("caddy", ["reload", "--config", CADDY_CONFIG, "--adapter", "caddyfile"]);
+  } catch (err) {
+    console.error(`No se pudo quitar ${id} de Caddy:`, err.message);
   }
 }
 
@@ -527,6 +547,7 @@ async function detener(id, { borrarDatos = false, eliminar = false } = {}) {
       await compose(id, argumentos, { espera: ESPERA_LARGA_MS });
     }
     if (eliminar) await rm(carpeta, { recursive: true, force: true });
+    await quitarDeCaddy(id);
     estado.encendido = false;
     estado.error = null;
     return { detenido: true, respaldo };
