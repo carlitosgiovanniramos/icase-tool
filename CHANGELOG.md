@@ -14,6 +14,7 @@ Los cambios importantes de I-CASE Tool, de la versión más reciente a la más a
 
 ### Corregido
 - **Stack técnico:** la capacidad "firma" se activaba con "confirmación … en pantalla" ("con*firma*ción" contiene "firma") y exigía una librería de firma que ningún requerimiento pedía. Ahora "firma" debe ser una palabra aparte.
+- **Runner en servidor:** los archivos de Caddy de proyectos detenidos ya no se acumulan. Al detener un proyecto se quita su archivo, y al levantar otro se quitan los de proyectos detenidos que declaren las mismas direcciones. Antes, dos archivos con el mismo puerto (`ambiguous site definition`) impedían que Caddy arrancara y la web publicada dejaba de alcanzar el runner. **Hay que actualizar la copia del runner en la máquina virtual.**
 - **Prueba de permisos del contrato:** un actor con palabras de más ("Encargado del taller") ahora encuentra su usuario cuando el rol de la base es el comienzo de su nombre (`encargado`), y con varios usuarios del mismo rol usa el primero por correo en vez de dejar toda la prueba sin verificar.
 - `pg_cron` pasa a ser reconocido por la pieza Supabase en el catálogo (antes quedaba "sin resolver" en el stack).
 - La guía de la pieza Supabase indica que la imagen incluye `pg_cron` (verificado en contenedor) y cómo programar tareas con `cron.schedule`, para que el stack resuelva los procesos automáticos sin Edge Functions.
